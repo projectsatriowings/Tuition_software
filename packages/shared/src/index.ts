@@ -83,5 +83,5 @@ export interface ApiResponse<T = any> {
 }
 
 // Export Shared Design Tokens
-export * from './theme.js';
+export * from './theme';
 
