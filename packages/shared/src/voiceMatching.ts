@@ -5,6 +5,7 @@ export interface EnrolledStudentCandidate {
   admissionNumber: string;
   rollNumber?: string | null;
   phone?: string | null;
+  photoUrl?: string | null;
   status?: string;
 }
 

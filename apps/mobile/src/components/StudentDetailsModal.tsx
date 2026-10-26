@@ -10,8 +10,9 @@ import {
   TextInput,
   TouchableWithoutFeedback,
   Platform,
+  Image,
 } from 'react-native';
-import { api } from '../services/api';
+import { api, getApiBaseUrl } from '../services/api';
 import { useMobileToast } from '../context/ToastContext';
 import { ConfirmationModal } from './ConfirmationModal';
 import { themeTokens } from '@tuition/shared';
@@ -256,6 +257,33 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
               {/* Profile Tab */}
               {activeTab === 'profile' && (
                 <View style={styles.sectionContainer}>
+                  {/* Photo & Identity Hero */}
+                  <View style={styles.avatarCard}>
+                    {details.photoUrl ? (
+                      <Image
+                        source={{
+                          uri: details.photoUrl.startsWith('http')
+                            ? details.photoUrl
+                            : `${getApiBaseUrl().replace('/api', '')}${details.photoUrl}`,
+                        }}
+                        style={styles.avatarImage}
+                      />
+                    ) : (
+                      <View style={styles.avatarFallback}>
+                        <Text style={styles.avatarText}>
+                          {details.firstName?.[0] || ''}
+                          {details.lastName?.[0] || ''}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.avatarMeta}>
+                      <Text style={styles.avatarName}>
+                        {details.firstName} {details.lastName}
+                      </Text>
+                      <Text style={styles.avatarSub}>{details.admissionNumber}</Text>
+                    </View>
+                  </View>
+
                   <View style={styles.infoCard}>
                     <Text style={styles.cardHeader}>Enrollment & Identity</Text>
                     <View style={styles.rowItem}>
@@ -269,6 +297,16 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                     <View style={styles.rowItem}>
                       <Text style={styles.rowLabel}>Joined Date (Admission)</Text>
                       <Text style={styles.rowValue}>{formatKolkataTime(details.admissionDate || details.createdAt)}</Text>
+                    </View>
+                    <View style={styles.rowItem}>
+                      <Text style={styles.rowLabel}>Record Created</Text>
+                      <Text style={styles.rowValue}>{formatKolkataTime(details.createdAt)}</Text>
+                    </View>
+                    <View style={styles.rowItem}>
+                      <Text style={styles.rowLabel}>Created By (Staff)</Text>
+                      <Text style={styles.rowValue}>
+                        {details.createdByUser ? details.createdByUser.fullName : 'Academic Admin / System'}
+                      </Text>
                     </View>
                     <View style={styles.rowItem}>
                       <Text style={styles.rowLabel}>Status</Text>
@@ -722,6 +760,52 @@ const styles = StyleSheet.create({
   },
   sectionContainer: {
     gap: 12,
+  },
+  avatarCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  avatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: '#8D6E63',
+  },
+  avatarFallback: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FAF7F2',
+    borderWidth: 2,
+    borderColor: '#D7CCC8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4E342E',
+  },
+  avatarMeta: {
+    flex: 1,
+  },
+  avatarName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D1E18',
+  },
+  avatarSub: {
+    fontSize: 12,
+    color: '#6D4C41',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   infoCard: {
     backgroundColor: '#FFFFFF',

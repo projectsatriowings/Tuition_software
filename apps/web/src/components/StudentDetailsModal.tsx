@@ -222,9 +222,17 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
         {/* Header */}
         <div className="p-5 border-b border-[#EFEBE9] bg-[#FDFBF7] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#EFEBE9] text-[#4E342E] flex items-center justify-center font-bold text-lg border border-[#D7CCC8]">
-              {student ? `${student.firstName[0]}${student.lastName[0]}` : 'ST'}
-            </div>
+            {student?.photoUrl ? (
+              <img
+                src={student.photoUrl.startsWith('http') ? student.photoUrl : `/api/students/${student.id}/photo`}
+                alt={student.firstName}
+                className="w-12 h-12 rounded-2xl object-cover border border-[#D7CCC8] shadow-sm"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-[#EFEBE9] text-[#4E342E] flex items-center justify-center font-bold text-lg border border-[#D7CCC8]">
+                {student ? `${student.firstName[0]}${student.lastName[0]}` : 'ST'}
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-[#2D1E18]">
@@ -396,6 +404,22 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                           <span className="text-[#2D1E18]">{formatKolkataDateTime(student.createdAt)}</span>
                         </div>
                         <div className="flex justify-between">
+                          <span className="text-[#8D6E63]">Admitted By:</span>
+                          <span className="font-semibold text-[#2D1E18]">
+                            {student.createdByUser ? `${student.createdByUser.fullName} (${student.createdByUser.role})` : 'Academic Admin / System'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#8D6E63]">Student Account Created:</span>
+                          <span className="text-[#2D1E18]">{formatKolkataDateTime(student.user?.createdAt)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#8D6E63]">Parent Account Created:</span>
+                          <span className="text-[#2D1E18]">
+                            {formatKolkataDateTime(student.parentRelations?.[0]?.parent?.user?.createdAt)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
                           <span className="text-[#8D6E63]">Institute:</span>
                           <span className="text-[#2D1E18]">{student.institute?.name} ({student.institute?.code})</span>
                         </div>
@@ -404,6 +428,38 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                           <span className="font-semibold text-[#4E342E]">
                             {student.enrollments?.[0]?.batch?.name || 'Unassigned'}
                           </span>
+                        </div>
+                        <div className="pt-2 border-t border-[#EFEBE9] flex items-center justify-between">
+                          <span className="text-[#8D6E63]">Photograph:</span>
+                          <label className="cursor-pointer text-xs font-bold text-[#4E342E] hover:underline flex items-center gap-1">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const formData = new FormData();
+                                formData.append('photo', file);
+                                try {
+                                  const res = await apiFetch(`/students/${student.id}/photo`, {
+                                    method: 'POST',
+                                    body: formData,
+                                  });
+                                  if (res.success) {
+                                    success('Student photograph updated');
+                                    fetchDetails();
+                                    if (onStudentUpdated) onStudentUpdated();
+                                  } else {
+                                    error(res.error || 'Failed to upload photo');
+                                  }
+                                } catch (err: any) {
+                                  error(err.message);
+                                }
+                              }}
+                            />
+                            📷 {student.photoUrl ? 'Replace Photo' : 'Upload Photo'}
+                          </label>
                         </div>
                       </div>
                     </div>

@@ -66,6 +66,9 @@ export interface Student {
   bloodGroup?: string | null;
   status: StudentStatus;
   admissionDate: string;
+  photoUrl?: string | null;
+  createdByUserId?: string | null;
+  createdByUser?: User | null;
   notes?: string | null;
   enrollments?: Array<{
     id: string;

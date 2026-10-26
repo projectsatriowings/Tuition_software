@@ -46,6 +46,8 @@ export const AttendanceManagement: React.FC = () => {
   const [pendingVoiceCandidate, setPendingVoiceCandidate] = useState<EnrolledStudentCandidate | null>(null);
   const [candidateOptions, setCandidateOptions] = useState<EnrolledStudentCandidate[]>([]);
   const [manualVoiceInput, setManualVoiceInput] = useState<string>('');
+  const [noMatchPhrase, setNoMatchPhrase] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Correction Modal State
   const [correctionTarget, setCorrectionTarget] = useState<any>(null);
@@ -79,16 +81,23 @@ export const AttendanceManagement: React.FC = () => {
 
   // Fetch Attendance Summary
   const fetchSummary = useCallback(async () => {
+    if (!selectedBatchId) {
+      setAttendanceData({ records: [], counts: { totalStudents: 0, checkedInCount: 0, checkedOutCount: 0, absentCount: 0, lateCount: 0 } });
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
+      setFetchError(null);
       const query = new URLSearchParams({
-        ...(selectedBatchId ? { batchId: selectedBatchId } : {}),
+        batchId: selectedBatchId,
         date: selectedDate,
       });
       const res = await apiFetch(`/attendance/summary?${query.toString()}`);
       setAttendanceData(res.data);
     } catch (err: any) {
       console.error(err);
+      setFetchError(err.message || 'Failed to load batch attendance');
     } finally {
       setLoading(false);
     }
@@ -123,6 +132,7 @@ export const AttendanceManagement: React.FC = () => {
       admissionNumber: r.student.admissionNumber,
       rollNumber: r.student.rollNumber,
       phone: r.student.phone,
+      photoUrl: r.student.photoUrl,
       status: r.student.status,
     }));
   }, [attendanceData]);
@@ -138,6 +148,7 @@ export const AttendanceManagement: React.FC = () => {
         if (matchResult.bestMatch) {
           setPendingVoiceCandidate(matchResult.bestMatch);
           setCandidateOptions([]);
+          setNoMatchPhrase(null);
         }
       } else if (matchResult.status === 'EXACT_MULTIPLE' || matchResult.status === 'FUZZY_MULTIPLE') {
         setPendingVoiceCandidate(null);
@@ -146,9 +157,11 @@ export const AttendanceManagement: React.FC = () => {
             ? matchResult.exactMatches
             : matchResult.fuzzyMatches.map((f) => f.student);
         setCandidateOptions(candidates);
+        setNoMatchPhrase(null);
       } else {
         setPendingVoiceCandidate(null);
         setCandidateOptions([]);
+        setNoMatchPhrase(spokenText);
       }
     },
     [enrolledCandidates]
@@ -176,20 +189,24 @@ export const AttendanceManagement: React.FC = () => {
     if (!text.trim() || enrolledCandidates.length === 0) {
       setPendingVoiceCandidate(null);
       setCandidateOptions([]);
+      setNoMatchPhrase(null);
       return;
     }
     const res = matchStudentVoice(text, enrolledCandidates);
     if (res.status === 'EXACT_SINGLE' || res.status === 'FUZZY_SINGLE') {
       setPendingVoiceCandidate(res.bestMatch);
       setCandidateOptions([]);
+      setNoMatchPhrase(null);
     } else if (res.status === 'EXACT_MULTIPLE' || res.status === 'FUZZY_MULTIPLE') {
       setPendingVoiceCandidate(null);
       const candidates =
         res.exactMatches.length > 0 ? res.exactMatches : res.fuzzyMatches.map((f) => f.student);
       setCandidateOptions(candidates);
+      setNoMatchPhrase(null);
     } else {
       setPendingVoiceCandidate(null);
       setCandidateOptions([]);
+      setNoMatchPhrase(text);
     }
   };
 
@@ -578,17 +595,46 @@ export const AttendanceManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* MATCH RESULT CARDS */}
+            {/* 0. No Match Feedback Card */}
+            {noMatchPhrase && !pendingVoiceCandidate && candidateOptions.length === 0 && (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between animate-in fade-in">
+                <div className="flex items-center gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <div>
+                    <span className="font-bold">No enrolled student in this batch matched speech '{noMatchPhrase}'.</span>
+                    <span className="ml-1 text-[#6D4C41]">Please call out the student's name clearly, or select them from the roster below.</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setNoMatchPhrase(null);
+                    resetTranscript();
+                    setManualVoiceInput('');
+                  }}
+                  className="text-xs font-bold text-amber-800 hover:text-amber-950 px-2 py-1 rounded-lg border border-amber-300 bg-white"
+                >
+                  Clear & Try Again
+                </button>
+              </div>
+            )}
 
             {/* 1. Exactly One Matched Candidate -> Prompt Confirmation */}
             {pendingVoiceCandidate && (
               <div className="p-5 rounded-2xl bg-[#FAF7F2] border-2 border-[#4E342E] shadow-md animate-in fade-in space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-lg">
-                      {pendingVoiceCandidate.firstName[0]}
-                      {pendingVoiceCandidate.lastName[0]}
-                    </div>
+                    {pendingVoiceCandidate.photoUrl ? (
+                      <img
+                        src={pendingVoiceCandidate.photoUrl.startsWith('http') ? pendingVoiceCandidate.photoUrl : `/api/students/${pendingVoiceCandidate.id}/photo`}
+                        alt={pendingVoiceCandidate.firstName}
+                        className="w-12 h-12 rounded-2xl object-cover border border-[#D7CCC8]"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-2xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-lg">
+                        {pendingVoiceCandidate.firstName[0]}
+                        {pendingVoiceCandidate.lastName[0]}
+                      </div>
+                    )}
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-extrabold text-[#2D1E18]">
@@ -652,15 +698,32 @@ export const AttendanceManagement: React.FC = () => {
                   {candidateOptions.map((candidate) => (
                     <button
                       key={candidate.id}
-                      onClick={() => setPendingVoiceCandidate(candidate)}
+                      onClick={() => {
+                        setPendingVoiceCandidate(candidate);
+                        setCandidateOptions([]);
+                        setNoMatchPhrase(null);
+                      }}
                       className="p-3 rounded-xl bg-white border border-amber-200 hover:border-[#4E342E] text-left transition flex items-center justify-between group shadow-sm"
                     >
-                      <div>
-                        <div className="font-bold text-xs text-[#2D1E18]">
-                          {candidate.firstName} {candidate.lastName}
-                        </div>
-                        <div className="text-[11px] font-mono text-[#6D4C41] mt-0.5">
-                          {candidate.admissionNumber}
+                      <div className="flex items-center gap-2.5">
+                        {candidate.photoUrl ? (
+                          <img
+                            src={candidate.photoUrl.startsWith('http') ? candidate.photoUrl : `/api/students/${candidate.id}/photo`}
+                            alt={candidate.firstName}
+                            className="w-9 h-9 rounded-xl object-cover border border-[#D7CCC8]"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-xs">
+                            {candidate.firstName[0]}{candidate.lastName[0]}
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-bold text-xs text-[#2D1E18]">
+                            {candidate.firstName} {candidate.lastName}
+                          </div>
+                          <div className="text-[11px] font-mono text-[#6D4C41] mt-0.5">
+                            {candidate.admissionNumber}
+                          </div>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-[#4E342E] group-hover:underline">
@@ -702,16 +765,37 @@ export const AttendanceManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEBE9]">
-                  {loading ? (
+                  {fetchError ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-rose-700 space-y-2">
+                        <div>Failed to load batch roster: {fetchError}</div>
+                        <button
+                          onClick={fetchSummary}
+                          className="px-3 py-1 bg-[#4E342E] text-white rounded-lg text-xs font-semibold"
+                        >
+                          Retry
+                        </button>
+                      </td>
+                    </tr>
+                  ) : loading ? (
                     <tr>
                       <td colSpan={4} className="py-6 text-center text-[#6D4C41]">
-                        Loading batch students...
+                        <div className="flex items-center justify-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-[#4E342E]" />
+                          <span>Loading batch students...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : batches.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-[#6D4C41]">
+                        No academic batches found in your institute. Please create a batch first.
                       </td>
                     </tr>
                   ) : filteredRecords.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-6 text-center text-[#6D4C41]">
-                        No students found in this batch.
+                        No students are enrolled in this batch yet.
                       </td>
                     </tr>
                   ) : (
@@ -720,7 +804,16 @@ export const AttendanceManagement: React.FC = () => {
                       return (
                         <tr key={student.id} className="hover:bg-[#FDFBF7]">
                           <td className="py-2.5 px-3 font-bold text-[#2D1E18]">
-                            {student.name}
+                            <div className="flex items-center gap-2">
+                              {student.photoUrl ? (
+                                <img
+                                  src={student.photoUrl.startsWith('http') ? student.photoUrl : `/api/students/${student.id}/photo`}
+                                  alt={student.name}
+                                  className="w-6 h-6 rounded-full object-cover border border-[#D7CCC8]"
+                                />
+                              ) : null}
+                              <span>{student.name}</span>
+                            </div>
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[#6D4C41]">
                             {student.admissionNumber}

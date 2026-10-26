@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
+import { isStudentAuthorized } from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
@@ -266,7 +267,12 @@ export async function linkGuardianToStudent(req: AuthenticatedRequest, res: Resp
 
     const { parentId, relation, isPrimaryContact, canReceiveSms } = parse.data;
 
-    // Verify student belongs to this institute
+    // Verify student belongs to this institute and is authorized for caller
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to link guardians to this student' });
+    }
+
     const student = await prisma.student.findFirst({
       where: { id: studentId, instituteId },
     });
@@ -357,7 +363,12 @@ export async function revokeGuardianLink(req: AuthenticatedRequest, res: Respons
     const instituteId = req.instituteId;
     const { studentId, parentId } = req.params;
 
-    // Verify student belongs to this institute
+    // Verify student belongs to this institute and is authorized for caller
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to manage guardians for this student' });
+    }
+
     const student = await prisma.student.findFirst({
       where: { id: studentId, instituteId },
     });
@@ -517,6 +528,20 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       return res.status(403).json({ success: false, error: 'Forbidden: Parent is not linked to this institute' });
     }
 
+    // For staff, ensure at least one linked student is in staff scope
+    if (req.user?.role === 'STAFF') {
+      let hasAuthorizedStudent = false;
+      for (const rel of parentProfile.studentRelations) {
+        if (await isStudentAuthorized(req, rel.studentId, prisma)) {
+          hasAuthorizedStudent = true;
+          break;
+        }
+      }
+      if (!hasAuthorizedStudent) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to reset credentials for this parent' });
+      }
+    }
+
     const temporaryPassword =
       parse.data?.password?.trim() ||
       parse.data?.newPassword?.trim() ||
@@ -606,6 +631,20 @@ export async function updateParentLoginIdentifier(req: AuthenticatedRequest, res
 
     if (!isInstStudent && !membership) {
       return res.status(403).json({ success: false, error: 'Forbidden: Parent is not linked to this institute' });
+    }
+
+    // For staff, ensure at least one linked student is in staff scope
+    if (req.user?.role === 'STAFF') {
+      let hasAuthorizedStudent = false;
+      for (const rel of parentProfile.studentRelations) {
+        if (await isStudentAuthorized(req, rel.studentId, prisma)) {
+          hasAuthorizedStudent = true;
+          break;
+        }
+      }
+      if (!hasAuthorizedStudent) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to update credentials for this parent' });
+      }
     }
 
     const cleanEmail = parse.data.email !== undefined ? (parse.data.email.trim().toLowerCase() || null) : undefined;

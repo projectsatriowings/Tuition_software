@@ -2,6 +2,10 @@ import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
+import {
+  isStudentAuthorized,
+  isStaffAssignedToBatch,
+} from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
@@ -99,6 +103,14 @@ export async function getBatchDetails(req: AuthenticatedRequest, res: Response) 
     if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
 
     const { id } = req.params;
+
+    // If caller is STAFF, verify staff assignment to this batch
+    if (req.user?.role === 'STAFF') {
+      const isAssigned = await isStaffAssignedToBatch(req, id, prisma);
+      if (!isAssigned) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+      }
+    }
 
     const batch = await prisma.batch.findFirst({
       where: { id, instituteId },
@@ -504,7 +516,12 @@ export async function enrollStudentInBatch(req: AuthenticatedRequest, res: Respo
       return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
     }
 
-    // Verify student belongs to this institute and is not PASSED_OUT or DISCONTINUED
+    // Verify student belongs to this institute and is authorized for caller
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to enroll this student' });
+    }
+
     const student = await prisma.student.findFirst({
       where: { id: studentId, instituteId },
     });
@@ -575,6 +592,11 @@ export async function unenrollStudentFromBatch(req: AuthenticatedRequest, res: R
     });
     if (!batch) {
       return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+    }
+
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to unenroll this student' });
     }
 
     await prisma.studentEnrollment.updateMany({

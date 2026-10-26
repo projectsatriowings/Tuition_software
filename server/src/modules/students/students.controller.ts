@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
@@ -8,6 +10,11 @@ import {
   getOrSetInstitutePrefix,
   getAdmissionYear,
 } from './admission-number.service.js';
+import {
+  getAuthorizedStudentScope,
+  isStudentAuthorized,
+} from './student-authorization.service.js';
+import { getRelativeStorageKey, resolveAbsolutePath } from '../../utils/storage.js';
 
 const prisma = new PrismaClient();
 
@@ -36,6 +43,7 @@ export const studentAdmissionSchema = z.object({
   parentEmail: z.string().email().optional().or(z.literal('')).optional(),
   parentInitialPassword: z.string().min(8).optional(),
   parentCanReceiveSms: z.boolean().default(true).optional(),
+  photoUrl: z.string().optional(),
 });
 
 export const updateStudentSchema = z.object({
@@ -47,6 +55,7 @@ export const updateStudentSchema = z.object({
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(),
   bloodGroup: z.string().optional(),
   notes: z.string().optional(),
+  photoUrl: z.string().optional(),
 });
 
 export const updateStudentStatusSchema = z.object({
@@ -85,26 +94,37 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
 
     const skip = (page - 1) * limit;
 
-    const where: any = { instituteId };
+    const scope = await getAuthorizedStudentScope(req, prisma);
+
+    const andConditions: any[] = [
+      { instituteId },
+      scope.whereClause,
+    ];
 
     if (status && ['ACTIVE', 'PASSED_OUT', 'DISCONTINUED'].includes(status)) {
-      where.status = status;
+      andConditions.push({ status });
     }
 
     if (batchId) {
-      where.enrollments = {
-        some: { batchId, isActive: true },
-      };
+      andConditions.push({
+        enrollments: {
+          some: { batchId, isActive: true },
+        },
+      });
     }
 
     if (search) {
-      where.OR = [
-        { admissionNumber: { contains: search, mode: 'insensitive' } },
-        { rollNumber: { contains: search, mode: 'insensitive' } },
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName: { contains: search, mode: 'insensitive' } },
-      ];
+      andConditions.push({
+        OR: [
+          { admissionNumber: { contains: search, mode: 'insensitive' } },
+          { rollNumber: { contains: search, mode: 'insensitive' } },
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+        ],
+      });
     }
+
+    const where: any = { AND: andConditions };
 
     const [total, students] = await Promise.all([
       prisma.student.count({ where }),
@@ -241,6 +261,8 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 gender: data.gender || null,
                 bloodGroup: data.bloodGroup?.trim() || null,
                 notes: data.notes?.trim() || null,
+                photoUrl: data.photoUrl?.trim() || null,
+                createdByUserId: req.user?.userId || null,
                 admissionDate: parsedAdmissionDate,
                 status: 'ACTIVE',
               },
@@ -539,32 +561,13 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
     const instituteId = req.instituteId;
     const { id } = req.params;
 
-    // If caller is a parent, verify they are linked to this student
-    if (req.user?.role === 'PARENT') {
-      const relation = await prisma.studentParentRelation.findFirst({
-        where: {
-          studentId: id,
-          parent: { userId: req.user.userId },
-        },
+    // Enforce strict staff-to-student and role-based data isolation
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to view this student record',
       });
-
-      if (!relation) {
-        return res.status(403).json({
-          success: false,
-          error: 'Forbidden: You are not authorized to view this student',
-        });
-      }
-    }
-
-    // If caller is a student, verify it is their own profile
-    if (req.user?.role === 'STUDENT') {
-      const student = await prisma.student.findUnique({ where: { id } });
-      if (!student || student.userId !== req.user.userId) {
-        return res.status(403).json({
-          success: false,
-          error: 'Forbidden: You can only view your own student profile',
-        });
-      }
     }
 
     const student = await prisma.student.findFirst({
@@ -573,6 +576,9 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
         instituteId,
       },
       include: {
+        createdByUser: {
+          select: { id: true, fullName: true, role: true },
+        },
         institute: {
           select: { id: true, name: true, code: true, phone: true, email: true },
         },
@@ -664,6 +670,14 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
       });
     }
 
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to update this student',
+      });
+    }
+
     const existing = await prisma.student.findFirst({
       where: { id, instituteId },
     });
@@ -682,6 +696,7 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     if (data.gender !== undefined) updateData.gender = data.gender;
     if (data.bloodGroup !== undefined) updateData.bloodGroup = data.bloodGroup?.trim() || null;
     if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
+    if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl?.trim() || null;
     if (data.dob) updateData.dob = new Date(data.dob);
 
     const updated = await prisma.student.update({
@@ -726,6 +741,14 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
     const parse = resetStudentPasswordSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Invalid input' });
+    }
+
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to reset credentials for this student',
+      });
     }
 
     const student = await prisma.student.findFirst({
@@ -833,6 +856,14 @@ export async function updateStudentLoginIdentifier(req: AuthenticatedRequest, re
       return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Invalid input' });
     }
 
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to update credentials for this student',
+      });
+    }
+
     const student = await prisma.student.findFirst({
       where: { id, instituteId },
       include: { user: true },
@@ -926,6 +957,14 @@ export async function updateStudentStatus(req: AuthenticatedRequest, res: Respon
 
     const { status, reason } = parse.data;
 
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to update status for this student',
+      });
+    }
+
     const existing = await prisma.student.findFirst({
       where: { id, instituteId },
     });
@@ -971,5 +1010,134 @@ export async function updateStudentStatus(req: AuthenticatedRequest, res: Respon
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to update student status' });
+  }
+}
+
+/**
+ * Upload student photograph (for an existing student or direct admission upload)
+ */
+export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No photograph file was uploaded' });
+    }
+
+    const relativeKey = getRelativeStorageKey(instituteId, req.file.filename);
+
+    if (id && id !== 'admission') {
+      const authorized = await isStudentAuthorized(req, id, prisma);
+      if (!authorized) {
+        return res.status(403).json({ success: false, error: 'Forbidden: Not authorized to update this student photograph' });
+      }
+
+      await prisma.student.update({
+        where: { id },
+        data: { photoUrl: relativeKey },
+      });
+
+      return res.json({
+        success: true,
+        message: 'Student photograph uploaded successfully',
+        data: {
+          photoStorageKey: relativeKey,
+          photoUrl: `/api/students/${id}/photo`,
+        },
+      });
+    }
+
+    // Direct pre-admission upload
+    return res.json({
+      success: true,
+      message: 'Photograph uploaded for admission form',
+      data: {
+        photoStorageKey: relativeKey,
+        photoUrl: `/api/students/photo-raw/${encodeURIComponent(relativeKey)}`,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to upload student photograph' });
+  }
+}
+
+/**
+ * Get student photograph with authorized access control
+ */
+export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id } = req.params;
+
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view this student photograph' });
+    }
+
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+      select: { photoUrl: true },
+    });
+
+    if (!student || !student.photoUrl) {
+      return res.status(404).json({ success: false, error: 'No photograph on file for this student' });
+    }
+
+    if (student.photoUrl.startsWith('http://') || student.photoUrl.startsWith('https://')) {
+      return res.redirect(student.photoUrl);
+    }
+
+    const absPath = resolveAbsolutePath(student.photoUrl);
+    if (!absPath || !fs.existsSync(absPath)) {
+      return res.status(404).json({ success: false, error: 'Photograph file not found on server' });
+    }
+
+    const ext = path.extname(absPath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+    };
+
+    res.setHeader('Content-Type', mimeTypes[ext] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return fs.createReadStream(absPath).pipe(res);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to stream student photograph' });
+  }
+}
+
+/**
+ * Stream photograph by storage key (tenant verified)
+ */
+export async function getRawPhoto(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const key = decodeURIComponent(req.params.key);
+
+    if (!key.startsWith(`${instituteId}/`)) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Cross-institute photograph access rejected' });
+    }
+
+    const absPath = resolveAbsolutePath(key);
+    if (!absPath || !fs.existsSync(absPath)) {
+      return res.status(404).json({ success: false, error: 'Photograph file not found' });
+    }
+
+    const ext = path.extname(absPath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+    };
+
+    res.setHeader('Content-Type', mimeTypes[ext] || 'image/jpeg');
+    return fs.createReadStream(absPath).pipe(res);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to stream photograph' });
   }
 }

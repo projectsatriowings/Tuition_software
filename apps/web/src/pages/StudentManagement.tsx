@@ -83,6 +83,21 @@ export const StudentManagement: React.FC = () => {
   };
 
   const [formData, setFormData] = useState(initialFormData);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setAdmitError('Photo file size must not exceed 5MB.');
+        return;
+      }
+      setPhotoFile(file);
+      setPhotoPreview(URL.createObjectURL(file));
+      setAdmitError(null);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -145,6 +160,20 @@ export const StudentManagement: React.FC = () => {
     setAdmitLoading(true);
 
     try {
+      let uploadedPhotoKey: string | undefined = undefined;
+
+      if (photoFile) {
+        const photoFormData = new FormData();
+        photoFormData.append('photo', photoFile);
+        const upRes = await apiFetch('/students/upload-photo', {
+          method: 'POST',
+          body: photoFormData,
+        });
+        if (upRes.success && upRes.data?.photoStorageKey) {
+          uploadedPhotoKey = upRes.data.photoStorageKey;
+        }
+      }
+
       const res = await apiFetch('/students', {
         method: 'POST',
         body: JSON.stringify({
@@ -155,6 +184,7 @@ export const StudentManagement: React.FC = () => {
           gender: formData.gender,
           bloodGroup: formData.bloodGroup.trim() || undefined,
           batchId: formData.batchId || undefined,
+          photoUrl: uploadedPhotoKey,
           notes: formData.notes.trim() || undefined,
           // Parent details
           parentFullName: formData.parentFullName.trim(),
@@ -341,7 +371,18 @@ export const StudentManagement: React.FC = () => {
                       className="py-3.5 px-4 font-bold text-[#2D1E18] text-sm group-hover:text-[#4E342E]"
                       onClick={() => setSelectedStudentId(student.id)}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
+                        {student.photoUrl ? (
+                          <img
+                            src={student.photoUrl.startsWith('http') ? student.photoUrl : `/api/students/${student.id}/photo`}
+                            alt={student.firstName}
+                            className="w-8 h-8 rounded-full object-cover border border-[#D7CCC8] shadow-xs"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-[#EFEBE9] text-[#4E342E] flex items-center justify-center text-xs font-bold border border-[#D7CCC8]">
+                            {student.firstName[0]}{student.lastName[0]}
+                          </div>
+                        )}
                         <span>{student.firstName} {student.lastName}</span>
                         <span className="text-[10px] bg-[#EFEBE9] text-[#6D4C41] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition">View Details</span>
                       </div>
@@ -446,6 +487,54 @@ export const StudentManagement: React.FC = () => {
             )}
 
             <form onSubmit={handleAdmitSubmit} className="space-y-4 mt-4">
+              {/* Student Photo Upload Section */}
+              <div className="p-3.5 rounded-2xl bg-[#FDFBF7] border border-[#D7CCC8] flex items-center gap-4">
+                <div className="relative shrink-0">
+                  {photoPreview ? (
+                    <img
+                      src={photoPreview}
+                      alt="Preview"
+                      className="w-16 h-16 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-[#EFEBE9] text-[#8D6E63] border border-[#D7CCC8] flex flex-col items-center justify-center text-[10px] font-semibold text-center p-1">
+                      <User className="w-6 h-6 mb-0.5 text-[#A1887F]" />
+                      No Photo
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <span className="text-xs font-bold text-[#4E342E] block">Student Photograph (Optional)</span>
+                  <p className="text-[11px] text-[#8D6E63]">
+                    Upload JPG/PNG portrait or capture via camera (Max 5MB)
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handlePhotoSelect}
+                      />
+                      📷 {photoPreview ? 'Change Photo' : 'Select / Capture Photo'}
+                    </label>
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPhotoFile(null);
+                          setPhotoPreview(null);
+                        }}
+                        className="text-xs text-rose-700 hover:underline font-semibold"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Student Details Section */}
               <div className="space-y-3">
                 <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center gap-1.5 border-b border-[#EFEBE9] pb-1">
