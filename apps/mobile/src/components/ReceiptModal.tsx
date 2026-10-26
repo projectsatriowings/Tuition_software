@@ -8,6 +8,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { themeTokens } from '@tuition/shared';
 
 interface ReceiptData {
   receiptNumber: string;
@@ -83,7 +84,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             {/* Institute & Status Badge */}
             <View style={styles.instituteBox}>
               <Text style={styles.instituteName}>
-                {receipt.instituteName || 'Tuition Management System'}
+                {receipt.instituteName || 'TuitionOS Enterprise'}
               </Text>
               <View style={styles.statusPill}>
                 <Text style={styles.statusPillText}>PAID & VERIFIED</Text>
@@ -95,7 +96,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <Text style={styles.amountLabel}>AMOUNT PAID</Text>
               <Text style={styles.amountValue}>{formatCurrency(receipt.amount)}</Text>
               <Text style={styles.paymentMethod}>
-                Method: {receipt.paymentMethod || 'UPI'}
+                Method: {receipt.paymentMethod || 'UPI / Cash'}
               </Text>
             </View>
 
@@ -162,17 +163,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(45, 30, 24, 0.65)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#0b1120',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: themeTokens.colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: '85%',
     paddingBottom: 24,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
   },
   header: {
     flexDirection: 'row',
@@ -180,16 +181,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: themeTokens.colors.borderSubtle,
+    backgroundColor: themeTokens.colors.espresso,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: themeTokens.colors.textLight,
   },
   receiptNo: {
     fontSize: 12,
-    color: '#818cf8',
+    color: themeTokens.colors.beige,
     fontFamily: 'monospace',
     marginTop: 2,
   },
@@ -197,12 +201,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeTokens.colors.cocoa,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeBtnText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textLight,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -216,56 +220,56 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   instituteName: {
-    color: '#cbd5e1',
+    color: themeTokens.colors.textPrimary,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     flex: 1,
   },
   statusPill: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: themeTokens.colors.successBg,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: themeTokens.colors.successBorder,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   statusPillText: {
-    color: '#34d399',
+    color: themeTokens.colors.success,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   amountBox: {
-    backgroundColor: '#0f172a',
-    borderRadius: 12,
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderRadius: 14,
     padding: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
+    borderColor: themeTokens.colors.border,
     marginBottom: 20,
   },
   amountLabel: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },
   amountValue: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 32,
     fontWeight: '900',
     marginVertical: 4,
   },
   paymentMethod: {
-    color: '#a5b4fc',
+    color: themeTokens.colors.taupe,
     fontSize: 12,
     fontWeight: '600',
   },
   detailsGrid: {
-    backgroundColor: '#0f172a',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
     padding: 14,
     gap: 12,
   },
@@ -275,29 +279,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailLabel: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 13,
   },
   detailValue: {
-    color: '#f1f5f9',
+    color: themeTokens.colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
   codeValue: {
     fontFamily: 'monospace',
-    color: '#38bdf8',
+    color: themeTokens.colors.primary,
     fontSize: 12,
   },
   footerNotice: {
     marginTop: 20,
     padding: 12,
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.borderSubtle,
   },
   noticeText: {
-    color: '#64748b',
+    color: themeTokens.colors.textSubtle,
     fontSize: 11,
     textAlign: 'center',
     lineHeight: 16,
@@ -310,13 +314,13 @@ const styles = StyleSheet.create({
   },
   shareBtn: {
     flex: 1,
-    backgroundColor: '#4f46e5',
+    backgroundColor: themeTokens.colors.espresso,
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
   },
   shareBtnText: {
-    color: '#ffffff',
+    color: themeTokens.colors.textLight,
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -324,11 +328,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
     alignItems: 'center',
   },
   dismissBtnText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textSecondary,
     fontWeight: '600',
     fontSize: 14,
   },

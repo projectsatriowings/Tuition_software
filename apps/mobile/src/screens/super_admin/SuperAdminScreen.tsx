@@ -14,6 +14,7 @@ import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
+import { themeTokens } from '@tuition/shared';
 
 export const SuperAdminScreen: React.FC = () => {
   const { user } = useMobileAuth();
@@ -63,14 +64,14 @@ export const SuperAdminScreen: React.FC = () => {
 
       {loading ? (
         <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={themeTokens.colors.primary} />
           <Text style={styles.loadingText}>Fetching registered institutes...</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.content}
           contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeTokens.colors.primary} />}
         >
           {/* Platform Status */}
           <Card highlighted>
@@ -81,25 +82,25 @@ export const SuperAdminScreen: React.FC = () => {
               <View style={{ flex: 1 }}>
                 <Text style={styles.platTitle}>TuitionOS Multi-Tenant Cloud</Text>
                 <Text style={styles.platSub}>
-                  Logged in as {user?.email} &bull; Neon PostgreSQL Engine
+                  Logged in as {user?.email} • Neon PostgreSQL Engine
                 </Text>
               </View>
-              <Badge label="SYSTEM HEALTHY" variant="success" size="sm" />
+              <Badge label="HEALTHY" variant="success" size="sm" />
             </View>
           </Card>
 
           {/* Quick Metrics */}
           <View style={styles.metricsRow}>
-            <View style={[styles.metricBox, { backgroundColor: '#1e1b4b' }]}>
-              <Text style={styles.metricLabel}>REGISTERED INSTITUTES</Text>
+            <View style={[styles.metricBox, { backgroundColor: themeTokens.colors.surface }]}>
+              <Text style={styles.metricLabel}>ACTIVE INSTITUTES</Text>
               <Text style={styles.metricValue}>{institutes.length}</Text>
               <Text style={styles.metricSub}>Isolated Tenants</Text>
             </View>
 
-            <View style={[styles.metricBox, { backgroundColor: '#064e3b' }]}>
+            <View style={[styles.metricBox, { backgroundColor: themeTokens.colors.surface }]}>
               <Text style={styles.metricLabel}>PLATFORM SECURITY</Text>
-              <Text style={[styles.metricValue, { color: '#34d399' }]}>AES-256</Text>
-              <Text style={styles.metricSub}>Row Isolation Active</Text>
+              <Text style={[styles.metricValue, { color: themeTokens.colors.success }]}>Active</Text>
+              <Text style={styles.metricSub}>Row Isolation Enforced</Text>
             </View>
           </View>
 
@@ -120,7 +121,7 @@ export const SuperAdminScreen: React.FC = () => {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.instName}>{inst.name}</Text>
                     <Text style={styles.instCode}>
-                      Code: <Text style={styles.instCodeBold}>{inst.code}</Text> &bull; ID: {inst.id.slice(0, 8)}...
+                      Code: <Text style={styles.instCodeBold}>{inst.code}</Text> • ID: {inst.id.slice(0, 8)}...
                     </Text>
                     {inst.email && (
                       <Text style={styles.instEmail}>✉️ {inst.email}</Text>
@@ -151,7 +152,7 @@ export const SuperAdminScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: themeTokens.colors.background,
   },
   content: {
     flex: 1,
@@ -167,7 +168,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   loadingText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     marginTop: 12,
     fontSize: 13,
   },
@@ -180,9 +181,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: themeTokens.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -190,12 +191,12 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   platTitle: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 15,
     fontWeight: '800',
   },
   platSub: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 11,
     marginTop: 2,
   },
@@ -210,42 +211,43 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
   },
   metricLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#cbd5e1',
+    color: themeTokens.colors.textMuted,
     letterSpacing: 0.5,
   },
   metricValue: {
     fontSize: 22,
     fontWeight: '900',
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     marginVertical: 4,
   },
   metricSub: {
-    fontSize: 10,
-    color: '#94a3b8',
+    fontSize: 11,
+    color: themeTokens.colors.taupe,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
+    marginTop: 4,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
   },
   sectionCount: {
     fontSize: 12,
-    color: '#818cf8',
+    color: themeTokens.colors.primary,
     fontWeight: '600',
   },
   emptyText: {
-    color: '#64748b',
+    color: themeTokens.colors.textMuted,
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 10,
@@ -256,41 +258,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   instName: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
   instCode: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 12,
     marginTop: 2,
   },
   instCodeBold: {
-    color: '#818cf8',
+    color: themeTokens.colors.primary,
     fontWeight: 'bold',
   },
   instEmail: {
-    color: '#64748b',
+    color: themeTokens.colors.textSubtle,
     fontSize: 11,
     marginTop: 4,
   },
   securityNotice: {
     marginTop: 20,
     padding: 14,
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
   },
   secTitle: {
-    color: '#818cf8',
-    fontSize: 12,
+    color: themeTokens.colors.espresso,
+    fontSize: 13,
     fontWeight: 'bold',
     marginBottom: 4,
   },
   secText: {
-    color: '#64748b',
-    fontSize: 11,
-    lineHeight: 16,
+    color: themeTokens.colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

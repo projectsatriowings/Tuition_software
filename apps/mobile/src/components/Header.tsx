@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useMobileAuth } from '../context/AuthContext';
+import { themeTokens } from '@tuition/shared';
 
 interface HeaderProps {
   title?: string;
@@ -29,14 +30,14 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, onRefresh }) =>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{user?.fullName?.[0] || 'U'}</Text>
           </View>
-          <View>
+          <View style={styles.userDetails}>
             <Text style={styles.userName} numberOfLines={1}>
               {user?.fullName || 'TuitionOS User'}
             </Text>
-            <View style={styles.roleBadge}>
+            <View style={styles.roleBadgeRow}>
               <Text style={styles.roleText}>{getRoleLabel(user?.role)}</Text>
               {institute && (
-                <Text style={styles.instituteText}> &bull; {institute.code}</Text>
+                <Text style={styles.instituteText}> • {institute.code}</Text>
               )}
             </View>
           </View>
@@ -66,9 +67,9 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, onRefresh }) =>
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.espresso,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: themeTokens.colors.cocoa,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 14,
@@ -88,34 +89,37 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+    backgroundColor: themeTokens.colors.cocoa,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: themeTokens.colors.taupe,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#818cf8',
+    color: themeTokens.colors.textLight,
     fontWeight: 'bold',
     fontSize: 16,
   },
+  userDetails: {
+    flex: 1,
+  },
   userName: {
-    color: '#ffffff',
+    color: themeTokens.colors.textLight,
     fontSize: 14,
     fontWeight: 'bold',
   },
-  roleBadge: {
+  roleBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 1,
   },
   roleText: {
-    color: '#818cf8',
+    color: themeTokens.colors.beige,
     fontSize: 11,
     fontWeight: '600',
   },
   instituteText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textLightMuted,
     fontSize: 11,
   },
   actions: {
@@ -125,36 +129,36 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeTokens.colors.cocoa,
   },
   actionBtnText: {
-    color: '#94a3b8',
-    fontSize: 12,
+    color: themeTokens.colors.beige,
+    fontSize: 13,
     fontWeight: '600',
   },
   logoutBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(185, 28, 28, 0.25)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(185, 28, 28, 0.5)',
   },
   logoutBtnText: {
-    color: '#f87171',
+    color: '#FECACA',
     fontSize: 11,
     fontWeight: 'bold',
   },
   titleSection: {
-    marginTop: 10,
+    marginTop: 12,
   },
   title: {
-    color: '#ffffff',
+    color: themeTokens.colors.textLight,
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
   subtitle: {
-    color: '#94a3b8',
+    color: themeTokens.colors.beige,
     fontSize: 12,
     marginTop: 2,
   },

@@ -10,75 +10,51 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useMobileAuth } from '../../context/AuthContext';
+import { useMobileAuth, MobileInstitute } from '../../context/AuthContext';
 import { AppConfig } from '../../config/index';
+import { themeTokens } from '@tuition/shared';
 
 interface LoginScreenProps {
   onSuccess?: () => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = () => {
-  const { login, customHost, setCustomHost } = useMobileAuth();
+  const {
+    login,
+    customHost,
+    setCustomHost,
+    pendingAuthSession,
+    selectInstituteAndCompleteLogin,
+    cancelPendingAuth,
+  } = useMobileAuth();
 
-  const [instituteCode, setInstituteCode] = useState('INST001');
-  const [username, setUsername] = useState('director@apex.edu');
-  const [password, setPassword] = useState('ApexSecureAdmin2026!');
+  // Strict requirement: Start with empty fields, no hardcoded or prefilled credentials
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Advanced server connectivity configuration
   const [showHostConfig, setShowHostConfig] = useState(false);
   const [tempHost, setTempHost] = useState(customHost || AppConfig.defaultApiBaseUrl);
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
-      setErrorMsg('Please enter both username and password');
+      setErrorMsg('Please enter your email/phone and password.');
       return;
     }
 
     setLoading(true);
     setErrorMsg(null);
 
-    const res = await login(
-      username.trim(),
-      password.trim(),
-      instituteCode.trim() ? instituteCode.trim() : undefined
-    );
+    // Standard login does not require institute code; backend resolves active institute automatically
+    const res = await login(username.trim(), password);
 
     setLoading(false);
 
     if (!res.success) {
-      setErrorMsg(res.error || 'Authentication failed. Please check credentials.');
-    }
-  };
-
-  const setDemoRole = (role: 'ACADEMIC_ADMIN' | 'STAFF' | 'STUDENT' | 'PARENT' | 'SUPER_ADMIN') => {
-    setErrorMsg(null);
-    switch (role) {
-      case 'SUPER_ADMIN':
-        setInstituteCode('');
-        setUsername('superadmin@tuitionos.internal');
-        setPassword('AdminSecurePassword#2026');
-        break;
-      case 'ACADEMIC_ADMIN':
-        setInstituteCode('INST001');
-        setUsername('director@apex.edu');
-        setPassword('ApexSecureAdmin2026!');
-        break;
-      case 'STAFF':
-        setInstituteCode('INST001');
-        setUsername('sharma.physics@apex.edu');
-        setPassword('SharmaPhysics@2026');
-        break;
-      case 'STUDENT':
-        setInstituteCode('INST001');
-        setUsername('aarav.patel@apex.edu');
-        setPassword('AaravPatel@2026');
-        break;
-      case 'PARENT':
-        setInstituteCode('INST001');
-        setUsername('rajesh.patel@parent.apex.edu');
-        setPassword('RajeshPatel@2026');
-        break;
+      setErrorMsg(res.error || 'Invalid credentials or inactive account.');
     }
   };
 
@@ -86,8 +62,58 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
     if (tempHost.trim()) {
       setCustomHost(tempHost.trim());
       setShowHostConfig(false);
+      setErrorMsg(null);
     }
   };
+
+  // If user belongs to multiple active institutes, render multi-institute selection screen
+  if (pendingAuthSession) {
+    return (
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.brandHeader}>
+            <View style={styles.logoBadge}>
+              <Text style={styles.logoText}>T</Text>
+            </View>
+            <Text style={styles.brandTitle}>Select Institute</Text>
+            <Text style={styles.brandTagline}>Your account is enrolled in multiple active institutes</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionHeading}>Choose Institute Context</Text>
+            <Text style={styles.sectionSub}>Tap the institute you wish to access for this session:</Text>
+
+            {pendingAuthSession.memberships.map((m) => (
+              <TouchableOpacity
+                key={m.id}
+                style={styles.instituteCard}
+                activeOpacity={0.8}
+                onPress={() => selectInstituteAndCompleteLogin(m.institute)}
+              >
+                <View style={styles.instituteIconContainer}>
+                  <Text style={styles.instituteIconText}>🏛️</Text>
+                </View>
+                <View style={styles.instituteInfo}>
+                  <Text style={styles.instituteName}>{m.institute.name}</Text>
+                  <View style={styles.instituteBadgeRow}>
+                    <View style={styles.codeBadge}>
+                      <Text style={styles.codeBadgeText}>{m.institute.code}</Text>
+                    </View>
+                    <Text style={styles.instituteRole}>{m.role}</Text>
+                  </View>
+                </View>
+                <Text style={styles.chevronText}>›</Text>
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity style={styles.secondaryButton} onPress={cancelPendingAuth}>
+              <Text style={styles.secondaryButtonText}>Back to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -98,154 +124,130 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
         {/* Brand Header */}
         <View style={styles.brandHeader}>
           <View style={styles.logoBadge}>
-            <Text style={styles.logoIcon}>⚡</Text>
+            <Text style={styles.logoText}>T</Text>
           </View>
-          <Text style={styles.brandTitle}>TuitionOS Mobile</Text>
-          <Text style={styles.brandTagline}>Enterprise Android Student & Institute Portal</Text>
+          <h1 style={styles.brandTitleText as any}>
+            <Text style={styles.brandTitle}>TuitionOS Enterprise</Text>
+          </h1>
+          <Text style={styles.brandTagline}>Multi-Institute Tuition Management System</Text>
         </View>
 
-        {/* Quick Demo Role Switcher */}
-        <View style={styles.demoSection}>
-          <Text style={styles.demoTitle}>QUICK SELECT DEMO ROLE:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.demoChips}>
-            <TouchableOpacity onPress={() => setDemoRole('STUDENT')} style={styles.demoChip}>
-              <Text style={styles.demoChipText}>🎓 Student</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setDemoRole('PARENT')} style={styles.demoChip}>
-              <Text style={styles.demoChipText}>👨‍👧 Parent</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setDemoRole('STAFF')} style={styles.demoChip}>
-              <Text style={styles.demoChipText}>👨‍🏫 Staff</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setDemoRole('ACADEMIC_ADMIN')} style={styles.demoChip}>
-              <Text style={styles.demoChipText}>🏛️ Admin</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setDemoRole('SUPER_ADMIN')} style={styles.demoChip}>
-              <Text style={styles.demoChipText}>👑 Super</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-
-        {/* Form Container */}
+        {/* Login Card */}
         <View style={styles.card}>
-          <Text style={styles.formTitle}>Sign in to your account</Text>
+          <Text style={styles.formTitle}>Sign In</Text>
+          <Text style={styles.formSubtitle}>Access your portal using your registered credentials</Text>
 
-          {errorMsg && (
+          {errorMsg ? (
             <View style={styles.errorBox}>
-              <Text style={styles.errorText}>⚠ {errorMsg}</Text>
+              <Text style={styles.errorIcon}>⚠️</Text>
+              <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
-          )}
+          ) : null}
 
-          {/* Institute Code */}
+          {/* Email / Phone / Identifier Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Institute Code (Optional for Super Admin)</Text>
+            <Text style={styles.inputLabel}>Email or Phone Number</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. INST001"
-              placeholderTextColor="#64748b"
-              value={instituteCode}
-              onChangeText={setInstituteCode}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
-          </View>
-
-          {/* Username / Email */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Username or Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. director@apex.edu"
-              placeholderTextColor="#64748b"
+              placeholder="e.g. name@apexacademy.com"
+              placeholderTextColor={themeTokens.colors.textSubtle}
               value={username}
-              onChangeText={setUsername}
+              onChangeText={(text) => {
+                setUsername(text);
+                if (errorMsg) setErrorMsg(null);
+              }}
               autoCapitalize="none"
-              keyboardType="email-address"
               autoCorrect={false}
+              keyboardType="email-address"
+              editable={!loading}
             />
           </View>
 
-          {/* Password */}
+          {/* Password Input with Visibility Toggle */}
           <View style={styles.inputGroup}>
-            <View style={styles.labelRow}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Text style={styles.toggleText}>{showPassword ? 'Hide' : 'Show'}</Text>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Enter your account password"
+                placeholderTextColor={themeTokens.colors.textSubtle}
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  if (errorMsg) setErrorMsg(null);
+                }}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                editable={!loading}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.toggleBtn}
+                accessibilityLabel="Toggle password visibility"
+              >
+                <Text style={styles.toggleBtnText}>{showPassword ? 'Hide' : 'Show'}</Text>
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••••••"
-              placeholderTextColor="#64748b"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-            />
           </View>
 
-          {/* Submit Button */}
+          {/* Sign In Action Button */}
           <TouchableOpacity
-            style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.85}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={themeTokens.colors.textLight} size="small" />
             ) : (
-              <Text style={styles.loginBtnText}>Sign In</Text>
+              <Text style={styles.primaryButtonText}>Sign In</Text>
             )}
           </TouchableOpacity>
 
-          {/* API Server Config Toggle */}
-          <TouchableOpacity
-            onPress={() => setShowHostConfig(!showHostConfig)}
-            style={styles.serverToggle}
-          >
-            <Text style={styles.serverToggleText}>
-              🌐 API Server: {customHost || AppConfig.defaultApiBaseUrl}
+          {/* Security & Access Notice */}
+          <View style={styles.securityNotice}>
+            <Text style={styles.securityNoticeText}>
+              🛡️ Protected by Enterprise Role-Based Tenant Isolation
             </Text>
-          </TouchableOpacity>
+          </View>
 
-          {showHostConfig && (
-            <View style={styles.hostConfigBox}>
-              <Text style={styles.hostConfigLabel}>Backend API Base URL:</Text>
-              <TextInput
-                style={[styles.input, styles.hostInput]}
-                value={tempHost}
-                onChangeText={setTempHost}
-                placeholder="http://10.0.2.2:5000/api"
-                placeholderTextColor="#64748b"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View style={styles.hostBtnRow}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setTempHost('http://10.0.2.2:5000/api');
-                  }}
-                  style={styles.presetBtn}
-                >
-                  <Text style={styles.presetBtnText}>Emulator (10.0.2.2)</Text>
+          {/* Host & Server Settings (Collapsible) */}
+          <View style={styles.serverSettingsSection}>
+            <TouchableOpacity
+              onPress={() => setShowHostConfig(!showHostConfig)}
+              style={styles.serverSettingsToggle}
+            >
+              <Text style={styles.serverSettingsToggleText}>
+                ⚙️ {showHostConfig ? 'Hide Server URL' : 'Server Connection Config'}
+              </Text>
+            </TouchableOpacity>
+
+            {showHostConfig ? (
+              <View style={styles.hostConfigCard}>
+                <Text style={styles.hostConfigLabel}>Active API Base Endpoint:</Text>
+                <TextInput
+                  style={styles.hostInput}
+                  value={tempHost}
+                  onChangeText={setTempHost}
+                  placeholder="https://your-domain.com/api"
+                  placeholderTextColor={themeTokens.colors.textSubtle}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity style={styles.hostSaveButton} onPress={handleSaveHost}>
+                  <Text style={styles.hostSaveButtonText}>Save API Server URL</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    setTempHost('http://localhost:5000/api');
-                  }}
-                  style={styles.presetBtn}
-                >
-                  <Text style={styles.presetBtnText}>Localhost</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleSaveHost} style={styles.saveHostBtn}>
-                  <Text style={styles.saveHostBtnText}>Save</Text>
-                </TouchableOpacity>
+                <Text style={styles.hostHelpText}>
+                  For physical phone testing on local network, use: http://192.168.1.5:5000/api
+                </Text>
               </View>
-            </View>
-          )}
+            ) : null}
+          </View>
         </View>
 
-        <Text style={styles.footerNote}>
-          TuitionOS v1.0 Mobile &bull; Phase 7 Production Release
+        {/* Footer */}
+        <Text style={styles.footerText}>
+          TuitionOS Enterprise • Web & Mobile Parity Edition
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -255,11 +257,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: themeTokens.colors.background,
   },
   scrollContent: {
-    padding: 20,
-    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 40 : 28,
     paddingBottom: 40,
   },
   brandHeader: {
@@ -269,192 +271,299 @@ const styles = StyleSheet.create({
   logoBadge: {
     width: 60,
     height: 60,
-    borderRadius: 20,
-    backgroundColor: '#4f46e5',
+    borderRadius: 18,
+    backgroundColor: themeTokens.colors.espresso,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    shadowColor: '#4f46e5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
+    borderWidth: 2,
+    borderColor: themeTokens.colors.taupe,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  logoIcon: {
-    fontSize: 30,
+  logoText: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: themeTokens.colors.textLight,
+  },
+  brandTitleText: {
+    margin: 0,
+    padding: 0,
   },
   brandTitle: {
     fontSize: 24,
-    fontWeight: '900',
-    color: '#ffffff',
+    fontWeight: '800',
+    color: themeTokens.colors.espresso,
     letterSpacing: -0.5,
+    textAlign: 'center',
   },
   brandTagline: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     marginTop: 4,
-  },
-  demoSection: {
-    marginBottom: 16,
-  },
-  demoTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  demoChips: {
-    gap: 8,
-    paddingBottom: 4,
-  },
-  demoChip: {
-    backgroundColor: '#111827',
-    borderWidth: 1,
-    borderColor: '#374151',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  demoChipText: {
-    color: '#d1d5db',
-    fontSize: 12,
-    fontWeight: '600',
+    textAlign: 'center',
   },
   card: {
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
+    backgroundColor: themeTokens.colors.surface,
+    borderRadius: 20,
+    padding: 24,
     borderWidth: 1,
-    borderColor: '#1e293b',
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    borderColor: themeTokens.colors.border,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   formTitle: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 16,
+    color: themeTokens.colors.textPrimary,
+  },
+  formSubtitle: {
+    fontSize: 13,
+    color: themeTokens.colors.textMuted,
+    marginTop: 4,
+    marginBottom: 20,
   },
   errorBox: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: themeTokens.colors.errorBg,
+    borderColor: themeTokens.colors.errorBorder,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
+  errorIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
   errorText: {
-    color: '#f87171',
-    fontSize: 12,
-    lineHeight: 18,
+    flex: 1,
+    color: themeTokens.colors.error,
+    fontSize: 13,
+    fontWeight: '500',
   },
   inputGroup: {
-    marginBottom: 16,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 18,
   },
   inputLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeTokens.colors.textSecondary,
     marginBottom: 6,
   },
-  toggleText: {
-    fontSize: 12,
-    color: '#818cf8',
-    fontWeight: '600',
-  },
   input: {
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeTokens.colors.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
+    color: themeTokens.colors.textPrimary,
   },
-  loginBtn: {
-    backgroundColor: '#4f46e5',
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
     borderRadius: 10,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: themeTokens.colors.textPrimary,
+  },
+  toggleBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  toggleBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: themeTokens.colors.primary,
+  },
+  primaryButton: {
+    backgroundColor: themeTokens.colors.espresso,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  loginBtnDisabled: {
-    opacity: 0.7,
+  buttonDisabled: {
+    opacity: 0.65,
   },
-  loginBtnText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 'bold',
+  primaryButtonText: {
+    color: themeTokens.colors.textLight,
+    fontSize: 16,
+    fontWeight: '700',
   },
-  serverToggle: {
+  securityNotice: {
     marginTop: 18,
     alignItems: 'center',
   },
-  serverToggleText: {
-    color: '#64748b',
+  securityNoticeText: {
     fontSize: 11,
-    textDecorationLine: 'underline',
+    color: themeTokens.colors.taupe,
+    fontWeight: '500',
   },
-  hostConfigBox: {
-    marginTop: 12,
+  serverSettingsSection: {
+    marginTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: themeTokens.colors.borderSubtle,
+    paddingTop: 16,
+  },
+  serverSettingsToggle: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  serverSettingsToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: themeTokens.colors.primary,
+  },
+  hostConfigCard: {
+    marginTop: 10,
     padding: 12,
-    backgroundColor: '#090d16',
-    borderRadius: 8,
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
   },
   hostConfigLabel: {
-    color: '#94a3b8',
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: '600',
+    color: themeTokens.colors.textSecondary,
     marginBottom: 6,
   },
   hostInput: {
+    backgroundColor: themeTokens.colors.surface,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 12,
+    fontSize: 13,
+    color: themeTokens.colors.textPrimary,
     marginBottom: 8,
   },
-  hostBtnRow: {
-    flexDirection: 'row',
-    gap: 6,
+  hostSaveButton: {
+    backgroundColor: themeTokens.colors.cocoa,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
   },
-  presetBtn: {
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
+  hostSaveButtonText: {
+    color: themeTokens.colors.textLight,
+    fontSize: 13,
+    fontWeight: '600',
   },
-  presetBtnText: {
-    color: '#94a3b8',
-    fontSize: 10,
-  },
-  saveHostBtn: {
-    backgroundColor: '#10b981',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginLeft: 'auto',
-  },
-  saveHostBtnText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  footerNote: {
-    color: '#475569',
+  hostHelpText: {
     fontSize: 11,
+    color: themeTokens.colors.textMuted,
+    marginTop: 6,
+    lineHeight: 15,
+  },
+  sectionHeading: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: themeTokens.colors.textPrimary,
+  },
+  sectionSub: {
+    fontSize: 13,
+    color: themeTokens.colors.textMuted,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  instituteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
+    marginBottom: 12,
+  },
+  instituteIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: themeTokens.colors.beige,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  instituteIconText: {
+    fontSize: 20,
+  },
+  instituteInfo: {
+    flex: 1,
+  },
+  instituteName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: themeTokens.colors.textPrimary,
+  },
+  instituteBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  codeBadge: {
+    backgroundColor: themeTokens.colors.espresso,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  codeBadgeText: {
+    color: themeTokens.colors.textLight,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  instituteRole: {
+    fontSize: 11,
+    color: themeTokens.colors.textMuted,
+    fontWeight: '500',
+  },
+  chevronText: {
+    fontSize: 22,
+    color: themeTokens.colors.taupe,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    marginTop: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
+    borderRadius: 10,
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: themeTokens.colors.textSecondary,
+  },
+  footerText: {
     textAlign: 'center',
+    fontSize: 11,
+    color: themeTokens.colors.taupe,
     marginTop: 24,
   },
 });

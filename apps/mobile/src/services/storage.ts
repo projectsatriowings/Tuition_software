@@ -1,56 +1,46 @@
 /**
  * Mobile Storage Service
- * Handles secure storage of JWT access and refresh tokens, user profile, and active institute.
+ * Uses expo-secure-store for encrypted persistent storage on Android/iOS,
+ * with resilient in-memory fallback for environments without native keystore.
  */
 
-// In-memory cache for fast synchronous access
+import * as SecureStore from 'expo-secure-store';
+
 const memoryStore: Record<string, string> = {};
 
 export const MobileStorage = {
   async setItem(key: string, value: string): Promise<void> {
     memoryStore[key] = value;
     try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(key, value);
-      }
+      await SecureStore.setItemAsync(key, value);
     } catch {
-      // Memory store acts as resilient fallback
+      // In-memory cache acts as fallback
     }
   },
 
   async getItem(key: string): Promise<string | null> {
-    if (memoryStore[key] !== undefined) {
-      return memoryStore[key];
-    }
     try {
-      if (typeof localStorage !== 'undefined') {
-        const val = localStorage.getItem(key);
-        if (val) {
-          memoryStore[key] = val;
-          return val;
-        }
+      const val = await SecureStore.getItemAsync(key);
+      if (val !== null && val !== undefined) {
+        memoryStore[key] = val;
+        return val;
       }
     } catch {
-      // Memory store fallback
+      // Fallback to memoryStore
     }
-    return null;
+    return memoryStore[key] ?? null;
   },
 
   async removeItem(key: string): Promise<void> {
     delete memoryStore[key];
     try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem(key);
-      }
-    } catch {}
+      await SecureStore.deleteItemAsync(key);
+    } catch {
+      // Ignore fallback delete
+    }
   },
 
   async clear(): Promise<void> {
     Object.keys(memoryStore).forEach((k) => delete memoryStore[k]);
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.clear();
-      }
-    } catch {}
   },
 };

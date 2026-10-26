@@ -8,6 +8,7 @@ import { ParentScreen } from './src/screens/parent/ParentScreen';
 import { StaffScreen } from './src/screens/staff/StaffScreen';
 import { AdminScreen } from './src/screens/academic_admin/AdminScreen';
 import { SuperAdminScreen } from './src/screens/super_admin/SuperAdminScreen';
+import { themeTokens } from '@tuition/shared';
 
 const RootNavigator: React.FC = () => {
   const { user, isAuthenticated, isLoading, needsPasswordChange } = useMobileAuth();
@@ -16,11 +17,11 @@ const RootNavigator: React.FC = () => {
     return (
       <View style={styles.splashContainer}>
         <View style={styles.logoCircle}>
-          <Text style={styles.logoIcon}>⚡</Text>
+          <Text style={styles.logoIcon}>T</Text>
         </View>
-        <Text style={styles.splashTitle}>TuitionOS</Text>
-        <Text style={styles.splashSub}>Enterprise Tuition Management</Text>
-        <ActivityIndicator size="large" color="#6366f1" style={{ marginTop: 24 }} />
+        <Text style={styles.splashTitle}>TuitionOS Enterprise</Text>
+        <Text style={styles.splashSub}>Multi-Institute Tuition Management</Text>
+        <ActivityIndicator size="large" color={themeTokens.colors.beige} style={{ marginTop: 24 }} />
       </View>
     );
   }
@@ -57,7 +58,7 @@ const RootNavigator: React.FC = () => {
 export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#030712" />
+      <StatusBar barStyle="light-content" backgroundColor={themeTokens.colors.espresso} />
       <AuthProvider>
         <RootNavigator />
       </AuthProvider>
@@ -68,49 +69,57 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: themeTokens.colors.background,
   },
   splashContainer: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: themeTokens.colors.espresso,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoCircle: {
-    width: 72,
-    height: 72,
+    width: 76,
+    height: 76,
     borderRadius: 24,
-    backgroundColor: '#4f46e5',
+    backgroundColor: themeTokens.colors.cocoa,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#4f46e5',
+    borderWidth: 2,
+    borderColor: themeTokens.colors.taupe,
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.3,
     shadowRadius: 16,
-    elevation: 10,
+    elevation: 8,
   },
   logoIcon: {
     fontSize: 36,
+    fontWeight: '900',
+    color: themeTokens.colors.textLight,
   },
   splashTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
-    color: '#ffffff',
-    marginTop: 16,
+    color: themeTokens.colors.textLight,
+    marginTop: 18,
     letterSpacing: -0.5,
   },
   splashSub: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: 4,
+    fontSize: 14,
+    color: themeTokens.colors.textLightMuted,
+    marginTop: 6,
+    fontWeight: '500',
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 24,
+    backgroundColor: themeTokens.colors.background,
   },
   unknownRoleText: {
-    color: '#f87171',
+    color: themeTokens.colors.textSecondary,
     fontSize: 16,
+    fontWeight: '600',
   },
 });

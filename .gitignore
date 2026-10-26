@@ -50,3 +50,8 @@ web-build/
 # Tests & Coverage
 coverage/
 .nyc_output/
+
+# Mobile Binary Artifacts
+*.apk
+*.aab
+

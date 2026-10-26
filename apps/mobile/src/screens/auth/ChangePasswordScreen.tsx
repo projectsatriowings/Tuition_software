@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
+import { themeTokens } from '@tuition/shared';
 
 export const ChangePasswordScreen: React.FC = () => {
   const { user, changePassword, logout } = useMobileAuth();
@@ -66,7 +67,7 @@ export const ChangePasswordScreen: React.FC = () => {
 
         {errorMsg && (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>⚠ {errorMsg}</Text>
+            <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
           </View>
         )}
 
@@ -76,7 +77,7 @@ export const ChangePasswordScreen: React.FC = () => {
             style={styles.input}
             secureTextEntry
             placeholder="Enter temporary password"
-            placeholderTextColor="#64748b"
+            placeholderTextColor={themeTokens.colors.textSubtle}
             value={currentPassword}
             onChangeText={setCurrentPassword}
           />
@@ -88,7 +89,7 @@ export const ChangePasswordScreen: React.FC = () => {
             style={styles.input}
             secureTextEntry
             placeholder="At least 8 characters"
-            placeholderTextColor="#64748b"
+            placeholderTextColor={themeTokens.colors.textSubtle}
             value={newPassword}
             onChangeText={setNewPassword}
           />
@@ -100,7 +101,7 @@ export const ChangePasswordScreen: React.FC = () => {
             style={styles.input}
             secureTextEntry
             placeholder="Repeat new password"
-            placeholderTextColor="#64748b"
+            placeholderTextColor={themeTokens.colors.textSubtle}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
           />
@@ -110,9 +111,10 @@ export const ChangePasswordScreen: React.FC = () => {
           style={[styles.submitBtn, loading && styles.btnDisabled]}
           onPress={handleSubmit}
           disabled={loading}
+          activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={themeTokens.colors.textLight} />
           ) : (
             <Text style={styles.submitBtnText}>Update Password & Continue</Text>
           )}
@@ -129,96 +131,110 @@ export const ChangePasswordScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: themeTokens.colors.background,
     justifyContent: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
+    backgroundColor: themeTokens.colors.surface,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
     padding: 24,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginBottom: 16,
   },
   lockIcon: {
-    fontSize: 24,
+    fontSize: 26,
   },
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     textAlign: 'center',
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 20,
   },
   errorBox: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: themeTokens.colors.errorBg,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    borderRadius: 8,
-    padding: 10,
+    borderColor: themeTokens.colors.errorBorder,
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 16,
   },
   errorText: {
-    color: '#f87171',
-    fontSize: 12,
+    color: themeTokens.colors.error,
+    fontSize: 13,
+    fontWeight: '500',
   },
   inputGroup: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   label: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: themeTokens.colors.textSecondary,
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#ffffff',
+    borderColor: themeTokens.colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: themeTokens.colors.textPrimary,
     fontSize: 14,
   },
   submitBtn: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: themeTokens.colors.espresso,
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 10,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   btnDisabled: {
     opacity: 0.6,
   },
   submitBtnText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-    fontSize: 14,
+    color: themeTokens.colors.textLight,
+    fontWeight: '700',
+    fontSize: 15,
   },
   logoutBtn: {
-    marginTop: 14,
+    marginTop: 16,
     alignItems: 'center',
   },
   logoutBtnText: {
-    color: '#64748b',
+    color: themeTokens.colors.taupe,
     fontSize: 13,
+    fontWeight: '600',
   },
 });

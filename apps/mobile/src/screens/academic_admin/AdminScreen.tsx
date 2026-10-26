@@ -9,7 +9,6 @@ import {
   RefreshControl,
   Alert,
   TextInput,
-  Modal,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch, generateIdempotencyKey } from '../../services/api';
@@ -17,6 +16,7 @@ import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
+import { themeTokens } from '@tuition/shared';
 
 export const AdminScreen: React.FC = () => {
   const { user, institute } = useMobileAuth();
@@ -92,11 +92,10 @@ export const AdminScreen: React.FC = () => {
   };
 
   const handleRecordPayment = async () => {
-    if (!paymentStudentId.trim() || !paymentAmount.trim()) {
-      Alert.alert('Validation Error', 'Please select a student and enter amount');
+    if (!paymentStudentId) {
+      Alert.alert('Validation Error', 'Please select a student from the list');
       return;
     }
-
     const amt = parseFloat(paymentAmount.trim());
     if (isNaN(amt) || amt <= 0) {
       Alert.alert('Validation Error', 'Please enter a valid positive payment amount');
@@ -190,14 +189,14 @@ export const AdminScreen: React.FC = () => {
 
       {loading ? (
         <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={themeTokens.colors.primary} />
           <Text style={styles.loadingText}>Compiling institute analytics...</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.content}
           contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeTokens.colors.primary} />}
         >
           {/* TAB 1: EXECUTIVE KPIs */}
           {activeTab === 'kpi' && (
@@ -210,7 +209,7 @@ export const AdminScreen: React.FC = () => {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.instName}>{institute?.name || 'Apex Academy of Science'}</Text>
-                    <Text style={styles.instMeta}>Code: {institute?.code || 'INST001'} &bull; Academic Year 2026</Text>
+                    <Text style={styles.instMeta}>Code: {institute?.code || 'INST001'} • Academic Year 2026</Text>
                   </View>
                   <Badge label="ACTIVE INSTITUTE" variant="success" size="sm" />
                 </View>
@@ -218,7 +217,7 @@ export const AdminScreen: React.FC = () => {
 
               {/* KPI Matrix */}
               <View style={styles.matrixGrid}>
-                <View style={[styles.kpiBox, { backgroundColor: '#1e1b4b' }]}>
+                <View style={styles.kpiBox}>
                   <Text style={styles.kpiLabel}>TOTAL STUDENTS</Text>
                   <Text style={styles.kpiValue}>
                     {dashboardSummary?.studentsCount || students.length || 0}
@@ -226,7 +225,7 @@ export const AdminScreen: React.FC = () => {
                   <Text style={styles.kpiSub}>Active Enrollment</Text>
                 </View>
 
-                <View style={[styles.kpiBox, { backgroundColor: '#1e293b' }]}>
+                <View style={styles.kpiBox}>
                   <Text style={styles.kpiLabel}>ACTIVE BATCHES</Text>
                   <Text style={styles.kpiValue}>
                     {dashboardSummary?.batchesCount || batches.length || 0}
@@ -234,17 +233,17 @@ export const AdminScreen: React.FC = () => {
                   <Text style={styles.kpiSub}>Classes Running</Text>
                 </View>
 
-                <View style={[styles.kpiBox, { backgroundColor: '#064e3b' }]}>
+                <View style={styles.kpiBox}>
                   <Text style={styles.kpiLabel}>COLLECTED REVENUE</Text>
-                  <Text style={[styles.kpiValue, { color: '#34d399' }]}>
+                  <Text style={[styles.kpiValue, { color: themeTokens.colors.success }]}>
                     {formatRupee(financialSummary?.totalCollected ?? financialSummary?.totalCollections ?? 0)}
                   </Text>
                   <Text style={styles.kpiSub}>Cleared to Date</Text>
                 </View>
 
-                <View style={[styles.kpiBox, { backgroundColor: '#450a0a' }]}>
+                <View style={styles.kpiBox}>
                   <Text style={styles.kpiLabel}>OUTSTANDING DUES</Text>
-                  <Text style={[styles.kpiValue, { color: '#f87171' }]}>
+                  <Text style={[styles.kpiValue, { color: themeTokens.colors.error }]}>
                     {formatRupee(financialSummary?.totalOutstanding || 0)}
                   </Text>
                   <Text style={styles.kpiSub}>Pending Recovery</Text>
@@ -279,13 +278,13 @@ export const AdminScreen: React.FC = () => {
                   </View>
                   <View style={styles.finCol}>
                     <Text style={styles.finLabel}>Collections</Text>
-                    <Text style={[styles.finVal, { color: '#34d399' }]}>
+                    <Text style={[styles.finVal, { color: themeTokens.colors.success }]}>
                       {formatRupee(financialSummary?.totalCollected ?? financialSummary?.totalCollections ?? 0)}
                     </Text>
                   </View>
                   <View style={styles.finCol}>
                     <Text style={styles.finLabel}>Outstanding</Text>
-                    <Text style={[styles.finVal, { color: '#f87171' }]}>
+                    <Text style={[styles.finVal, { color: themeTokens.colors.error }]}>
                       {formatRupee(financialSummary?.totalOutstanding || 0)}
                     </Text>
                   </View>
@@ -308,7 +307,7 @@ export const AdminScreen: React.FC = () => {
                     <View style={styles.outRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.outName}>{item.studentName || 'Student'}</Text>
-                        <Text style={styles.outRoll}>Roll: {item.rollNumber} &bull; Batch: {item.batchName}</Text>
+                        <Text style={styles.outRoll}>Roll: {item.rollNumber} • Batch: {item.batchName}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.outAmt}>{formatRupee(item.balanceAmount)}</Text>
@@ -355,7 +354,7 @@ export const AdminScreen: React.FC = () => {
                   style={styles.textInput}
                   keyboardType="numeric"
                   placeholder="e.g. 5000"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={themeTokens.colors.textSubtle}
                   value={paymentAmount}
                   onChangeText={setPaymentAmount}
                 />
@@ -386,7 +385,7 @@ export const AdminScreen: React.FC = () => {
                 <TextInput
                   style={styles.textInput}
                   placeholder="e.g. UPI/2026/0491823"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={themeTokens.colors.textSubtle}
                   value={paymentReference}
                   onChangeText={setPaymentReference}
                 />
@@ -397,7 +396,7 @@ export const AdminScreen: React.FC = () => {
                   disabled={paymentSubmitting}
                 >
                   {paymentSubmitting ? (
-                    <ActivityIndicator color="#ffffff" size="small" />
+                    <ActivityIndicator color={themeTokens.colors.textLight} size="small" />
                   ) : (
                     <Text style={styles.recordBtnText}>Collect Payment & Generate Receipt</Text>
                   )}
@@ -420,7 +419,7 @@ export const AdminScreen: React.FC = () => {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.stuDirName}>{st.user?.fullName}</Text>
                       <Text style={styles.stuDirMeta}>
-                        Roll: {st.rollNumber} &bull; Batch: {st.batch?.name || 'Class 12'}
+                        Roll: {st.rollNumber} • Batch: {st.batch?.name || 'Class 12'}
                       </Text>
                       <Text style={styles.stuDirEmail}>📧 {st.user?.email || 'N/A'}</Text>
                     </View>
@@ -446,31 +445,31 @@ export const AdminScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#030712',
+    backgroundColor: themeTokens.colors.background,
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: themeTokens.colors.border,
   },
   tabItem: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
   activeTabItem: {
-    borderBottomColor: '#6366f1',
+    borderBottomColor: themeTokens.colors.espresso,
   },
   tabText: {
-    color: '#94a3b8',
-    fontSize: 11,
+    color: themeTokens.colors.textMuted,
+    fontSize: 12,
     fontWeight: '600',
   },
   activeTabText: {
-    color: '#818cf8',
+    color: themeTokens.colors.espresso,
     fontWeight: '700',
   },
   content: {
@@ -487,7 +486,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   loadingText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     marginTop: 12,
     fontSize: 13,
   },
@@ -500,7 +499,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#1e293b',
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -508,12 +509,12 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   instName: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 16,
     fontWeight: '800',
   },
   instMeta: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 11,
     marginTop: 2,
   },
@@ -525,35 +526,41 @@ const styles = StyleSheet.create({
   },
   kpiBox: {
     width: '48%',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
+    backgroundColor: themeTokens.colors.surface,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: themeTokens.colors.border,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   kpiLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#cbd5e1',
+    color: themeTokens.colors.textMuted,
     letterSpacing: 0.5,
   },
   kpiValue: {
     fontSize: 22,
     fontWeight: '900',
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     marginVertical: 4,
   },
   kpiSub: {
-    fontSize: 10,
-    color: '#94a3b8',
+    fontSize: 11,
+    color: themeTokens.colors.taupe,
   },
   cardSectionTitle: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 6,
   },
   opsNote: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 10,
@@ -563,7 +570,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   feeTitle: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -577,11 +584,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   finLabel: {
-    color: '#64748b',
+    color: themeTokens.colors.textMuted,
     fontSize: 11,
   },
   finVal: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 17,
     fontWeight: '900',
     marginTop: 4,
@@ -595,15 +602,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
   },
   sectionCount: {
     fontSize: 12,
-    color: '#818cf8',
+    color: themeTokens.colors.primary,
     fontWeight: '600',
   },
   emptyText: {
-    color: '#64748b',
+    color: themeTokens.colors.textMuted,
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 10,
@@ -614,35 +621,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   outName: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 14,
     fontWeight: '700',
   },
   outRoll: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 11,
     marginTop: 2,
   },
   outAmt: {
-    color: '#f87171',
+    color: themeTokens.colors.error,
     fontSize: 16,
     fontWeight: '800',
     marginBottom: 4,
   },
   formTitle: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 16,
     fontWeight: '800',
   },
   formSubtitle: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 2,
     marginBottom: 14,
   },
   inputLabel: {
-    color: '#cbd5e1',
+    color: themeTokens.colors.textSecondary,
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 6,
@@ -652,35 +659,35 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   stChip: {
-    backgroundColor: '#1e293b',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeTokens.colors.border,
   },
   stChipActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.3)',
-    borderColor: '#6366f1',
+    backgroundColor: themeTokens.colors.espresso,
+    borderColor: themeTokens.colors.espresso,
   },
   stChipText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
   },
   stChipTextActive: {
-    color: '#a5b4fc',
+    color: themeTokens.colors.textLight,
     fontWeight: 'bold',
   },
   textInput: {
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeTokens.colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 14,
   },
   methodRow: {
@@ -689,35 +696,40 @@ const styles = StyleSheet.create({
   },
   methodBtn: {
     flex: 1,
-    backgroundColor: '#090d16',
+    backgroundColor: themeTokens.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: themeTokens.colors.border,
     paddingVertical: 8,
     borderRadius: 6,
     alignItems: 'center',
   },
   methodBtnActive: {
-    backgroundColor: '#3730a3',
-    borderColor: '#6366f1',
+    backgroundColor: themeTokens.colors.espresso,
+    borderColor: themeTokens.colors.espresso,
   },
   methodBtnText: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textSecondary,
     fontSize: 11,
     fontWeight: '600',
   },
   methodBtnTextActive: {
-    color: '#ffffff',
+    color: themeTokens.colors.textLight,
     fontWeight: 'bold',
   },
   recordBtn: {
-    backgroundColor: '#10b981',
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: themeTokens.colors.espresso,
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
     marginTop: 18,
+    shadowColor: themeTokens.colors.espresso,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   recordBtnText: {
-    color: '#ffffff',
+    color: themeTokens.colors.textLight,
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -727,17 +739,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stuDirName: {
-    color: '#ffffff',
+    color: themeTokens.colors.textPrimary,
     fontSize: 14,
     fontWeight: '700',
   },
   stuDirMeta: {
-    color: '#94a3b8',
+    color: themeTokens.colors.textMuted,
     fontSize: 12,
     marginTop: 2,
   },
   stuDirEmail: {
-    color: '#64748b',
+    color: themeTokens.colors.textSubtle,
     fontSize: 11,
     marginTop: 4,
   },

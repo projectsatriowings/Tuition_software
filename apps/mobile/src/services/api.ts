@@ -56,7 +56,19 @@ export async function mobileApiFetch<T = any>(
   }
 
   const token = await MobileStorage.getItem(AppConfig.storageKeys.accessToken);
-  const instituteId = await MobileStorage.getItem(AppConfig.storageKeys.activeInstitute);
+  const storedInstitute = await MobileStorage.getItem(AppConfig.storageKeys.activeInstitute);
+  let resolvedInstituteId: string | null = null;
+  if (storedInstitute) {
+    if (storedInstitute.startsWith('{')) {
+      try {
+        resolvedInstituteId = JSON.parse(storedInstitute).id || null;
+      } catch {
+        resolvedInstituteId = storedInstitute;
+      }
+    } else {
+      resolvedInstituteId = storedInstitute;
+    }
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -67,8 +79,8 @@ export async function mobileApiFetch<T = any>(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  if (instituteId) {
-    headers['x-institute-id'] = instituteId;
+  if (resolvedInstituteId) {
+    headers['x-institute-id'] = resolvedInstituteId;
   }
   if (options.idempotencyKey) {
     headers['x-idempotency-key'] = options.idempotencyKey;

@@ -11,12 +11,29 @@ export interface MobileUser {
   role: 'SUPER_ADMIN' | 'ACADEMIC_ADMIN' | 'STAFF' | 'PARENT' | 'STUDENT';
   instituteId?: string | null;
   mustChangePassword?: boolean;
+  memberships?: Array<{
+    id: string;
+    role: string;
+    institute: MobileInstitute;
+  }>;
 }
 
 export interface MobileInstitute {
   id: string;
   code: string;
   name: string;
+}
+
+export interface PendingAuthSession {
+  accessToken: string;
+  refreshToken?: string;
+  user: MobileUser;
+  memberships: Array<{
+    id: string;
+    role: string;
+    institute: MobileInstitute;
+  }>;
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextType {
@@ -29,7 +46,15 @@ interface AuthContextType {
   needsPasswordChange: boolean;
   apiBaseUrl: string;
   customHost: string;
-  login: (identifier: string, password: string, instituteCode?: string) => Promise<{ success: boolean; error?: string }>;
+  pendingAuthSession: PendingAuthSession | null;
+  login: (
+    identifier: string,
+    password: string,
+    instituteCode?: string
+  ) => Promise<{ success: boolean; error?: string; pendingAuth?: boolean }>;
+  selectInstituteAndCompleteLogin: (selectedInstitute: MobileInstitute) => Promise<void>;
+  cancelPendingAuth: () => void;
+  switchInstitute: (newInst: MobileInstitute) => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateApiBaseUrl: (newUrl: string) => void;
@@ -44,6 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(false);
   const [apiBaseUrl, setApiBaseUrlState] = useState<string>(getApiBaseUrl());
+  const [pendingAuthSession, setPendingAuthSession] = useState<PendingAuthSession | null>(null);
 
   useEffect(() => {
     checkExistingSession();
@@ -57,10 +83,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cachedInst = await MobileStorage.getItem(AppConfig.storageKeys.activeInstitute);
 
       if (token && cachedUser) {
-        setUser(JSON.parse(cachedUser));
-        if (cachedInst) setInstitute(JSON.parse(cachedInst));
+        try {
+          const parsedUser = JSON.parse(cachedUser);
+          setUser(parsedUser);
+          setMustChangePassword(!!parsedUser.mustChangePassword);
+        } catch {
+          // ignore corrupted user json
+        }
 
-        // Background verification
+        if (cachedInst) {
+          try {
+            setInstitute(JSON.parse(cachedInst));
+          } catch {
+            // backward compatibility if raw ID string
+            setInstitute({ id: cachedInst, code: '', name: 'Selected Institute' });
+          }
+        }
+
+        // Background session verification
         const meRes = await mobileApiFetch('/auth/me');
         if (meRes.success && meRes.data?.user) {
           setUser(meRes.data.user);
@@ -81,40 +121,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     identifier: string,
     password: string,
     instituteCode?: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; pendingAuth?: boolean }> => {
     try {
+      const payload: Record<string, string | undefined> = {
+        identifier: identifier.trim(),
+        password,
+      };
+      if (instituteCode && instituteCode.trim()) {
+        payload.instituteCode = instituteCode.trim();
+      }
+
       const res = await mobileApiFetch('/auth/login', {
         method: 'POST',
-        body: {
-          identifier: identifier.trim(),
-          password,
-          instituteCode: instituteCode?.trim() || undefined,
-        },
+        body: payload,
       });
 
       if (res.success && res.data) {
-        const { accessToken, refreshToken, user: authUser, institute: authInst, mustChangePassword: needChange } = res.data;
+        const { accessToken, refreshToken, user: authUser, institute: authInst, memberships, mustChangePassword: needChange } = res.data;
 
+        // If user belongs to multiple active institutes and no explicit institute was targeted, prompt selection
+        if (memberships && memberships.length > 1 && !instituteCode) {
+          setPendingAuthSession({
+            accessToken,
+            refreshToken,
+            user: authUser,
+            memberships,
+            mustChangePassword: !!needChange,
+          });
+          return { success: true, pendingAuth: true };
+        }
+
+        // Single institute, Super Admin, or direct code resolution: finalize login directly
         await MobileStorage.setItem(AppConfig.storageKeys.accessToken, accessToken);
         if (refreshToken) {
           await MobileStorage.setItem(AppConfig.storageKeys.refreshToken, refreshToken);
         }
         await MobileStorage.setItem(AppConfig.storageKeys.userProfile, JSON.stringify(authUser));
         if (authInst) {
-          await MobileStorage.setItem(AppConfig.storageKeys.activeInstitute, authInst.id);
+          await MobileStorage.setItem(AppConfig.storageKeys.activeInstitute, JSON.stringify(authInst));
+        } else {
+          await MobileStorage.removeItem(AppConfig.storageKeys.activeInstitute);
         }
 
         setUser(authUser);
         setInstitute(authInst || null);
         setMustChangePassword(!!needChange);
+        setPendingAuthSession(null);
 
         return { success: true };
       }
 
-      return { success: false, error: res.error || 'Authentication failed' };
+      return { success: false, error: res.error || 'Authentication failed. Please verify your credentials.' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Login request error' };
     }
+  };
+
+  const selectInstituteAndCompleteLogin = async (selectedInstitute: MobileInstitute) => {
+    if (!pendingAuthSession) return;
+    try {
+      const { accessToken, refreshToken, user: authUser, mustChangePassword: needChange } = pendingAuthSession;
+      await MobileStorage.setItem(AppConfig.storageKeys.accessToken, accessToken);
+      if (refreshToken) {
+        await MobileStorage.setItem(AppConfig.storageKeys.refreshToken, refreshToken);
+      }
+      await MobileStorage.setItem(AppConfig.storageKeys.userProfile, JSON.stringify(authUser));
+      await MobileStorage.setItem(AppConfig.storageKeys.activeInstitute, JSON.stringify(selectedInstitute));
+
+      setUser(authUser);
+      setInstitute(selectedInstitute);
+      setMustChangePassword(!!needChange);
+      setPendingAuthSession(null);
+    } catch (e) {
+      console.error('Error completing institute selection', e);
+    }
+  };
+
+  const cancelPendingAuth = () => {
+    setPendingAuthSession(null);
+  };
+
+  const switchInstitute = async (newInst: MobileInstitute) => {
+    setInstitute(newInst);
+    await MobileStorage.setItem(AppConfig.storageKeys.activeInstitute, JSON.stringify(newInst));
   };
 
   const logout = async () => {
@@ -125,6 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setInstitute(null);
     setMustChangePassword(false);
+    setPendingAuthSession(null);
   };
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
@@ -136,7 +226,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.success) {
         setMustChangePassword(false);
         if (user) {
-          setUser({ ...user, mustChangePassword: false });
+          const updatedUser = { ...user, mustChangePassword: false };
+          setUser(updatedUser);
+          await MobileStorage.setItem(AppConfig.storageKeys.userProfile, JSON.stringify(updatedUser));
         }
         return { success: true };
       }
@@ -163,7 +255,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         needsPasswordChange: mustChangePassword,
         apiBaseUrl,
         customHost: apiBaseUrl,
+        pendingAuthSession,
         login,
+        selectInstituteAndCompleteLogin,
+        cancelPendingAuth,
+        switchInstitute,
         logout,
         changePassword,
         updateApiBaseUrl,
