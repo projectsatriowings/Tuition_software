@@ -126,9 +126,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
           <View style={styles.logoBadge}>
             <Text style={styles.logoText}>T</Text>
           </View>
-          <h1 style={styles.brandTitleText as any}>
-            <Text style={styles.brandTitle}>TuitionOS Enterprise</Text>
-          </h1>
+          <Text style={styles.brandTitle}>TuitionOS Enterprise</Text>
           <Text style={styles.brandTagline}>Multi-Institute Tuition Management System</Text>
         </View>
 

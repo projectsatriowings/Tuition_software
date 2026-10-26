@@ -37,8 +37,7 @@
       }
     },
     "plugins": [
-      "./plugins/withMonorepoFix.js",
-      "expo-secure-store"
+      "./plugins/withMonorepoFix.js"
     ]
   }
 }
