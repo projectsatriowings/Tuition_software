@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   listStudents,
   admitStudent,
+  getAdmissionPrefixInfo,
   getStudentById,
   getMyStudentProfile,
   updateStudent,
@@ -15,6 +16,7 @@ router.use(authenticateToken);
 router.use(requireInstituteContext);
 
 // Student management routes
+router.get('/admission-prefix', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getAdmissionPrefixInfo);
 router.get('/my/profile', requireRole('STUDENT'), getMyStudentProfile);
 router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listStudents);
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), admitStudent);

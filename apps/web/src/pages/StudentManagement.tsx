@@ -25,6 +25,15 @@ export const StudentManagement: React.FC = () => {
   const [showAdmitModal, setShowAdmitModal] = useState(false);
   const [admitLoading, setAdmitLoading] = useState(false);
   const [admitError, setAdmitError] = useState<string | null>(null);
+  const [prefixInfo, setPrefixInfo] = useState<{
+    prefix: string;
+    currentYear: number;
+    previewFormat: string;
+  } | null>(null);
+  const [admittedSuccess, setAdmittedSuccess] = useState<{
+    admissionNumber: string;
+    name: string;
+  } | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -66,6 +75,18 @@ export const StudentManagement: React.FC = () => {
     fetchData();
   }, [search, statusFilter, batchFilter]);
 
+  useEffect(() => {
+    if (showAdmitModal) {
+      apiFetch('/students/admission-prefix')
+        .then((res) => {
+          if (res.success && res.data) {
+            setPrefixInfo(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [showAdmitModal]);
+
   const handleAdmitSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdmitError(null);
@@ -75,7 +96,6 @@ export const StudentManagement: React.FC = () => {
       const res = await apiFetch('/students', {
         method: 'POST',
         body: JSON.stringify({
-          admissionNumber: formData.admissionNumber.trim().toUpperCase(),
           rollNumber: formData.rollNumber.trim() || undefined,
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
@@ -89,6 +109,12 @@ export const StudentManagement: React.FC = () => {
 
       if (res.success) {
         setShowAdmitModal(false);
+        const newStudent = res.data?.student;
+        const generatedNum = res.data?.admissionNumber || newStudent?.admissionNumber || 'Assigned';
+        setAdmittedSuccess({
+          admissionNumber: generatedNum,
+          name: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+        });
         setFormData({
           admissionNumber: '',
           rollNumber: '',
@@ -312,15 +338,24 @@ export const StudentManagement: React.FC = () => {
             <form onSubmit={handleAdmitSubmit} className="space-y-4 mt-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Admission Number (Unique)*</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.admissionNumber}
-                    onChange={(e) => setFormData({ ...formData, admissionNumber: e.target.value.toUpperCase() })}
-                    placeholder="e.g. ADM-2026-001"
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] uppercase focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                    Admission Number
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value={prefixInfo ? `${prefixInfo.prefix}-${prefixInfo.currentYear}-###` : 'Auto-generated on save'}
+                      className="w-full bg-[#EFEBE9]/60 border border-[#D7CCC8] text-[#8D6E63] font-mono font-semibold text-xs rounded-xl px-3 py-2 cursor-not-allowed select-none"
+                    />
+                    <span className="absolute right-2.5 top-2 text-[10px] bg-[#D7CCC8]/60 text-[#4E342E] font-bold px-1.5 py-0.5 rounded">
+                      AUTO
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#8D6E63] mt-1 italic">
+                    Generated automatically for this institute
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-[#4E342E] mb-1">Class Roll Number</label>
@@ -435,6 +470,38 @@ export const StudentManagement: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admission Success Confirmation Modal */}
+      {admittedSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+              <CheckCircle className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-[#2D1E18]">Student Admitted Successfully!</h3>
+              <p className="text-xs text-[#8D6E63] mt-1">{admittedSuccess.name}</p>
+            </div>
+            <div className="bg-[#FDFBF7] border-2 border-dashed border-[#8D6E63]/40 rounded-2xl p-4">
+              <span className="text-[11px] font-semibold tracking-wider text-[#8D6E63] uppercase block mb-1">
+                Generated Admission Number
+              </span>
+              <span className="text-2xl font-mono font-black text-[#4E342E] tracking-wider select-all">
+                {admittedSuccess.admissionNumber}
+              </span>
+              <p className="text-[11px] text-emerald-700 font-medium mt-1">
+                Permanently assigned and recorded for this student
+              </p>
+            </div>
+            <button
+              onClick={() => setAdmittedSuccess(null)}
+              className="w-full bg-[#4E342E] hover:bg-[#3E2723] text-[#FDFBF7] text-xs font-bold py-2.5 rounded-xl transition shadow-md"
+            >
+              Done & Close
+            </button>
           </div>
         </div>
       )}

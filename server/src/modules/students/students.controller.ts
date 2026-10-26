@@ -3,11 +3,16 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
+import {
+  generateNextAdmissionNumber,
+  getOrSetInstitutePrefix,
+  getAdmissionYear,
+} from './admission-number.service.js';
 
 const prisma = new PrismaClient();
 
 export const studentAdmissionSchema = z.object({
-  admissionNumber: z.string().min(1, 'Admission number is required').max(50),
+  admissionNumber: z.string().optional(), // Automatically generated on server
   rollNumber: z.string().optional(),
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
@@ -146,24 +151,6 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
     }
 
     const data = parse.data;
-    const admissionNumber = data.admissionNumber.trim().toUpperCase();
-
-    // Check unique admissionNumber in this institute
-    const existing = await prisma.student.findUnique({
-      where: {
-        instituteId_admissionNumber: {
-          instituteId,
-          admissionNumber,
-        },
-      },
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        error: `Admission number '${admissionNumber}' is already registered in this institute`,
-      });
-    }
 
     let parsedDob: Date | null = null;
     if (data.dob) {
@@ -175,99 +162,131 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       parsedAdmissionDate = new Date(data.admissionDate);
     }
 
-    // Execute in transaction
-    const result = await prisma.$transaction(async (tx) => {
-      let studentUser = null;
-      let tempPassword = null;
+    // Execute in transaction with safe retry handling for pooler concurrency and unique-constraint conflicts
+    let result: any;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        result = await prisma.$transaction(
+          async (tx) => {
+            // Generate atomic, concurrency-safe institute-based admission number
+            const admissionInfo = await generateNextAdmissionNumber(
+              tx,
+              instituteId,
+              parsedAdmissionDate
+            );
+            const admissionNumber = admissionInfo.admissionNumber;
 
-      if (data.createLoginAccount && (data.email || data.phone)) {
-        tempPassword = data.initialPassword || `Student#${generateSecureRandomToken(4)}2026`;
-        const passwordHash = await hashPassword(tempPassword);
+            let studentUser = null;
+            let tempPassword = null;
 
-        studentUser = await tx.user.create({
-          data: {
-            email: data.email?.trim() || null,
-            phone: data.phone?.trim() || null,
-            fullName: `${data.firstName.trim()} ${data.lastName.trim()}`,
-            passwordHash,
-            role: 'STUDENT',
-            isActive: true,
-            mustChangePassword: true,
+            if (data.createLoginAccount && (data.email || data.phone)) {
+              tempPassword = data.initialPassword || `Student#${generateSecureRandomToken(4)}2026`;
+              const passwordHash = await hashPassword(tempPassword);
+
+              studentUser = await tx.user.create({
+                data: {
+                  email: data.email?.trim() || null,
+                  phone: data.phone?.trim() || null,
+                  fullName: `${data.firstName.trim()} ${data.lastName.trim()}`,
+                  passwordHash,
+                  role: 'STUDENT',
+                  isActive: true,
+                  mustChangePassword: true,
+                },
+              });
+
+              await tx.instituteMembership.create({
+                data: {
+                  instituteId,
+                  userId: studentUser.id,
+                  role: 'STUDENT',
+                  isActive: true,
+                },
+              });
+            }
+
+            // Create Student profile
+            const student = await tx.student.create({
+              data: {
+                instituteId,
+                userId: studentUser?.id || null,
+                admissionNumber,
+                rollNumber: data.rollNumber?.trim() || null,
+                firstName: data.firstName.trim(),
+                lastName: data.lastName.trim(),
+                dob: parsedDob,
+                gender: data.gender || null,
+                bloodGroup: data.bloodGroup?.trim() || null,
+                notes: data.notes?.trim() || null,
+                admissionDate: parsedAdmissionDate,
+                status: 'ACTIVE',
+              },
+            });
+
+            // Batch enrollment if provided
+            if (data.batchId) {
+              // Validate batch belongs to this institute
+              const batch = await tx.batch.findFirst({
+                where: { id: data.batchId, instituteId },
+              });
+
+              if (!batch) {
+                throw new Error('Selected batch does not belong to this institute');
+              }
+
+              await tx.studentEnrollment.create({
+                data: {
+                  studentId: student.id,
+                  batchId: data.batchId,
+                  isActive: true,
+                },
+              });
+            }
+
+            // Record Audit Log
+            await tx.auditLog.create({
+              data: {
+                instituteId,
+                userId: req.user?.userId || null,
+                action: 'STUDENT_ADMITTED',
+                entityType: 'Student',
+                entityId: student.id,
+                newValues: {
+                  admissionNumber: student.admissionNumber,
+                  name: `${student.firstName} ${student.lastName}`,
+                  batchId: data.batchId || null,
+                },
+              },
+            });
+
+            return { student, studentUser, tempPassword, admissionInfo };
           },
-        });
-
-        await tx.instituteMembership.create({
-          data: {
-            instituteId,
-            userId: studentUser.id,
-            role: 'STUDENT',
-            isActive: true,
-          },
-        });
-      }
-
-      // Create Student profile
-      const student = await tx.student.create({
-        data: {
-          instituteId,
-          userId: studentUser?.id || null,
-          admissionNumber,
-          rollNumber: data.rollNumber?.trim() || null,
-          firstName: data.firstName.trim(),
-          lastName: data.lastName.trim(),
-          dob: parsedDob,
-          gender: data.gender || null,
-          bloodGroup: data.bloodGroup?.trim() || null,
-          notes: data.notes?.trim() || null,
-          admissionDate: parsedAdmissionDate,
-          status: 'ACTIVE',
-        },
-      });
-
-      // Batch enrollment if provided
-      if (data.batchId) {
-        // Validate batch belongs to this institute
-        const batch = await tx.batch.findFirst({
-          where: { id: data.batchId, instituteId },
-        });
-
-        if (!batch) {
-          throw new Error('Selected batch does not belong to this institute');
+          {
+            maxWait: 15000,
+            timeout: 20000,
+          }
+        );
+        break; // Successfully committed, exit retry loop
+      } catch (txErr: any) {
+        // Retry only on transient pool acquisition timeouts, write conflicts, or unique constraint race
+        if (
+          attempt < 3 &&
+          (txErr.code === 'P2028' || txErr.code === 'P2034' || txErr.code === 'P2002')
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+          continue;
         }
-
-        await tx.studentEnrollment.create({
-          data: {
-            studentId: student.id,
-            batchId: data.batchId,
-            isActive: true,
-          },
-        });
+        throw txErr;
       }
-
-      // Record Audit Log
-      await tx.auditLog.create({
-        data: {
-          instituteId,
-          userId: req.user?.userId || null,
-          action: 'STUDENT_ADMITTED',
-          entityType: 'Student',
-          entityId: student.id,
-          newValues: {
-            admissionNumber: student.admissionNumber,
-            name: `${student.firstName} ${student.lastName}`,
-            batchId: data.batchId || null,
-          },
-        },
-      });
-
-      return { student, studentUser, tempPassword };
-    });
+    }
 
     return res.status(201).json({
       success: true,
       message: 'Student admitted successfully',
       data: {
         student: result.student,
+        admissionNumber: result.student.admissionNumber,
+        admissionInfo: result.admissionInfo,
         userAccount: result.studentUser ? {
           id: result.studentUser.id,
           email: result.studentUser.email,
@@ -282,6 +301,34 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
     }
     console.error('[Admit Student Error]', err);
     return res.status(500).json({ success: false, error: 'Failed to admit student' });
+  }
+}
+
+/**
+ * Get admission number prefix & preview pattern for the active institute
+ */
+export async function getAdmissionPrefixInfo(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+
+    const prefix = await getOrSetInstitutePrefix(prisma, instituteId);
+    const currentYear = getAdmissionYear(new Date());
+
+    return res.json({
+      success: true,
+      data: {
+        prefix,
+        currentYear,
+        previewFormat: `${prefix}-${currentYear}-001`,
+        note: 'Generated automatically for this institute',
+      },
+    });
+  } catch (err: any) {
+    console.error('[Get Admission Prefix Error]', err);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to get admission prefix' });
   }
 }
 
