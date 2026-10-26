@@ -7,7 +7,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "prebuild": "expo prebuild --platform android --no-install",
+    "studio": "powershell -Command \"Start-Process 'C:\\Program Files\\Android\\Android Studio\\bin\\studio64.exe' -ArgumentList '$PWD\\android'\""
   },
   "dependencies": {
     "@tuition/shared": "*",

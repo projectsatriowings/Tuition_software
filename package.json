@@ -12,6 +12,8 @@
     "dev:web": "npm run dev --workspace=@tuition/web",
     "build:server": "npm run build --workspace=server",
     "build:web": "npm run build --workspace=@tuition/web",
+    "mobile:studio": "npm run studio --workspace=@tuition/mobile",
+    "mobile:android": "npm run android --workspace=@tuition/mobile",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
