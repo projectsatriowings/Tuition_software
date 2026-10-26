@@ -74,7 +74,7 @@ const AppContent: React.FC = () => {
                 animate="animate"
                 exit="exit"
               >
-                {(currentTab === 'super_admin_dashboard' || currentTab === 'institutes') && (
+                {currentTab === 'super_admin_dashboard' && (
                   <SuperAdminDashboard />
                 )}
 

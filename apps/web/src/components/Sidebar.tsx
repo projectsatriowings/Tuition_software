@@ -2,7 +2,6 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
-  Building2,
   Users,
   GraduationCap,
   UserCheck,
@@ -42,20 +41,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
 
         {/* Super Admin Nav Items */}
         {role === 'SUPER_ADMIN' && (
-          <>
-            <button
-              onClick={() => onSelectTab('super_admin_dashboard')}
-              className={navItemClass('super_admin_dashboard')}
-            >
-              <LayoutDashboard className="w-4 h-4" /> Platform Overview
-            </button>
-            <button
-              onClick={() => onSelectTab('institutes')}
-              className={navItemClass('institutes')}
-            >
-              <Building2 className="w-4 h-4" /> Institutes Directory
-            </button>
-          </>
+          <button
+            onClick={() => onSelectTab('super_admin_dashboard')}
+            className={navItemClass('super_admin_dashboard')}
+          >
+            <LayoutDashboard className="w-4 h-4" /> Platform Overview
+          </button>
         )}
 
         {/* Academic Admin & Staff Nav Items */}
