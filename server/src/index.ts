@@ -1,0 +1,122 @@
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { config } from './config/index.js';
+import { checkDatabaseHealth } from './config/db.js';
+
+import authRoutes from './modules/auth/auth.routes.js';
+import institutesRoutes from './modules/institutes/institutes.routes.js';
+import staffRoutes from './modules/staff/staff.routes.js';
+import studentsRoutes from './modules/students/students.routes.js';
+import parentsRoutes from './modules/parents/parents.routes.js';
+import academicsRoutes from './modules/academics/academics.routes.js';
+import attendanceRoutes from './modules/attendance/attendance.routes.js';
+import notificationsRoutes from './modules/notifications/notifications.routes.js';
+import materialsRoutes from './modules/materials/materials.routes.js';
+import homeworkRoutes from './modules/homework/homework.routes.js';
+import examsRoutes from './modules/exams/exams.routes.js';
+import progressRoutes from './modules/progress/progress.routes.js';
+import reviewsRoutes from './modules/reviews/reviews.routes.js';
+import messagingRoutes from './modules/messaging/messaging.routes.js';
+import feesRoutes from './modules/fees/fees.routes.js';
+
+const app = express();
+
+// Security Middlewares
+app.use(helmet());
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // In development, allow localhost and any local network origins
+      if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        return callback(null, true);
+      }
+      return callback(null, true); // adjust for production domain whitelist
+    },
+    credentials: true,
+  })
+);
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Request logging (sanitized, non-sensitive)
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  next();
+});
+
+// Mount Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/institutes', institutesRoutes);
+app.use('/api/staff', staffRoutes);
+app.use('/api/students', studentsRoutes);
+app.use('/api/parents', parentsRoutes);
+app.use('/api/academics', academicsRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/materials', materialsRoutes);
+app.use('/api/homework', homeworkRoutes);
+app.use('/api/exams', examsRoutes);
+app.use('/api/progress', progressRoutes);
+app.use('/api/reviews', reviewsRoutes);
+app.use('/api/messaging', messagingRoutes);
+app.use('/api/fees', feesRoutes);
+
+// Health check endpoint
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const dbHealth = await checkDatabaseHealth();
+  const uptime = process.uptime();
+
+  const responseStatus = dbHealth.connected ? 200 : 503;
+  res.status(responseStatus).json({
+    status: dbHealth.connected ? 'healthy' : 'degraded',
+    service: 'tuition-management-api',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(uptime),
+    database: {
+      provider: 'Neon PostgreSQL',
+      connected: dbHealth.connected,
+      latencyMs: dbHealth.latencyMs,
+      ...(dbHealth.error && { error: dbHealth.error }),
+    },
+  });
+});
+
+// Centralized 404 handler
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({
+    success: false,
+    error: 'Endpoint not found',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Centralized error handler
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  const status = err.status || 500;
+  const message = config.nodeEnv === 'production' && status === 500
+    ? 'Internal Server Error'
+    : err.message || 'An unexpected error occurred';
+
+  console.error(`[Error Handler] ${status} - ${err.message}`, err.stack);
+
+  res.status(status).json({
+    success: false,
+    error: message,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Start server if run directly
+const isMain = process.argv[1] && process.argv[1].endsWith('index.ts');
+if (isMain || process.env.NODE_ENV === 'production') {
+  app.listen(config.port, () => {
+    console.log(`[TuitionOS API Server] listening on http://localhost:${config.port}`);
+    console.log(`[TuitionOS API Server] Health check available at http://localhost:${config.port}/api/health`);
+  });
+}
+
+export default app;

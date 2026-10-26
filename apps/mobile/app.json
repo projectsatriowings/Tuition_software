@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "TuitionOS Mobile",
+    "slug": "tuition-management-system",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3E2723"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tuitionos.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3E2723"
+      },
+      "package": "com.tuitionos.app",
+      "permissions": [
+        "INTERNET",
+        "CAMERA",
+        "ACCESS_NETWORK_STATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:5000/api",
+      "eas": {
+        "projectId": "0f6ea37c-1041-4ce1-9124-391ddec521a0"
+      }
+    }
+  }
+}

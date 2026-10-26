@@ -1,0 +1,463 @@
+import { Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+import { AuthenticatedRequest } from '../../middleware/auth.js';
+import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
+
+const prisma = new PrismaClient();
+
+export const createParentSchema = z.object({
+  fullName: z.string().min(2, 'Full name is required'),
+  phone: z.string().min(10, 'Valid phone number is required'),
+  email: z.string().email('Invalid email').optional().or(z.literal('')),
+  occupation: z.string().optional(),
+  address: z.string().optional(),
+  altPhone: z.string().optional(),
+  initialPassword: z.string().min(8).optional(),
+});
+
+export const updateParentSchema = z.object({
+  fullName: z.string().min(2).optional(),
+  phone: z.string().min(10).optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  occupation: z.string().optional(),
+  address: z.string().optional(),
+  altPhone: z.string().optional(),
+});
+
+export const linkGuardianSchema = z.object({
+  parentId: z.string().uuid('Valid parent ID required'),
+  relation: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).default('GUARDIAN'),
+  isPrimaryContact: z.boolean().default(false),
+  canReceiveSms: z.boolean().default(true),
+});
+
+/**
+ * List parents in institute
+ */
+export async function listParents(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+
+    const search = (req.query.search as string || '').trim();
+
+    const where: any = {
+      user: {
+        memberships: {
+          some: { instituteId },
+        },
+      },
+    };
+
+    if (search) {
+      where.OR = [
+        { user: { fullName: { contains: search, mode: 'insensitive' } } },
+        { user: { phone: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const parents = await prisma.parentProfile.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+            email: true,
+            isActive: true,
+            lastLoginAt: true,
+          },
+        },
+        studentRelations: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                admissionNumber: true,
+                rollNumber: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: { parents },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to list parents' });
+  }
+}
+
+/**
+ * Provision new Parent account
+ */
+export async function createParent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+
+    const parse = createParentSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Validation error',
+      });
+    }
+
+    const data = parse.data;
+    const phone = data.phone.trim();
+    const email = data.email?.trim().toLowerCase() || null;
+
+    // Check if user with phone or email exists
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone },
+          ...(email ? [{ email }] : []),
+        ],
+      },
+    });
+
+    if (existing) {
+      // Check if existing user is already a parent and add institute membership
+      if (existing.role === 'PARENT') {
+        const membership = await prisma.instituteMembership.findUnique({
+          where: {
+            instituteId_userId: {
+              instituteId,
+              userId: existing.id,
+            },
+          },
+        });
+
+        if (!membership) {
+          await prisma.instituteMembership.create({
+            data: {
+              instituteId,
+              userId: existing.id,
+              role: 'PARENT',
+              isActive: true,
+            },
+          });
+        }
+
+        const parentProfile = await prisma.parentProfile.findUnique({
+          where: { userId: existing.id },
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'Existing parent profile linked to this institute',
+          data: { parentProfile, userId: existing.id },
+        });
+      }
+
+      return res.status(409).json({
+        success: false,
+        error: `A user with this phone or email already exists with role '${existing.role}'`,
+      });
+    }
+
+    const tempPassword = data.initialPassword || `Parent#${generateSecureRandomToken(4)}2026`;
+    const passwordHash = await hashPassword(tempPassword);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create User
+      const user = await tx.user.create({
+        data: {
+          fullName: data.fullName.trim(),
+          phone,
+          email,
+          passwordHash,
+          role: 'PARENT',
+          isActive: true,
+          mustChangePassword: true,
+        },
+      });
+
+      // 2. Create Membership
+      await tx.instituteMembership.create({
+        data: {
+          instituteId,
+          userId: user.id,
+          role: 'PARENT',
+          isActive: true,
+        },
+      });
+
+      // 3. Create ParentProfile
+      const parentProfile = await tx.parentProfile.create({
+        data: {
+          userId: user.id,
+          occupation: data.occupation?.trim() || null,
+          address: data.address?.trim() || null,
+          altPhone: data.altPhone?.trim() || null,
+          isPhoneVerified: true,
+        },
+      });
+
+      // 4. Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'PARENT_PROVISIONED',
+          entityType: 'ParentProfile',
+          entityId: parentProfile.id,
+          newValues: {
+            fullName: user.fullName,
+            phone: user.phone,
+          },
+        },
+      });
+
+      return { user, parentProfile };
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Parent profile created successfully',
+      data: {
+        parent: result.parentProfile,
+        user: {
+          id: result.user.id,
+          fullName: result.user.fullName,
+          phone: result.user.phone,
+          email: result.user.email,
+        },
+        temporaryPassword: tempPassword,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Create Parent Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to create parent account' });
+  }
+}
+
+/**
+ * Link Parent/Guardian to Student
+ */
+export async function linkGuardianToStudent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { studentId } = req.params;
+
+    const parse = linkGuardianSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message,
+      });
+    }
+
+    const { parentId, relation, isPrimaryContact, canReceiveSms } = parse.data;
+
+    // Verify student belongs to this institute
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, instituteId },
+    });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    // Verify parent profile exists
+    const parent = await prisma.parentProfile.findUnique({
+      where: { id: parentId },
+      include: { user: true },
+    });
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    // Check duplicate relationship
+    const existingLink = await prisma.studentParentRelation.findUnique({
+      where: {
+        studentId_parentId: {
+          studentId,
+          parentId,
+        },
+      },
+    });
+    if (existingLink) {
+      return res.status(409).json({
+        success: false,
+        error: 'This parent is already linked to this student',
+      });
+    }
+
+    // If setting as primary, clear any previous primary flag
+    if (isPrimaryContact) {
+      await prisma.studentParentRelation.updateMany({
+        where: { studentId },
+        data: { isPrimaryContact: false },
+      });
+    }
+
+    const link = await prisma.studentParentRelation.create({
+      data: {
+        studentId,
+        parentId,
+        relation,
+        isPrimaryContact,
+        canReceiveSms,
+      },
+      include: {
+        parent: {
+          include: {
+            user: {
+              select: { id: true, fullName: true, phone: true },
+            },
+          },
+        },
+      },
+    });
+
+    // Record Audit Log
+    await prisma.auditLog.create({
+      data: {
+        instituteId,
+        userId: req.user?.userId || null,
+        action: 'GUARDIAN_LINKED',
+        entityType: 'StudentParentRelation',
+        entityId: link.id,
+        newValues: { studentId, parentId, relation, isPrimaryContact },
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Guardian linked to student successfully',
+      data: { link },
+    });
+  } catch (err: any) {
+    console.error('[Link Guardian Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to link guardian to student' });
+  }
+}
+
+/**
+ * Revoke guardian link
+ */
+export async function revokeGuardianLink(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { studentId, parentId } = req.params;
+
+    // Verify student belongs to this institute
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, instituteId },
+    });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    const existing = await prisma.studentParentRelation.findUnique({
+      where: {
+        studentId_parentId: {
+          studentId,
+          parentId,
+        },
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Guardian link not found' });
+    }
+
+    await prisma.studentParentRelation.delete({
+      where: { id: existing.id },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        instituteId,
+        userId: req.user?.userId || null,
+        action: 'GUARDIAN_UNLINKED',
+        entityType: 'StudentParentRelation',
+        entityId: existing.id,
+        oldValues: existing as any,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Guardian link revoked successfully',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to revoke guardian link' });
+  }
+}
+
+/**
+ * Get Parent's authorized children (Parent role only)
+ */
+export async function getMyChildren(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (req.user?.role !== 'PARENT') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent access only' });
+    }
+
+    const parentProfile = await prisma.parentProfile.findUnique({
+      where: { userId: req.user.userId },
+    });
+
+    if (!parentProfile) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    const relations = await prisma.studentParentRelation.findMany({
+      where: { parentId: parentProfile.id },
+      include: {
+        student: {
+          include: {
+            institute: {
+              select: { id: true, name: true, code: true, phone: true },
+            },
+            enrollments: {
+              where: { isActive: true },
+              include: {
+                batch: {
+                  select: { id: true, name: true, academicYear: true },
+                },
+              },
+            },
+            _count: {
+              select: {
+                attendanceEvents: true,
+                examMarks: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const children = relations.map((rel) => ({
+      relationship: rel.relation,
+      isPrimaryContact: rel.isPrimaryContact,
+      canReceiveSms: rel.canReceiveSms,
+      student: rel.student,
+    }));
+
+    return res.json({
+      success: true,
+      data: { children },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to fetch linked children' });
+  }
+}

@@ -1,0 +1,25 @@
+import { Router } from 'express';
+import {
+  listStudents,
+  admitStudent,
+  getStudentById,
+  getMyStudentProfile,
+  updateStudent,
+  updateStudentStatus,
+} from './students.controller.js';
+import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
+
+const router = Router();
+
+router.use(authenticateToken);
+router.use(requireInstituteContext);
+
+// Student management routes
+router.get('/my/profile', requireRole('STUDENT'), getMyStudentProfile);
+router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listStudents);
+router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), admitStudent);
+router.get('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentById);
+router.patch('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudent);
+router.patch('/:id/status', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), updateStudentStatus);
+
+export default router;
