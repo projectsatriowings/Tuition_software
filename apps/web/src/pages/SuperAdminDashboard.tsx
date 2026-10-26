@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
-import { Institute } from '../types';
+import { Institute, User } from '../types';
 import {
   Building2,
   Plus,
   Search,
   CheckCircle,
   AlertTriangle,
-  Users,
   GraduationCap,
   Layers,
   Phone,
@@ -17,7 +16,27 @@ import {
   Copy,
   Check,
   Sparkles,
+  Eye,
+  EyeOff,
+  KeyRound,
+  UserCheck,
+  UserX,
+  Edit3,
+  RefreshCw,
+  ShieldCheck,
+  Clock,
+  BookOpen,
+  ArrowRight,
 } from 'lucide-react';
+
+interface AcademicAdminAccount extends User {
+  createdAt?: string;
+}
+
+interface InstituteDetailData {
+  institute: Institute;
+  adminAccount: AcademicAdminAccount | null;
+}
 
 export const SuperAdminDashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<any>(null);
@@ -25,28 +44,99 @@ export const SuperAdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  // Global notification banner
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => {
+      setNotification((curr) => (curr?.message === message ? null : curr));
+    }, 4500);
+  };
+
+  // ----------------------------------------------------
+  // 1. CREATE INSTITUTE MODAL STATE
+  // ----------------------------------------------------
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Success Created Institute Modal State
-  const [createdInstitute, setCreatedInstitute] = useState<{ name: string; code: string; adminEmail?: string } | null>(null);
-  const [copiedCode, setCopiedCode] = useState(false);
-
-  // Form State - all fields initially empty
+  // Form fields
   const [newInst, setNewInst] = useState({
     name: '',
     legalName: '',
+    address: '',
     city: '',
     state: '',
+    postalCode: '',
     phone: '',
     email: '',
     adminFullName: '',
     adminEmail: '',
     adminPhone: '',
     adminInitialPassword: '',
+    confirmPassword: '',
   });
 
+  const [showInitialPassword, setShowInitialPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Success Created Institute Modal State
+  const [createdInstitute, setCreatedInstitute] = useState<{
+    name: string;
+    code: string;
+    adminEmail?: string;
+  } | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  // ----------------------------------------------------
+  // 2. INSTITUTE DETAILS DRAWER STATE
+  // ----------------------------------------------------
+  const [selectedInstituteId, setSelectedInstituteId] = useState<string | null>(null);
+  const [detailData, setDetailData] = useState<InstituteDetailData | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  // ----------------------------------------------------
+  // 3. EDIT ADMIN ACCOUNT MODAL STATE
+  // ----------------------------------------------------
+  const [showEditAdminModal, setShowEditAdminModal] = useState(false);
+  const [editAdminLoading, setEditAdminLoading] = useState(false);
+  const [editAdminError, setEditAdminError] = useState<string | null>(null);
+  const [editAdminForm, setEditAdminForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    isActive: true,
+  });
+
+  // ----------------------------------------------------
+  // 4. RESET PASSWORD MODAL STATE
+  // ----------------------------------------------------
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [resetPassMode, setResetPassMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
+  const [customPassword, setCustomPassword] = useState('');
+  const [showCustomPassword, setShowCustomPassword] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  // One-time Temporary Password Display State
+  const [oneTimePasswordData, setOneTimePasswordData] = useState<{
+    adminEmail: string;
+    temporaryPassword: string;
+  } | null>(null);
+  const [copiedTempPassword, setCopiedTempPassword] = useState(false);
+
+  // ----------------------------------------------------
+  // 5. STATUS CONFIRMATION MODAL STATE
+  // ----------------------------------------------------
+  const [statusActionTarget, setStatusActionTarget] = useState<Institute | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+
+  // ----------------------------------------------------
+  // DATA FETCHING
+  // ----------------------------------------------------
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -56,8 +146,9 @@ export const SuperAdminDashboard: React.FC = () => {
       ]);
       setMetrics(metricsRes.data);
       setInstitutes(institutesRes.data?.institutes || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load institutes', err);
+      showNotification('error', err.message || 'Failed to load institute directory');
     } finally {
       setLoading(false);
     }
@@ -67,15 +158,99 @@ export const SuperAdminDashboard: React.FC = () => {
     fetchData();
   }, [search, statusFilter]);
 
+  // Fetch full details for the drawer
+  const fetchInstituteDetails = async (id: string) => {
+    try {
+      setDetailLoading(true);
+      setDetailError(null);
+      const res = await apiFetch(`/institutes/${id}`);
+      if (res.success && res.data) {
+        setDetailData({
+          institute: res.data.institute,
+          adminAccount: res.data.adminAccount || res.data.institute?.memberships?.[0]?.user || null,
+        });
+      } else {
+        setDetailError(res.error || 'Failed to fetch institute details');
+      }
+    } catch (err: any) {
+      setDetailError(err.message || 'Failed to fetch institute details');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleOpenDetails = (id: string) => {
+    setSelectedInstituteId(id);
+    fetchInstituteDetails(id);
+  };
+
+  const handleCloseDetails = () => {
+    setSelectedInstituteId(null);
+    setDetailData(null);
+    setDetailError(null);
+  };
+
+  // Helper: Generate secure random password
+  const generateStrongPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+    let pwd = 'Tuit#';
+    for (let i = 0; i < 7; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return pwd + '!';
+  };
+
+  // ----------------------------------------------------
+  // HANDLE CREATE INSTITUTE SUBMIT
+  // ----------------------------------------------------
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError(null);
+
+    // Client-side validations
+    if (!newInst.name.trim()) {
+      setCreateError('Institute name is required');
+      return;
+    }
+    if (!newInst.adminFullName.trim()) {
+      setCreateError('Academic Admin full name is required');
+      return;
+    }
+    if (!newInst.adminEmail.trim()) {
+      setCreateError('Academic Admin email/username is required');
+      return;
+    }
+    if (!newInst.adminInitialPassword || newInst.adminInitialPassword.length < 8) {
+      setCreateError('Initial password must be at least 8 characters long');
+      return;
+    }
+    if (newInst.adminInitialPassword !== newInst.confirmPassword) {
+      setCreateError('Passwords do not match. Please verify your initial password.');
+      return;
+    }
+
     setCreateLoading(true);
 
     try {
+      // Omit client confirmPassword before sending to backend
+      const payload = {
+        name: newInst.name.trim(),
+        legalName: newInst.legalName.trim() || undefined,
+        address: newInst.address.trim() || undefined,
+        city: newInst.city.trim() || undefined,
+        state: newInst.state.trim() || undefined,
+        postalCode: newInst.postalCode.trim() || undefined,
+        phone: newInst.phone.trim() || undefined,
+        email: newInst.email.trim() || undefined,
+        adminFullName: newInst.adminFullName.trim(),
+        adminEmail: newInst.adminEmail.trim().toLowerCase(),
+        adminPhone: newInst.adminPhone.trim() || undefined,
+        adminInitialPassword: newInst.adminInitialPassword,
+      };
+
       const res = await apiFetch('/institutes', {
         method: 'POST',
-        body: JSON.stringify(newInst),
+        body: JSON.stringify(payload),
       });
 
       if (res.success && res.data?.institute) {
@@ -83,21 +258,25 @@ export const SuperAdminDashboard: React.FC = () => {
         setCreatedInstitute({
           name: res.data.institute.name,
           code: res.data.institute.code,
-          adminEmail: res.data.initialAdmin?.email || newInst.adminEmail,
+          adminEmail: res.data.initialAdmin?.email || payload.adminEmail,
         });
         setNewInst({
           name: '',
           legalName: '',
+          address: '',
           city: '',
           state: '',
+          postalCode: '',
           phone: '',
           email: '',
           adminFullName: '',
           adminEmail: '',
           adminPhone: '',
           adminInitialPassword: '',
+          confirmPassword: '',
         });
         fetchData();
+        showNotification('success', `Institute "${res.data.institute.name}" created successfully with code ${res.data.institute.code}`);
       } else {
         setCreateError(res.error || 'Failed to create institute');
       }
@@ -108,36 +287,197 @@ export const SuperAdminDashboard: React.FC = () => {
     }
   };
 
-  const handleToggleStatus = async (inst: Institute) => {
-    const nextStatus = inst.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    const confirmMsg = inst.status === 'ACTIVE'
-      ? `Are you sure you want to suspend "${inst.name}"? Members will be temporarily locked out.`
-      : `Reactivate "${inst.name}"?`;
+  // ----------------------------------------------------
+  // HANDLE STATUS TOGGLE (SUSPEND / ACTIVATE)
+  // ----------------------------------------------------
+  const handleConfirmStatusToggle = async () => {
+    if (!statusActionTarget) return;
 
-    if (!window.confirm(confirmMsg)) return;
+    const targetId = statusActionTarget.id;
+    const nextStatus = statusActionTarget.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+
+    setStatusUpdating(true);
+    try {
+      const res = await apiFetch(`/institutes/${targetId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: nextStatus,
+          reason: `Super Admin manually changed status to ${nextStatus}`,
+        }),
+      });
+
+      if (res.success) {
+        showNotification(
+          'success',
+          `Institute "${statusActionTarget.name}" is now ${nextStatus === 'ACTIVE' ? 'Active' : 'Suspended'}.`
+        );
+        setStatusActionTarget(null);
+        fetchData();
+
+        // If drawer is currently displaying this institute, update its status
+        if (selectedInstituteId === targetId && detailData) {
+          setDetailData({
+            ...detailData,
+            institute: {
+              ...detailData.institute,
+              status: nextStatus as any,
+            },
+          });
+        }
+      } else {
+        showNotification('error', res.error || 'Failed to update institute status');
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Error updating status');
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // HANDLE EDIT ADMIN ACCOUNT
+  // ----------------------------------------------------
+  const handleOpenEditAdminModal = () => {
+    if (!detailData?.adminAccount) return;
+    setEditAdminForm({
+      fullName: detailData.adminAccount.fullName || '',
+      email: detailData.adminAccount.email || '',
+      phone: detailData.adminAccount.phone || '',
+      isActive: detailData.adminAccount.isActive ?? true,
+    });
+    setEditAdminError(null);
+    setShowEditAdminModal(true);
+  };
+
+  const handleEditAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInstituteId) return;
+
+    setEditAdminError(null);
+    setEditAdminLoading(true);
 
     try {
-      await apiFetch(`/institutes/${inst.id}/status`, {
+      const res = await apiFetch(`/institutes/${selectedInstituteId}/admin-account`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus, reason: 'Super Admin manual action' }),
+        body: JSON.stringify(editAdminForm),
       });
-      fetchData();
+
+      if (res.success && res.data?.adminAccount) {
+        setShowEditAdminModal(false);
+        showNotification('success', 'Academic Admin account updated successfully');
+
+        // Update local state in drawer
+        if (detailData) {
+          setDetailData({
+            ...detailData,
+            adminAccount: {
+              ...detailData.adminAccount,
+              ...res.data.adminAccount,
+            },
+          });
+        }
+        fetchData();
+      } else {
+        setEditAdminError(res.error || 'Failed to update admin account');
+      }
     } catch (err: any) {
-      alert(`Error updating status: ${err.message}`);
+      setEditAdminError(err.message || 'Failed to update admin account');
+    } finally {
+      setEditAdminLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // HANDLE RESET ADMIN PASSWORD
+  // ----------------------------------------------------
+  const handleOpenResetPasswordModal = () => {
+    setResetPassMode('AUTO');
+    setCustomPassword('');
+    setResetError(null);
+    setShowResetPasswordModal(true);
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInstituteId || !detailData?.adminAccount) return;
+
+    if (resetPassMode === 'MANUAL') {
+      if (!customPassword || customPassword.length < 8) {
+        setResetError('Password must be at least 8 characters long');
+        return;
+      }
+    }
+
+    setResetError(null);
+    setResetLoading(true);
+
+    try {
+      const payload = resetPassMode === 'MANUAL' ? { password: customPassword } : {};
+
+      const res = await apiFetch(`/institutes/${selectedInstituteId}/admin-account/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (res.success && res.data?.temporaryPassword) {
+        setShowResetPasswordModal(false);
+        setOneTimePasswordData({
+          adminEmail: detailData.adminAccount.email || 'Admin',
+          temporaryPassword: res.data.temporaryPassword,
+        });
+        showNotification('success', 'Password reset successfully. Please share the temporary password.');
+
+        // Refresh admin details in drawer
+        fetchInstituteDetails(selectedInstituteId);
+      } else {
+        setResetError(res.error || 'Failed to reset password');
+      }
+    } catch (err: any) {
+      setResetError(err.message || 'Failed to reset password');
+    } finally {
+      setResetLoading(false);
     }
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-16">
+      {/* Toast Notification Banner */}
+      {notification && (
+        <div className="fixed top-5 right-5 z-50 max-w-md animate-in fade-in slide-in-from-top-4 duration-300">
+          <div
+            className={`p-4 rounded-2xl shadow-xl border flex items-start gap-3 ${
+              notification.type === 'success'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                : 'bg-rose-50 border-rose-300 text-rose-900'
+            }`}
+          >
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            )}
+            <div className="text-xs font-semibold leading-relaxed flex-1">{notification.message}</div>
+            <button
+              onClick={() => setNotification(null)}
+              className="text-[#6D4C41] hover:text-[#2D1E18] p-0.5 rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-[#2D1E18]">Platform Administration</h1>
-          <p className="text-sm text-[#6D4C41] mt-1">Global multi-tenant institute directory and health</p>
+          <h1 className="text-2xl font-extrabold text-[#2D1E18] tracking-tight">Platform Administration</h1>
+          <p className="text-sm text-[#6D4C41] mt-1">
+            Global multi-tenant institute management, security compliance & onboarding
+          </p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all self-start"
+          className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all self-start active:scale-95"
         >
           <Plus className="w-4 h-4" /> Add New Institute
         </button>
@@ -145,7 +485,7 @@ export const SuperAdminDashboard: React.FC = () => {
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
+        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm hover:border-[#BCAAA4] transition">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[#6D4C41]">Total Institutes</span>
             <div className="w-8 h-8 rounded-lg bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
@@ -158,7 +498,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <div className="text-xs text-[#6D4C41] mt-1">Registered tenant accounts</div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
+        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm hover:border-[#BCAAA4] transition">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[#6D4C41]">Active Institutes</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800">
@@ -171,7 +511,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <div className="text-xs text-[#6D4C41] mt-1">Operational and compliant</div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
+        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm hover:border-[#BCAAA4] transition">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[#6D4C41]">Suspended</span>
             <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800">
@@ -184,7 +524,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <div className="text-xs text-[#6D4C41] mt-1">Temporarily locked</div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
+        <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm hover:border-[#BCAAA4] transition">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[#6D4C41]">Total Students</span>
             <div className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-800">
@@ -201,7 +541,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {/* Institutes Directory Table */}
       <div className="bg-white border border-[#D7CCC8] rounded-2xl p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-          <div className="w-full sm:w-72 relative">
+          <div className="w-full sm:w-80 relative">
             <Search className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-3" />
             <input
               type="text"
@@ -261,13 +601,15 @@ export const SuperAdminDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-[#5D4037]">
-                      {inst.city ? `${inst.city}, ${inst.state || ''}` : '—'}
+                      {inst.city ? `${inst.city}${inst.state ? `, ${inst.state}` : ''}` : '—'}
                     </td>
                     <td className="py-3.5 px-4 text-[#5D4037]">
                       <div className="flex items-center gap-3 text-[11px]">
                         <span><strong>{inst._count?.students || 0}</strong> Students</span>
                         <span>&bull;</span>
                         <span><strong>{inst._count?.staffProfiles || 0}</strong> Staff</span>
+                        <span>&bull;</span>
+                        <span><strong>{inst._count?.batches || 0}</strong> Batches</span>
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
@@ -282,16 +624,27 @@ export const SuperAdminDashboard: React.FC = () => {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => handleToggleStatus(inst)}
-                        className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
-                          inst.status === 'ACTIVE'
-                            ? 'border-rose-300 text-rose-800 hover:bg-rose-50'
-                            : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
-                        }`}
-                      >
-                        {inst.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        {/* View Details Action */}
+                        <button
+                          onClick={() => handleOpenDetails(inst.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#D7CCC8] text-[#4E342E] hover:bg-[#F7F2EF] transition"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View Details
+                        </button>
+
+                        {/* Suspend or Activate Action */}
+                        <button
+                          onClick={() => setStatusActionTarget(inst)}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
+                            inst.status === 'ACTIVE'
+                              ? 'border-rose-300 text-rose-800 hover:bg-rose-50'
+                              : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                          }`}
+                        >
+                          {inst.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -301,126 +654,291 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Create Institute Modal */}
+      {/* ====================================================
+          1. CREATE INSTITUTE MODAL (COMPLETE ONBOARDING FORM)
+         ==================================================== */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
-              <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-[#4E342E]" /> Onboard New Institute
-              </h2>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-[#2D1E18]">Onboard New Institute</h2>
+                  <p className="text-xs text-[#6D4C41]">Set up tenant details and initial Academic Admin account</p>
+                </div>
+              </div>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-xl hover:bg-[#F7F2EF] transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {createError && (
-              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs">
-                {createError}
+              <div className="mt-4 p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{createError}</span>
               </div>
             )}
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 mt-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E]">
-                Institute Information
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Institute Name*</label>
-                <input
-                  type="text"
-                  required
-                  value={newInst.name}
-                  onChange={(e) => setNewInst({ ...newInst, name: e.target.value })}
-                  placeholder="Enter institute name"
-                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">City</label>
-                  <input
-                    type="text"
-                    value={newInst.city}
-                    onChange={(e) => setNewInst({ ...newInst, city: e.target.value })}
-                    placeholder="Enter city"
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
+            <form onSubmit={handleCreateSubmit} className="space-y-6 mt-5">
+              {/* SECTION: INSTITUTE DETAILS */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-[#8D6E63]" /> Institute Details
+                  </div>
+                  <span className="text-[11px] text-[#8D6E63] font-medium">* Required fields</span>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">State</label>
-                  <input
-                    type="text"
-                    value={newInst.state}
-                    onChange={(e) => setNewInst({ ...newInst, state: e.target.value })}
-                    placeholder="Enter state"
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                      Institute Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newInst.name}
+                      onChange={(e) => setNewInst({ ...newInst, name: e.target.value })}
+                      placeholder="e.g. Cambridge Academy of Sciences"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Legal Name (Optional)</label>
+                    <input
+                      type="text"
+                      value={newInst.legalName}
+                      onChange={(e) => setNewInst({ ...newInst, legalName: e.target.value })}
+                      placeholder="Registered entity name"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  {/* Auto-generated code badge */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Institute Code</label>
+                    <div className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#6D4C41] flex items-center justify-between">
+                      <span className="font-mono font-medium text-[#4E342E]">Auto-assigned by system</span>
+                      <span className="text-[10px] bg-white border border-[#D7CCC8] px-2 py-0.5 rounded-full text-[#4E342E] font-semibold">
+                        e.g. INS-XXXXXX
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Institute Email</label>
+                    <input
+                      type="email"
+                      value={newInst.email}
+                      onChange={(e) => setNewInst({ ...newInst, email: e.target.value })}
+                      placeholder="contact@institute.edu"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Institute Phone</label>
+                    <input
+                      type="tel"
+                      value={newInst.phone}
+                      onChange={(e) => setNewInst({ ...newInst, phone: e.target.value })}
+                      placeholder="+91 98765 43210"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Address</label>
+                    <input
+                      type="text"
+                      value={newInst.address}
+                      onChange={(e) => setNewInst({ ...newInst, address: e.target.value })}
+                      placeholder="Street address, Campus or Landmark"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">City</label>
+                    <input
+                      type="text"
+                      value={newInst.city}
+                      onChange={(e) => setNewInst({ ...newInst, city: e.target.value })}
+                      placeholder="e.g. Bangalore"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">State</label>
+                    <input
+                      type="text"
+                      value={newInst.state}
+                      onChange={(e) => setNewInst({ ...newInst, state: e.target.value })}
+                      placeholder="e.g. Karnataka"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">PIN / Postal Code</label>
+                    <input
+                      type="text"
+                      value={newInst.postalCode}
+                      onChange={(e) => setNewInst({ ...newInst, postalCode: e.target.value })}
+                      placeholder="e.g. 560001"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-[#4E342E] text-[11px] flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-[#8D6E63] shrink-0" />
-                <span>Unique Institute Code will be automatically generated and assigned by the system upon creation.</span>
-              </div>
-
-              <div className="pt-2 text-xs font-bold uppercase tracking-wider text-[#4E342E]">
-                Initial Academic Admin Account
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Admin Full Name</label>
-                  <input
-                    type="text"
-                    value={newInst.adminFullName}
-                    onChange={(e) => setNewInst({ ...newInst, adminFullName: e.target.value })}
-                    placeholder="Enter admin full name"
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
+              {/* SECTION: INITIAL ACADEMIC ADMIN */}
+              <div className="pt-4 border-t border-[#EFEBE9] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#8D6E63]" /> Initial Academic Admin Account
+                  </div>
+                  <span className="text-[11px] text-[#6D4C41]">Must change password on first login</span>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Admin Email</label>
-                  <input
-                    type="email"
-                    value={newInst.adminEmail}
-                    onChange={(e) => setNewInst({ ...newInst, adminEmail: e.target.value })}
-                    placeholder="Enter admin email"
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                      Admin Full Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newInst.adminFullName}
+                      onChange={(e) => setNewInst({ ...newInst, adminFullName: e.target.value })}
+                      placeholder="e.g. Dr. Ramesh Kumar"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                      Admin Login Email / Username <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={newInst.adminEmail}
+                      onChange={(e) => setNewInst({ ...newInst, adminEmail: e.target.value })}
+                      placeholder="admin@institute.edu"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Admin Phone Number</label>
+                    <input
+                      type="tel"
+                      value={newInst.adminPhone}
+                      onChange={(e) => setNewInst({ ...newInst, adminPhone: e.target.value })}
+                      placeholder="+91 91234 56789"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  {/* Initial Password with Toggle and Generator */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#4E342E]">
+                        Initial Password <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pwd = generateStrongPassword();
+                          setNewInst({ ...newInst, adminInitialPassword: pwd, confirmPassword: pwd });
+                        }}
+                        className="text-[11px] font-semibold text-[#4E342E] hover:text-[#2D1E18] flex items-center gap-1 underline underline-offset-2"
+                      >
+                        <Sparkles className="w-3 h-3 text-[#8D6E63]" /> Generate Secure
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showInitialPassword ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        value={newInst.adminInitialPassword}
+                        onChange={(e) => setNewInst({ ...newInst, adminInitialPassword: e.target.value })}
+                        placeholder="Min 8 characters"
+                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowInitialPassword(!showInitialPassword)}
+                        className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#4E342E]"
+                      >
+                        {showInitialPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                      Confirm Password <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        required
+                        value={newInst.confirmPassword}
+                        onChange={(e) => setNewInst({ ...newInst, confirmPassword: e.target.value })}
+                        placeholder="Re-enter password"
+                        className={`w-full bg-[#FDFBF7] border rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] ${
+                          newInst.confirmPassword && newInst.adminInitialPassword !== newInst.confirmPassword
+                            ? 'border-rose-400 focus:ring-rose-400'
+                            : 'border-[#D7CCC8]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#4E342E]"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {newInst.confirmPassword && newInst.adminInitialPassword !== newInst.confirmPassword && (
+                      <span className="text-[11px] text-rose-600 block mt-1">Passwords do not match</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Admin Initial Password</label>
-                <input
-                  type="password"
-                  value={newInst.adminInitialPassword}
-                  onChange={(e) => setNewInst({ ...newInst, adminInitialPassword: e.target.value })}
-                  placeholder="Create a secure initial password"
-                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
-                <span className="text-[11px] text-[#6D4C41]">Account will be forced to change password on first login.</span>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3">
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#EFEBE9]">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+                  className="px-4 py-2.5 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] transition rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createLoading}
-                  className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50"
+                  className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50 flex items-center gap-2"
                 >
-                  {createLoading ? 'Onboarding...' : 'Create Institute'}
+                  {createLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Provisioning...
+                    </>
+                  ) : (
+                    'Create Institute & Admin'
+                  )}
                 </button>
               </div>
             </form>
@@ -428,9 +946,11 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Success Modal Showing Generated Institute Code */}
+      {/* ====================================================
+          2. SUCCESS MODAL SHOWING GENERATED CODE
+         ==================================================== */}
       {createdInstitute && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18]">
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
               <div className="flex items-center gap-2.5">
@@ -438,8 +958,8 @@ export const SuperAdminDashboard: React.FC = () => {
                   <CheckCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-[#2D1E18]">Institute Onboarded Successfully</h3>
-                  <p className="text-xs text-[#6D4C41]">System assigned institutional identifier</p>
+                  <h3 className="text-base font-bold text-[#2D1E18]">Institute Onboarded</h3>
+                  <p className="text-xs text-[#6D4C41]">Unique code assigned and persisted</p>
                 </div>
               </div>
               <button
@@ -489,7 +1009,10 @@ export const SuperAdminDashboard: React.FC = () => {
               {createdInstitute.adminEmail && (
                 <div>
                   <span className="text-[#6D4C41] block mb-0.5">Assigned Academic Admin</span>
-                  <div className="text-[#2D1E18] font-mono text-xs">{createdInstitute.adminEmail}</div>
+                  <div className="text-[#2D1E18] font-mono text-xs font-semibold">{createdInstitute.adminEmail}</div>
+                  <span className="text-[11px] text-[#8D6E63]">
+                    The admin account must change password upon initial login.
+                  </span>
                 </div>
               )}
             </div>
@@ -498,9 +1021,674 @@ export const SuperAdminDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setCreatedInstitute(null)}
-                className="w-full bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-xs font-semibold py-2.5 rounded-xl transition"
+                className="w-full bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold py-2.5 rounded-xl transition shadow-sm"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================
+          3. INSTITUTE DETAILS DRAWER / MODAL
+         ==================================================== */}
+      {selectedInstituteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border-l border-[#D7CCC8] w-full max-w-2xl h-full shadow-2xl flex flex-col text-[#2D1E18] overflow-hidden">
+            {/* Drawer Header */}
+            <div className="p-6 border-b border-[#EFEBE9] bg-[#FDFBF7] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-[#2D1E18]">
+                      {detailData?.institute.name || 'Institute Details'}
+                    </h2>
+                    {detailData?.institute.status && (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          detailData.institute.status === 'ACTIVE'
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                            : 'bg-rose-50 text-rose-800 border border-rose-300'
+                        }`}
+                      >
+                        {detailData.institute.status}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-[#6D4C41] mt-0.5">
+                    <span>Code: <strong className="font-mono text-[#4E342E]">{detailData?.institute.code || '...'}</strong></span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseDetails}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-xl hover:bg-[#F7F2EF] transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Drawer Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {detailLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 text-[#6D4C41]">
+                  <RefreshCw className="w-8 h-8 animate-spin text-[#4E342E] mb-3" />
+                  <span className="text-xs font-semibold">Loading institute details...</span>
+                </div>
+              ) : detailError ? (
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{detailError}</span>
+                </div>
+              ) : detailData ? (
+                <>
+                  {/* Institutional Metrics Overview */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <div className="text-[11px] text-[#6D4C41] font-medium flex items-center gap-1">
+                        <GraduationCap className="w-3.5 h-3.5" /> Students
+                      </div>
+                      <div className="text-xl font-bold text-[#2D1E18] mt-1">
+                        {detailData.institute._count?.students ?? 0}
+                      </div>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <div className="text-[11px] text-[#6D4C41] font-medium flex items-center gap-1">
+                        <UserCheck className="w-3.5 h-3.5" /> Staff
+                      </div>
+                      <div className="text-xl font-bold text-[#2D1E18] mt-1">
+                        {detailData.institute._count?.staffProfiles ?? 0}
+                      </div>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <div className="text-[11px] text-[#6D4C41] font-medium flex items-center gap-1">
+                        <Layers className="w-3.5 h-3.5" /> Batches
+                      </div>
+                      <div className="text-xl font-bold text-[#2D1E18] mt-1">
+                        {detailData.institute._count?.batches ?? 0}
+                      </div>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <div className="text-[11px] text-[#6D4C41] font-medium flex items-center gap-1">
+                        <BookOpen className="w-3.5 h-3.5" /> Subjects
+                      </div>
+                      <div className="text-xl font-bold text-[#2D1E18] mt-1">
+                        {detailData.institute._count?.subjects ?? 0}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 1: INSTITUTE INFORMATION */}
+                  <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+                    <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
+                      <span className="flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-[#8D6E63]" /> Institute Information
+                      </span>
+                      <button
+                        onClick={() => {
+                          setStatusActionTarget(detailData.institute);
+                        }}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition ${
+                          detailData.institute.status === 'ACTIVE'
+                            ? 'border-rose-300 text-rose-800 hover:bg-rose-50'
+                            : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                        }`}
+                      >
+                        {detailData.institute.status === 'ACTIVE' ? 'Suspend Institute' : 'Activate Institute'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <span className="text-[#6D4C41] block mb-0.5">Institute Name</span>
+                        <div className="font-semibold text-[#2D1E18]">{detailData.institute.name}</div>
+                      </div>
+
+                      <div>
+                        <span className="text-[#6D4C41] block mb-0.5">Institute Code</span>
+                        <div className="font-mono font-bold text-[#4E342E] bg-[#F7F2EF] px-2 py-0.5 rounded border border-[#D7CCC8] inline-block">
+                          {detailData.institute.code}
+                        </div>
+                      </div>
+
+                      {detailData.institute.legalName && (
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Legal Entity Name</span>
+                          <div className="text-[#2D1E18]">{detailData.institute.legalName}</div>
+                        </div>
+                      )}
+
+                      <div>
+                        <span className="text-[#6D4C41] block mb-0.5">Email</span>
+                        <div className="text-[#2D1E18] flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-[#8D6E63]" />
+                          {detailData.institute.email || '—'}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[#6D4C41] block mb-0.5">Phone</span>
+                        <div className="text-[#2D1E18] flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-[#8D6E63]" />
+                          {detailData.institute.phone || '—'}
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <span className="text-[#6D4C41] block mb-0.5">Location & Address</span>
+                        <div className="text-[#2D1E18] flex items-start gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#8D6E63] shrink-0 mt-0.5" />
+                          <span>
+                            {[
+                              detailData.institute.address,
+                              detailData.institute.city,
+                              detailData.institute.state,
+                              detailData.institute.postalCode,
+                            ]
+                              .filter(Boolean)
+                              .join(', ') || 'No address specified'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 2: ACADEMIC ADMIN ACCOUNT */}
+                  <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
+                      <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-[#8D6E63]" /> Academic Admin Account
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleOpenEditAdminModal}
+                          disabled={!detailData.adminAccount}
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-[#D7CCC8] text-[#4E342E] hover:bg-[#F7F2EF] transition disabled:opacity-50"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" /> Edit Details
+                        </button>
+                        <button
+                          onClick={handleOpenResetPasswordModal}
+                          disabled={!detailData.adminAccount}
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition disabled:opacity-50 shadow-sm"
+                        >
+                          <KeyRound className="w-3.5 h-3.5" /> Reset Password
+                        </button>
+                      </div>
+                    </div>
+
+                    {detailData.adminAccount ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Admin Full Name</span>
+                          <div className="font-semibold text-[#2D1E18] text-sm">
+                            {detailData.adminAccount.fullName}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Login Email / Username</span>
+                          <div className="font-mono text-[#2D1E18] font-medium">
+                            {detailData.adminAccount.email}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Phone Number</span>
+                          <div className="text-[#2D1E18]">
+                            {detailData.adminAccount.phone || '—'}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Account Status</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {detailData.adminAccount.isActive ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-300">
+                                <CheckCircle className="w-3 h-3 text-emerald-600" /> Active Account
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-300">
+                                <UserX className="w-3 h-3 text-rose-600" /> Inactive
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Password Status</span>
+                          <div>
+                            {detailData.adminAccount.mustChangePassword ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300">
+                                <Clock className="w-3 h-3 text-amber-600" /> Pending Change on Next Login
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-300">
+                                <Check className="w-3 h-3 text-emerald-600" /> Active Password Set
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[#6D4C41] block mb-0.5">Last Login</span>
+                          <div className="text-[#2D1E18]">
+                            {detailData.adminAccount.lastLoginAt
+                              ? new Date(detailData.adminAccount.lastLoginAt).toLocaleString()
+                              : 'Never logged in'}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center text-[#6D4C41] text-xs">
+                        No Academic Admin account found for this institute.
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-4 border-t border-[#EFEBE9] bg-[#FDFBF7] flex justify-end">
+              <button
+                type="button"
+                onClick={handleCloseDetails}
+                className="px-5 py-2 text-xs font-semibold text-[#4E342E] hover:text-[#2D1E18] bg-white border border-[#D7CCC8] hover:bg-[#F7F2EF] rounded-xl transition shadow-sm"
+              >
+                Close Drawer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================
+          4. EDIT ADMIN ACCOUNT DETAILS MODAL
+         ==================================================== */}
+      {showEditAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#2D1E18]">Edit Admin Account Details</h3>
+                  <p className="text-xs text-[#6D4C41]">Update permitted academic administrator profile fields</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditAdminModal(false)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {editAdminError && (
+              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{editAdminError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleEditAdminSubmit} className="space-y-4 mt-5 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editAdminForm.fullName}
+                  onChange={(e) => setEditAdminForm({ ...editAdminForm, fullName: e.target.value })}
+                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                  Login Email / Username
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={editAdminForm.email}
+                  onChange={(e) => setEditAdminForm({ ...editAdminForm, email: e.target.value })}
+                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                />
+                <span className="text-[11px] text-[#6D4C41] mt-0.5 block">
+                  Must be unique across the platform.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={editAdminForm.phone}
+                  onChange={(e) => setEditAdminForm({ ...editAdminForm, phone: e.target.value })}
+                  placeholder="Optional phone number"
+                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editAdminForm.isActive}
+                    onChange={(e) => setEditAdminForm({ ...editAdminForm, isActive: e.target.checked })}
+                    className="w-4 h-4 text-[#4E342E] rounded border-[#D7CCC8] focus:ring-[#8D6E63]"
+                  />
+                  <span className="text-xs font-semibold text-[#2D1E18]">
+                    Account is Active (Uncheck to suspend login for this admin)
+                  </span>
+                </label>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => setShowEditAdminModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editAdminLoading}
+                  className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  {editAdminLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving Changes...
+                    </>
+                  ) : (
+                    'Save Account Changes'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================
+          5. RESET PASSWORD MODAL
+         ==================================================== */}
+      {showResetPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#2D1E18]">Reset Admin Password</h3>
+                  <p className="text-xs text-[#6D4C41]">Issue a temporary password for this administrator</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowResetPasswordModal(false)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {resetError && (
+              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-4 mt-5 text-xs">
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-[#4E342E]">Password Option</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetPassMode('AUTO')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-semibold transition ${
+                      resetPassMode === 'AUTO'
+                        ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                        : 'bg-[#FDFBF7] text-[#4E342E] border-[#D7CCC8] hover:bg-[#F7F2EF]'
+                    }`}
+                  >
+                    Auto-Generate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResetPassMode('MANUAL')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-semibold transition ${
+                      resetPassMode === 'MANUAL'
+                        ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                        : 'bg-[#FDFBF7] text-[#4E342E] border-[#D7CCC8] hover:bg-[#F7F2EF]'
+                    }`}
+                  >
+                    Set Manually
+                  </button>
+                </div>
+              </div>
+
+              {resetPassMode === 'AUTO' ? (
+                <div className="p-3.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-[#4E342E] text-xs">
+                  <span className="font-semibold block mb-1 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#8D6E63]" /> Cryptographic Generation
+                  </span>
+                  A secure, temporary password will be generated, hashed with Argon2id, and displayed once for you to copy.
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                    Temporary Password (Min 8 characters)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCustomPassword ? 'text' : 'password'}
+                      required
+                      minLength={8}
+                      value={customPassword}
+                      onChange={(e) => setCustomPassword(e.target.value)}
+                      placeholder="Enter new temporary password"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomPassword(!showCustomPassword)}
+                      className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#4E342E]"
+                    >
+                      {showCustomPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                <strong>Important:</strong> The administrator will be required to create their own new password upon signing in.
+              </div>
+
+              <div className="pt-3 flex justify-end gap-3 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => setShowResetPasswordModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  {resetLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Resetting...
+                    </>
+                  ) : (
+                    'Confirm Password Reset'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================
+          6. ONE-TIME TEMPORARY PASSWORD COPY DISPLAY
+         ==================================================== */}
+      {oneTimePasswordData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800">
+                  <CheckCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#2D1E18]">Temporary Password Ready</h3>
+                  <p className="text-xs text-[#6D4C41]">Copy and securely share with administrator</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOneTimePasswordData(null)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4 text-xs">
+              <div>
+                <span className="text-[#6D4C41] block mb-0.5">Academic Admin Account</span>
+                <div className="font-semibold text-[#2D1E18] text-sm">{oneTimePasswordData.adminEmail}</div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                <span className="text-[11px] uppercase tracking-wider text-[#4E342E] font-bold block mb-1.5">
+                  Temporary Password
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-lg font-black text-[#2D1E18] tracking-wider select-all">
+                    {oneTimePasswordData.temporaryPassword}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(oneTimePasswordData.temporaryPassword);
+                      setCopiedTempPassword(true);
+                      setTimeout(() => setCopiedTempPassword(false), 2500);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white font-medium text-xs transition-colors shadow-sm"
+                  >
+                    {copiedTempPassword ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-300" /> Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" /> Copy Password
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-[11px] leading-relaxed">
+                <strong>Security Notice:</strong> This temporary password will NOT be displayed again or stored in plaintext. The user will be required to set a permanent password immediately upon login.
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setOneTimePasswordData(null)}
+                className="w-full bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold py-2.5 rounded-xl transition shadow-sm"
+              >
+                I have securely saved or shared this password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================
+          7. STATUS TOGGLE CONFIRMATION MODAL
+         ==================================================== */}
+      {statusActionTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center gap-3 pb-4 border-b border-[#EFEBE9]">
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                  statusActionTarget.status === 'ACTIVE'
+                    ? 'bg-rose-50 border border-rose-200 text-rose-800'
+                    : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                }`}
+              >
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[#2D1E18]">
+                  {statusActionTarget.status === 'ACTIVE' ? 'Suspend Institute' : 'Reactivate Institute'}
+                </h3>
+                <p className="text-xs text-[#6D4C41]">Institute ID: {statusActionTarget.id}</p>
+              </div>
+            </div>
+
+            <div className="py-4 text-xs text-[#4E342E] space-y-2">
+              <p>
+                Are you sure you want to{' '}
+                <strong>{statusActionTarget.status === 'ACTIVE' ? 'suspend' : 'activate'}</strong> "
+                {statusActionTarget.name}" ({statusActionTarget.code})?
+              </p>
+              {statusActionTarget.status === 'ACTIVE' ? (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                  When suspended, faculty, staff and students will be locked out from signing in. All historical data, student records and attendances are safely preserved.
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] leading-relaxed">
+                  When reactivated, all valid members of this institute will regain active access immediately.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 flex justify-end gap-3 border-t border-[#EFEBE9]">
+              <button
+                type="button"
+                onClick={() => setStatusActionTarget(null)}
+                disabled={statusUpdating}
+                className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmStatusToggle}
+                disabled={statusUpdating}
+                className={`text-xs font-semibold px-4 py-2 rounded-xl text-white transition shadow-sm flex items-center gap-1.5 ${
+                  statusActionTarget.status === 'ACTIVE'
+                    ? 'bg-rose-700 hover:bg-rose-800'
+                    : 'bg-emerald-700 hover:bg-emerald-800'
+                }`}
+              >
+                {statusUpdating ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Updating...
+                  </>
+                ) : statusActionTarget.status === 'ACTIVE' ? (
+                  'Yes, Suspend Institute'
+                ) : (
+                  'Yes, Activate Institute'
+                )}
               </button>
             </div>
           </div>

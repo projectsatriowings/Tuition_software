@@ -6,6 +6,8 @@ import {
   updateInstitute,
   updateInstituteStatus,
   getDashboardSummary,
+  updateAdminAccount,
+  resetAdminPassword,
 } from './institutes.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 
@@ -21,4 +23,9 @@ router.get('/:id', authenticateToken, requireInstituteContext, getInstituteById)
 router.patch('/:id', authenticateToken, requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), requireInstituteContext, updateInstitute);
 router.patch('/:id/status', authenticateToken, requireRole('SUPER_ADMIN'), updateInstituteStatus);
 
+// Academic Admin Account Management (SUPER_ADMIN only)
+router.patch('/:id/admin-account', authenticateToken, requireRole('SUPER_ADMIN'), updateAdminAccount);
+router.post('/:id/admin-account/reset-password', authenticateToken, requireRole('SUPER_ADMIN'), resetAdminPassword);
+
 export default router;
+

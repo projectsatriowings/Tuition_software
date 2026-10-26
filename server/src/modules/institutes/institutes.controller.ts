@@ -18,11 +18,11 @@ export const createInstituteSchema = z.object({
   postalCode: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email('Invalid institute email').optional().or(z.literal('')),
-  // Optional initial Academic Admin provisioning
-  adminFullName: z.string().optional(),
-  adminEmail: z.string().email('Invalid admin email').optional().or(z.literal('')),
-  adminPhone: z.string().optional(),
-  adminInitialPassword: z.string().min(8, 'Admin password must be at least 8 characters').optional(),
+  // Required initial Academic Admin provisioning
+  adminFullName: z.string().min(2, 'Academic Admin full name is required').max(100),
+  adminEmail: z.string().email('Valid Academic Admin login email is required'),
+  adminPhone: z.string().optional().or(z.literal('')),
+  adminInitialPassword: z.string().min(8, 'Admin password must be at least 8 characters'),
 });
 
 export const updateInstituteSchema = z.object({
@@ -40,6 +40,17 @@ export const updateInstituteSchema = z.object({
 export const updateStatusSchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED', 'PENDING_SETUP']),
   reason: z.string().optional(),
+});
+
+export const updateAdminAccountSchema = z.object({
+  fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100).optional(),
+  email: z.string().email('Invalid email address').optional(),
+  phone: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+export const resetAdminPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').optional(),
 });
 
 /**
@@ -104,7 +115,7 @@ export async function listInstitutes(req: AuthenticatedRequest, res: Response) {
 
 /**
  * Create a new Institute (SUPER_ADMIN only)
- * Uses a safe transaction to create Institute + initial Academic Admin if requested
+ * Uses a safe transaction to create Institute + initial Academic Admin
  */
 export async function createInstitute(req: AuthenticatedRequest, res: Response) {
   try {
@@ -117,11 +128,38 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
     }
 
     const data = parse.data;
+
+    // Check if admin email already exists before proceeding
+    const normalizedAdminEmail = data.adminEmail.trim().toLowerCase();
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedAdminEmail },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: `User with email '${normalizedAdminEmail}' already exists`,
+      });
+    }
+
+    // Check duplicate phone if provided
+    if (data.adminPhone && data.adminPhone.trim()) {
+      const existingPhone = await prisma.user.findUnique({
+        where: { phone: data.adminPhone.trim() },
+      });
+      if (existingPhone) {
+        return res.status(409).json({
+          success: false,
+          error: `User with phone '${data.adminPhone.trim()}' already exists`,
+        });
+      }
+    }
+
     let instituteCode = data.code?.toUpperCase().trim();
 
     if (!instituteCode) {
       // Securely generate unique readable institute code: INS-XXXXXX
-      for (let attempt = 0; attempt < 10; attempt++) {
+      for (let attempt = 0; attempt < 15; attempt++) {
         const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
         const candidate = `INS-${suffix}`;
         const existing = await prisma.institute.findUnique({ where: { code: candidate } });
@@ -163,41 +201,29 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
         },
       });
 
-      let adminUser = null;
-      if (data.adminEmail && data.adminInitialPassword) {
-        // Check if admin email already exists
-        const existingUser = await tx.user.findUnique({
-          where: { email: data.adminEmail.trim().toLowerCase() },
-        });
+      const passwordHash = await hashPassword(data.adminInitialPassword);
 
-        if (existingUser) {
-          throw new Error(`User with email '${data.adminEmail}' already exists`);
-        }
+      const adminUser = await tx.user.create({
+        data: {
+          email: normalizedAdminEmail,
+          phone: data.adminPhone?.trim() || null,
+          fullName: data.adminFullName.trim(),
+          passwordHash,
+          role: 'ACADEMIC_ADMIN',
+          isActive: true,
+          mustChangePassword: true, // Forces password change on initial login
+        },
+      });
 
-        const passwordHash = await hashPassword(data.adminInitialPassword);
-
-        adminUser = await tx.user.create({
-          data: {
-            email: data.adminEmail.trim().toLowerCase(),
-            phone: data.adminPhone?.trim() || null,
-            fullName: data.adminFullName?.trim() || `${data.name} Admin`,
-            passwordHash,
-            role: 'ACADEMIC_ADMIN',
-            isActive: true,
-            mustChangePassword: true, // Forces password change on initial login
-          },
-        });
-
-        // Create membership
-        await tx.instituteMembership.create({
-          data: {
-            instituteId: institute.id,
-            userId: adminUser.id,
-            role: 'ACADEMIC_ADMIN',
-            isActive: true,
-          },
-        });
-      }
+      // Create membership
+      await tx.instituteMembership.create({
+        data: {
+          instituteId: institute.id,
+          userId: adminUser.id,
+          role: 'ACADEMIC_ADMIN',
+          isActive: true,
+        },
+      });
 
       // Record Audit Log
       await tx.auditLog.create({
@@ -210,7 +236,8 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
           newValues: {
             code: institute.code,
             name: institute.name,
-            adminUserId: adminUser?.id || null,
+            adminUserId: adminUser.id,
+            adminEmail: adminUser.email,
           },
         },
       });
@@ -220,16 +247,18 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
 
     return res.status(201).json({
       success: true,
-      message: 'Institute created successfully',
+      message: 'Institute and initial Academic Admin created successfully',
       data: {
         institute: result.institute,
-        initialAdmin: result.adminUser ? {
+        initialAdmin: {
           id: result.adminUser.id,
           email: result.adminUser.email,
           fullName: result.adminUser.fullName,
+          phone: result.adminUser.phone,
           role: result.adminUser.role,
+          isActive: result.adminUser.isActive,
           mustChangePassword: result.adminUser.mustChangePassword,
-        } : null,
+        },
       },
     });
   } catch (err: any) {
@@ -242,7 +271,7 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
 }
 
 /**
- * Get Institute details by ID
+ * Get Institute details by ID (Super Admin can view any, Academic Admin only their own)
  */
 export async function getInstituteById(req: AuthenticatedRequest, res: Response) {
   try {
@@ -268,7 +297,7 @@ export async function getInstituteById(req: AuthenticatedRequest, res: Response)
           },
         },
         memberships: {
-          where: { role: 'ACADEMIC_ADMIN', isActive: true },
+          where: { role: 'ACADEMIC_ADMIN' },
           include: {
             user: {
               select: {
@@ -276,10 +305,15 @@ export async function getInstituteById(req: AuthenticatedRequest, res: Response)
                 fullName: true,
                 email: true,
                 phone: true,
+                role: true,
+                isActive: true,
+                mustChangePassword: true,
                 lastLoginAt: true,
+                createdAt: true,
               },
             },
           },
+          orderBy: { joinedAt: 'asc' },
         },
       },
     });
@@ -288,9 +322,14 @@ export async function getInstituteById(req: AuthenticatedRequest, res: Response)
       return res.status(404).json({ success: false, error: 'Institute not found' });
     }
 
+    const adminAccount = institute.memberships?.[0]?.user || null;
+
     return res.json({
       success: true,
-      data: { institute },
+      data: {
+        institute,
+        adminAccount,
+      },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to fetch institute details' });
@@ -478,3 +517,207 @@ export async function getDashboardSummary(req: AuthenticatedRequest, res: Respon
     return res.status(500).json({ success: false, error: 'Failed to fetch dashboard summary' });
   }
 }
+
+/**
+ * Update Academic Admin Account Details (SUPER_ADMIN only)
+ * Updates permitted user fields (fullName, email, phone, isActive)
+ */
+export async function updateAdminAccount(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const parse = updateAdminAccountSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Invalid input data',
+      });
+    }
+
+    const institute = await prisma.institute.findUnique({ where: { id } });
+    if (!institute) {
+      return res.status(404).json({ success: false, error: 'Institute not found' });
+    }
+
+    const membership = await prisma.instituteMembership.findFirst({
+      where: { instituteId: id, role: 'ACADEMIC_ADMIN' },
+      include: { user: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    if (!membership || !membership.user) {
+      return res.status(404).json({
+        success: false,
+        error: 'No Academic Admin account found for this institute',
+      });
+    }
+
+    const data = parse.data;
+
+    // Check duplicate email if changing
+    if (data.email) {
+      const normalizedEmail = data.email.trim().toLowerCase();
+      const existing = await prisma.user.findFirst({
+        where: {
+          email: normalizedEmail,
+          NOT: { id: membership.userId },
+        },
+      });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          error: `User with email '${normalizedEmail}' already exists`,
+        });
+      }
+    }
+
+    // Check duplicate phone if changing
+    if (data.phone) {
+      const cleanPhone = data.phone.trim();
+      const existingPhone = await prisma.user.findFirst({
+        where: {
+          phone: cleanPhone,
+          NOT: { id: membership.userId },
+        },
+      });
+      if (existingPhone) {
+        return res.status(409).json({
+          success: false,
+          error: `User with phone '${cleanPhone}' already exists`,
+        });
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: membership.userId },
+      data: {
+        ...(data.fullName ? { fullName: data.fullName.trim() } : {}),
+        ...(data.email ? { email: data.email.trim().toLowerCase() } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone ? data.phone.trim() : null } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        mustChangePassword: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
+
+    // Record Audit Log
+    await prisma.auditLog.create({
+      data: {
+        instituteId: id,
+        userId: req.user?.userId || null,
+        action: 'ADMIN_ACCOUNT_UPDATED',
+        entityType: 'User',
+        entityId: membership.userId,
+        oldValues: {
+          fullName: membership.user.fullName,
+          email: membership.user.email,
+          phone: membership.user.phone,
+          isActive: membership.user.isActive,
+        },
+        newValues: updatedUser as any,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Academic Admin account updated successfully',
+      data: { adminAccount: updatedUser },
+    });
+  } catch (err: any) {
+    console.error('[Update Admin Account Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update admin account' });
+  }
+}
+
+/**
+ * Reset Academic Admin Password (SUPER_ADMIN only)
+ * Accepts an optional Super Admin specified password or generates a secure 12-char random string.
+ * Hashes with Argon2id, sets mustChangePassword: true, invalidates reset tokens, logs audit event.
+ * Returns the temporary password once for the Super Admin copy modal.
+ */
+export async function resetAdminPassword(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const parse = resetAdminPasswordSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Invalid password format',
+      });
+    }
+
+    const institute = await prisma.institute.findUnique({ where: { id } });
+    if (!institute) {
+      return res.status(404).json({ success: false, error: 'Institute not found' });
+    }
+
+    const membership = await prisma.instituteMembership.findFirst({
+      where: { instituteId: id, role: 'ACADEMIC_ADMIN' },
+      include: { user: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    if (!membership || !membership.user) {
+      return res.status(404).json({
+        success: false,
+        error: 'No Academic Admin account found for this institute',
+      });
+    }
+
+    // Determine temporary password
+    const temporaryPassword = parse.data.password?.trim() || `Tuit#${crypto.randomBytes(3).toString('hex').toUpperCase()}!`;
+    const passwordHash = await hashPassword(temporaryPassword);
+
+    await prisma.user.update({
+      where: { id: membership.userId },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+      },
+    });
+
+    // Invalidate any existing password reset tokens
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: membership.userId },
+    });
+
+    // Record Audit Log (Security: never log plaintext password or hash)
+    await prisma.auditLog.create({
+      data: {
+        instituteId: id,
+        userId: req.user?.userId || null,
+        action: 'ADMIN_PASSWORD_RESET',
+        entityType: 'User',
+        entityId: membership.userId,
+        newValues: {
+          mustChangePassword: true,
+          resetBy: req.user?.userId || 'SUPER_ADMIN',
+          resetAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Admin password reset successfully',
+      data: {
+        temporaryPassword,
+        mustChangePassword: true,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Reset Admin Password Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset admin password' });
+  }
+}
+
