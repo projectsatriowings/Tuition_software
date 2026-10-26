@@ -35,6 +35,9 @@
       "eas": {
         "projectId": "0f6ea37c-1041-4ce1-9124-391ddec521a0"
       }
-    }
+    },
+    "plugins": [
+      "./plugins/withMonorepoFix.js"
+    ]
   }
 }
