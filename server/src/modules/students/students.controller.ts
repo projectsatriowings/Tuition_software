@@ -16,6 +16,7 @@ export const studentAdmissionSchema = z.object({
   rollNumber: z.string().optional(),
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
+  studentPhone: z.string().optional().or(z.literal('')),
   dob: z.string().optional(), // YYYY-MM-DD
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(),
   bloodGroup: z.string().optional(),
@@ -28,12 +29,20 @@ export const studentAdmissionSchema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
   initialPassword: z.string().min(8).optional(),
+  // Parent / Guardian fields during admission (Requirement 3)
+  parentFullName: z.string().min(2, 'Parent/guardian full name is required').optional(),
+  parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).default('GUARDIAN').optional(),
+  parentPhone: z.string().min(8, 'Parent/guardian phone number is required').optional(),
+  parentEmail: z.string().email().optional().or(z.literal('')).optional(),
+  parentInitialPassword: z.string().min(8).optional(),
+  parentCanReceiveSms: z.boolean().default(true).optional(),
 });
 
 export const updateStudentSchema = z.object({
   rollNumber: z.string().optional(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
+  studentPhone: z.string().optional(),
   dob: z.string().optional(),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(),
   bloodGroup: z.string().optional(),
@@ -44,6 +53,19 @@ export const updateStudentStatusSchema = z.object({
   status: z.enum(['ACTIVE', 'PASSED_OUT', 'DISCONTINUED']),
   reason: z.string().optional(),
 });
+
+export const resetStudentPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').optional(),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters').optional(),
+});
+
+export const updateStudentIdentifierSchema = z.object({
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
+  phone: z.string().min(8, 'Phone number must be at least 8 digits').optional().or(z.literal('')),
+}).refine((data) => data.email !== undefined || data.phone !== undefined, {
+  message: 'At least one identifier (email or phone) must be provided',
+});
+
 
 /**
  * List students with filters, search, and pagination
@@ -214,6 +236,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 rollNumber: data.rollNumber?.trim() || null,
                 firstName: data.firstName.trim(),
                 lastName: data.lastName.trim(),
+                phone: data.studentPhone?.trim() || (data.createLoginAccount ? data.phone?.trim() : null) || null,
                 dob: parsedDob,
                 gender: data.gender || null,
                 bloodGroup: data.bloodGroup?.trim() || null,
@@ -243,6 +266,119 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               });
             }
 
+            // Parent Account Creation & Linking (Requirement 3)
+            let parentUser = null;
+            let parentProfile = null;
+            let parentTempPassword = null;
+
+            if (data.parentFullName && data.parentPhone) {
+              const cleanParentPhone = data.parentPhone.trim();
+              const cleanParentEmail = data.parentEmail?.trim().toLowerCase() || null;
+
+              // Check if a parent user already exists by phone or email
+              const existingUser = await tx.user.findFirst({
+                where: {
+                  OR: [
+                    { phone: cleanParentPhone },
+                    ...(cleanParentEmail ? [{ email: cleanParentEmail }] : []),
+                  ],
+                },
+                include: { parentProfile: true },
+              });
+
+              if (existingUser) {
+                if (existingUser.role !== 'PARENT') {
+                  throw new Error(`Phone or email is already registered to a non-parent account (${existingUser.role}).`);
+                }
+
+                parentUser = existingUser;
+
+                // Ensure ParentProfile exists
+                if (existingUser.parentProfile) {
+                  parentProfile = existingUser.parentProfile;
+                } else {
+                  parentProfile = await tx.parentProfile.create({
+                    data: { userId: existingUser.id },
+                  });
+                }
+
+                // Ensure membership exists for this institute
+                const existingMembership = await tx.instituteMembership.findUnique({
+                  where: {
+                    instituteId_userId: {
+                      instituteId,
+                      userId: existingUser.id,
+                    },
+                  },
+                });
+
+                if (!existingMembership) {
+                  await tx.instituteMembership.create({
+                    data: {
+                      instituteId,
+                      userId: existingUser.id,
+                      role: 'PARENT',
+                      isActive: true,
+                    },
+                  });
+                }
+              } else {
+                // Create new parent account
+                parentTempPassword = data.parentInitialPassword?.trim() || `Parent#${generateSecureRandomToken(4)}2026`;
+                const parentPasswordHash = await hashPassword(parentTempPassword);
+
+                parentUser = await tx.user.create({
+                  data: {
+                    fullName: data.parentFullName.trim(),
+                    phone: cleanParentPhone,
+                    email: cleanParentEmail,
+                    passwordHash: parentPasswordHash,
+                    role: 'PARENT',
+                    isActive: true,
+                    mustChangePassword: true,
+                  },
+                });
+
+                await tx.instituteMembership.create({
+                  data: {
+                    instituteId,
+                    userId: parentUser.id,
+                    role: 'PARENT',
+                    isActive: true,
+                  },
+                });
+
+                parentProfile = await tx.parentProfile.create({
+                  data: {
+                    userId: parentUser.id,
+                    isPhoneVerified: true,
+                  },
+                });
+              }
+
+              // Link student to parent
+              await tx.studentParentRelation.upsert({
+                where: {
+                  studentId_parentId: {
+                    studentId: student.id,
+                    parentId: parentProfile.id,
+                  },
+                },
+                create: {
+                  studentId: student.id,
+                  parentId: parentProfile.id,
+                  relation: data.parentRelationship || 'GUARDIAN',
+                  isPrimaryContact: true,
+                  canReceiveSms: data.parentCanReceiveSms ?? true,
+                },
+                update: {
+                  relation: data.parentRelationship || 'GUARDIAN',
+                  isPrimaryContact: true,
+                  canReceiveSms: data.parentCanReceiveSms ?? true,
+                },
+              });
+            }
+
             // Record Audit Log
             await tx.auditLog.create({
               data: {
@@ -255,11 +391,12 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                   admissionNumber: student.admissionNumber,
                   name: `${student.firstName} ${student.lastName}`,
                   batchId: data.batchId || null,
+                  hasParentAccount: !!parentUser,
                 },
               },
             });
 
-            return { student, studentUser, tempPassword, admissionInfo };
+            return { student, studentUser, tempPassword, admissionInfo, parentUser, parentProfile, parentTempPassword };
           },
           {
             maxWait: 15000,
@@ -293,6 +430,13 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
           phone: result.studentUser.phone,
           temporaryPassword: result.tempPassword,
         } : null,
+        parentAccount: result.parentUser ? {
+          id: result.parentUser.id,
+          fullName: result.parentUser.fullName,
+          phone: result.parentUser.phone,
+          email: result.parentUser.email,
+          temporaryPassword: result.parentTempPassword,
+        } : null,
       },
     });
   } catch (err: any) {
@@ -300,7 +444,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       return res.status(400).json({ success: false, error: err.message });
     }
     console.error('[Admit Student Error]', err);
-    return res.status(500).json({ success: false, error: 'Failed to admit student' });
+    return res.status(500).json({ success: false, error: err.message || 'Failed to admit student' });
   }
 }
 
@@ -429,6 +573,22 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
         instituteId,
       },
       include: {
+        institute: {
+          select: { id: true, name: true, code: true, phone: true, email: true },
+        },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            role: true,
+            isActive: true,
+            mustChangePassword: true,
+            createdAt: true,
+            lastLoginAt: true,
+          },
+        },
         enrollments: {
           where: { isActive: true },
           include: {
@@ -441,11 +601,29 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
             parent: {
               include: {
                 user: {
-                  select: { id: true, fullName: true, phone: true, email: true },
+                  select: {
+                    id: true,
+                    fullName: true,
+                    phone: true,
+                    email: true,
+                    role: true,
+                    isActive: true,
+                    mustChangePassword: true,
+                    createdAt: true,
+                    lastLoginAt: true,
+                  },
                 },
               },
             },
           },
+        },
+        attendanceEvents: {
+          take: 10,
+          orderBy: { eventTime: 'desc' },
+          select: { id: true, eventTime: true, eventType: true, isLate: true, remarks: true },
+        },
+        feeAssignments: {
+          include: { feeStructure: true },
         },
         _count: {
           select: {
@@ -500,6 +678,7 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     if (data.rollNumber !== undefined) updateData.rollNumber = data.rollNumber?.trim() || null;
     if (data.firstName) updateData.firstName = data.firstName.trim();
     if (data.lastName) updateData.lastName = data.lastName.trim();
+    if (data.studentPhone !== undefined) updateData.phone = data.studentPhone?.trim() || null;
     if (data.gender !== undefined) updateData.gender = data.gender;
     if (data.bloodGroup !== undefined) updateData.bloodGroup = data.bloodGroup?.trim() || null;
     if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
@@ -534,6 +713,202 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
 }
 
 /**
+ * Reset student login password (Staff / Academic Admin only)
+ */
+export async function resetStudentPassword(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+    const { id } = req.params;
+
+    const parse = resetStudentPasswordSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Invalid input' });
+    }
+
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+      include: { user: true },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    let targetUserId = student.userId;
+    const temporaryPassword =
+      parse.data?.password?.trim() ||
+      parse.data?.newPassword?.trim() ||
+      `Student#${generateSecureRandomToken(4)}2026`;
+    const passwordHash = await hashPassword(temporaryPassword);
+
+    if (!targetUserId) {
+      // Create student user account if it did not exist
+      const studentUser = await prisma.user.create({
+        data: {
+          fullName: `${student.firstName} ${student.lastName}`,
+          phone: student.phone || null,
+          passwordHash,
+          role: 'STUDENT',
+          isActive: true,
+          mustChangePassword: true,
+        },
+      });
+
+      await prisma.instituteMembership.create({
+        data: {
+          instituteId,
+          userId: studentUser.id,
+          role: 'STUDENT',
+          isActive: true,
+        },
+      });
+
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { userId: studentUser.id },
+      });
+
+      targetUserId = studentUser.id;
+    } else {
+      await prisma.user.update({
+        where: { id: targetUserId },
+        data: {
+          passwordHash,
+          mustChangePassword: true,
+        },
+      });
+    }
+
+    // Invalidate any password reset tokens
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: targetUserId },
+    });
+
+    // Record audit log
+    await prisma.auditLog.create({
+      data: {
+        instituteId,
+        userId: req.user?.userId || null,
+        action: 'STUDENT_PASSWORD_RESET',
+        entityType: 'Student',
+        entityId: student.id,
+        newValues: {
+          studentId: student.id,
+          userId: targetUserId,
+          resetBy: req.user?.userId,
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Student password reset successfully',
+      data: {
+        temporaryPassword,
+        mustChangePassword: true,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Reset Student Password Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset student password' });
+  }
+}
+
+/**
+ * Update student login identifier (email/phone)
+ */
+export async function updateStudentLoginIdentifier(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+    const { id } = req.params;
+
+    const parse = updateStudentIdentifierSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Invalid input' });
+    }
+
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+      include: { user: true },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    const cleanEmail = parse.data.email !== undefined ? (parse.data.email.trim().toLowerCase() || null) : undefined;
+    const cleanPhone = parse.data.phone !== undefined ? (parse.data.phone.trim() || null) : undefined;
+
+    // Check duplicate email
+    if (cleanEmail) {
+      const existingEmail = await prisma.user.findFirst({
+        where: { email: cleanEmail, id: { not: student.userId || undefined } },
+      });
+      if (existingEmail) {
+        return res.status(409).json({ success: false, error: `Email '${cleanEmail}' is already in use by another account` });
+      }
+    }
+
+    // Check duplicate phone
+    if (cleanPhone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { phone: cleanPhone, id: { not: student.userId || undefined } },
+      });
+      if (existingPhone) {
+        return res.status(409).json({ success: false, error: `Phone '${cleanPhone}' is already in use by another account` });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (student.userId) {
+        await tx.user.update({
+          where: { id: student.userId },
+          data: {
+            ...(cleanEmail !== undefined ? { email: cleanEmail } : {}),
+            ...(cleanPhone !== undefined ? { phone: cleanPhone } : {}),
+          },
+        });
+      }
+
+      if (cleanPhone !== undefined) {
+        await tx.student.update({
+          where: { id: student.id },
+          data: { phone: cleanPhone },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_IDENTIFIER_UPDATED',
+          entityType: 'Student',
+          entityId: student.id,
+          newValues: {
+            email: cleanEmail,
+            phone: cleanPhone,
+          },
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: 'Student login credentials updated successfully',
+    });
+  } catch (err: any) {
+    console.error('[Update Student Identifier Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update student identifier' });
+  }
+}
+
+/**
  * Update Student Status (ACTIVE, PASSED_OUT, DISCONTINUED)
  */
 export async function updateStudentStatus(req: AuthenticatedRequest, res: Response) {
@@ -559,22 +934,34 @@ export async function updateStudentStatus(req: AuthenticatedRequest, res: Respon
       return res.status(404).json({ success: false, error: 'Student not found in this institute' });
     }
 
-    const updated = await prisma.student.update({
-      where: { id },
-      data: { status },
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      const student = await tx.student.update({
+        where: { id },
+        data: { status },
+      });
 
-    // Record Audit Log
-    await prisma.auditLog.create({
-      data: {
-        instituteId,
-        userId: req.user?.userId || null,
-        action: 'STUDENT_STATUS_CHANGED',
-        entityType: 'Student',
-        entityId: id,
-        oldValues: { status: existing.status },
-        newValues: { status, reason },
-      },
+      // Deactivate active batch enrollments if student is passing out or discontinued
+      if (status === 'PASSED_OUT' || status === 'DISCONTINUED') {
+        await tx.studentEnrollment.updateMany({
+          where: { studentId: id, isActive: true },
+          data: { isActive: false },
+        });
+      }
+
+      // Record Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_STATUS_CHANGED',
+          entityType: 'Student',
+          entityId: id,
+          oldValues: { status: existing.status },
+          newValues: { status, reason: reason || 'Status updated by authorized staff' },
+        },
+      });
+
+      return student;
     });
 
     return res.json({

@@ -312,3 +312,27 @@ export async function mobileApiFetch<T = any>(
     };
   }
 }
+
+export const api = {
+  get: async <T = any>(endpoint: string) => {
+    const res = await mobileApiFetch<T>(endpoint, { method: 'GET' });
+    return { data: res };
+  },
+  post: async <T = any>(endpoint: string, body?: any) => {
+    const res = await mobileApiFetch<T>(endpoint, { method: 'POST', body });
+    return { data: res };
+  },
+  patch: async <T = any>(endpoint: string, body?: any) => {
+    const res = await mobileApiFetch<T>(endpoint, { method: 'PATCH', body });
+    return { data: res };
+  },
+  put: async <T = any>(endpoint: string, body?: any) => {
+    const res = await mobileApiFetch<T>(endpoint, { method: 'PUT', body });
+    return { data: res };
+  },
+  delete: async <T = any>(endpoint: string) => {
+    const res = await mobileApiFetch<T>(endpoint, { method: 'DELETE' });
+    return { data: res };
+  },
+};
+

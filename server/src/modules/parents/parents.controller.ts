@@ -461,3 +461,206 @@ export async function getMyChildren(req: AuthenticatedRequest, res: Response) {
     return res.status(500).json({ success: false, error: 'Failed to fetch linked children' });
   }
 }
+
+export const resetParentPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').optional(),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters').optional(),
+});
+
+export const updateParentIdentifierSchema = z.object({
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
+  phone: z.string().min(8, 'Phone number must be at least 8 digits').optional().or(z.literal('')),
+}).refine((data) => data.email !== undefined || data.phone !== undefined, {
+  message: 'At least one identifier (email or phone) must be provided',
+});
+
+/**
+ * Reset Parent Password by authorized staff/admin
+ */
+export async function resetParentPassword(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { parentId } = req.params;
+
+    const parse = resetParentPasswordSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Invalid input' });
+    }
+
+    // Verify parent exists
+    const parentProfile = await prisma.parentProfile.findUnique({
+      where: { id: parentId },
+      include: {
+        user: true,
+        studentRelations: {
+          include: { student: true },
+        },
+      },
+    });
+
+    if (!parentProfile) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    // Check institute scope: parent has student in this institute or membership
+    const isInstStudent = parentProfile.studentRelations.some((r) => r.student.instituteId === instituteId);
+    const membership = await prisma.instituteMembership.findUnique({
+      where: {
+        instituteId_userId: {
+          instituteId: instituteId!,
+          userId: parentProfile.userId,
+        },
+      },
+    });
+
+    if (!isInstStudent && !membership) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent is not linked to this institute' });
+    }
+
+    const temporaryPassword =
+      parse.data?.password?.trim() ||
+      parse.data?.newPassword?.trim() ||
+      `Parent#${generateSecureRandomToken(4)}2026`;
+    const passwordHash = await hashPassword(temporaryPassword);
+
+    await prisma.user.update({
+      where: { id: parentProfile.userId },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+      },
+    });
+
+    // Invalidate reset tokens
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: parentProfile.userId },
+    });
+
+    // Record audit log
+    await prisma.auditLog.create({
+      data: {
+        instituteId,
+        userId: req.user?.userId || null,
+        action: 'PARENT_PASSWORD_RESET',
+        entityType: 'ParentProfile',
+        entityId: parentProfile.id,
+        newValues: {
+          parentId: parentProfile.id,
+          userId: parentProfile.userId,
+          resetBy: req.user?.userId,
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Parent password reset successfully',
+      data: {
+        temporaryPassword,
+        mustChangePassword: true,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Reset Parent Password Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset parent password' });
+  }
+}
+
+/**
+ * Update Parent Login Identifier (phone/email)
+ */
+export async function updateParentLoginIdentifier(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { parentId } = req.params;
+
+    const parse = updateParentIdentifierSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Invalid input' });
+    }
+
+    const parentProfile = await prisma.parentProfile.findUnique({
+      where: { id: parentId },
+      include: {
+        user: true,
+        studentRelations: {
+          include: { student: true },
+        },
+      },
+    });
+
+    if (!parentProfile) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    // Check institute scope
+    const isInstStudent = parentProfile.studentRelations.some((r) => r.student.instituteId === instituteId);
+    const membership = await prisma.instituteMembership.findUnique({
+      where: {
+        instituteId_userId: {
+          instituteId: instituteId!,
+          userId: parentProfile.userId,
+        },
+      },
+    });
+
+    if (!isInstStudent && !membership) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent is not linked to this institute' });
+    }
+
+    const cleanEmail = parse.data.email !== undefined ? (parse.data.email.trim().toLowerCase() || null) : undefined;
+    const cleanPhone = parse.data.phone !== undefined ? (parse.data.phone.trim() || null) : undefined;
+
+    // Check duplicate email
+    if (cleanEmail) {
+      const existingEmail = await prisma.user.findFirst({
+        where: { email: cleanEmail, id: { not: parentProfile.userId } },
+      });
+      if (existingEmail) {
+        return res.status(409).json({ success: false, error: `Email '${cleanEmail}' is already registered to another account` });
+      }
+    }
+
+    // Check duplicate phone
+    if (cleanPhone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { phone: cleanPhone, id: { not: parentProfile.userId } },
+      });
+      if (existingPhone) {
+        return res.status(409).json({ success: false, error: `Phone '${cleanPhone}' is already registered to another account` });
+      }
+    }
+
+    await prisma.user.update({
+      where: { id: parentProfile.userId },
+      data: {
+        ...(cleanEmail !== undefined ? { email: cleanEmail } : {}),
+        ...(cleanPhone !== undefined ? { phone: cleanPhone } : {}),
+      },
+    });
+
+    // Record audit log
+    await prisma.auditLog.create({
+      data: {
+        instituteId,
+        userId: req.user?.userId || null,
+        action: 'PARENT_IDENTIFIER_UPDATED',
+        entityType: 'ParentProfile',
+        entityId: parentProfile.id,
+        newValues: {
+          email: cleanEmail,
+          phone: cleanPhone,
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Parent contact / login identifier updated successfully',
+    });
+  } catch (err: any) {
+    console.error('[Update Parent Identifier Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update parent login identifier' });
+  }
+}
+

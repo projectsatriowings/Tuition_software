@@ -7,7 +7,6 @@ import { SuperAdminDashboard } from './pages/SuperAdminDashboard';
 import { AcademicAdminDashboard } from './pages/AcademicAdminDashboard';
 import { StaffManagement } from './pages/StaffManagement';
 import { StudentManagement } from './pages/StudentManagement';
-import { ParentManagement } from './pages/ParentManagement';
 import { AcademicsManagement } from './pages/AcademicsManagement';
 import { AttendanceManagement } from './pages/AttendanceManagement';
 import { ParentPortal } from './pages/ParentPortal';
@@ -86,8 +85,6 @@ const AppContent: React.FC = () => {
 
                 {currentTab === 'students' && <StudentManagement />}
 
-                {currentTab === 'parents' && <ParentManagement />}
-
                 {currentTab === 'academics' && <AcademicsManagement />}
 
                 {currentTab === 'attendance' && <AttendanceManagement />}
@@ -115,10 +112,15 @@ const AppContent: React.FC = () => {
   );
 };
 
+import { ToastProvider } from './context/ToastContext';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ToastProvider>
   );
 }
+

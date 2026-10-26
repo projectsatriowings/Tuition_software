@@ -237,6 +237,7 @@ model Student {
   dob             DateTime?
   gender          String?       // "MALE", "FEMALE", "OTHER"
   bloodGroup      String?
+  phone           String?
   status          StudentStatus @default(ACTIVE)
   admissionDate   DateTime      @default(now())
   notes           String?
@@ -293,6 +294,7 @@ model Subject {
   updatedAt   DateTime @updatedAt
 
   institute         Institute           @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  batchSubjects     BatchSubject[]
   enrollments       StudentEnrollment[]
   learningMaterials LearningMaterial[]
   examinations      Examination[]
@@ -313,6 +315,7 @@ model Batch {
   updatedAt    DateTime @updatedAt
 
   institute         Institute              @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  batchSubjects     BatchSubject[]
   staffAssignments  StaffBatchAssignment[]
   enrollments       StudentEnrollment[]
   attendanceEvents  AttendanceEvent[]
@@ -323,6 +326,20 @@ model Batch {
 
   @@unique([instituteId, name, academicYear])
   @@index([instituteId])
+}
+
+model BatchSubject {
+  id        String   @id @default(uuid())
+  batchId   String
+  subjectId String
+  createdAt DateTime @default(now())
+
+  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, subjectId])
+  @@index([batchId])
+  @@index([subjectId])
 }
 
 model StaffBatchAssignment {

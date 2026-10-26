@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Users,
   GraduationCap,
-  UserCheck,
   BookOpen,
   Calendar,
   Layers,
@@ -76,13 +75,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
             </button>
 
             <button
-              onClick={() => onSelectTab('parents')}
-              className={navItemClass('parents')}
-            >
-              <UserCheck className="w-4 h-4" /> Parents & Guardians
-            </button>
-
-            <button
               onClick={() => onSelectTab('academics')}
               className={navItemClass('academics')}
             >
@@ -93,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               onClick={() => onSelectTab('attendance')}
               className={navItemClass('attendance')}
             >
-              <Calendar className="w-4 h-4" /> Attendance & QR
+              <Calendar className="w-4 h-4" /> Attendance
             </button>
 
             <button

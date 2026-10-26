@@ -73,6 +73,46 @@ export enum NotificationStatus {
   FAILED = 'FAILED',
 }
 
+// Guardian Relation
+export enum GuardianRelation {
+  FATHER = 'FATHER',
+  MOTHER = 'MOTHER',
+  GUARDIAN = 'GUARDIAN',
+}
+
+// Global Toast Types
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+export interface ToastMessage {
+  id: string;
+  type: ToastType;
+  message: string;
+  duration?: number;
+}
+
+// Student Admission Payload
+export interface StudentAdmissionPayload {
+  firstName: string;
+  lastName: string;
+  studentPhone?: string;
+  dob?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  bloodGroup?: string;
+  notes?: string;
+  admissionDate?: string;
+  batchId?: string;
+  createLoginAccount?: boolean;
+  email?: string;
+  phone?: string;
+  initialPassword?: string;
+  parentFullName?: string;
+  parentRelationship?: 'FATHER' | 'MOTHER' | 'GUARDIAN';
+  parentPhone?: string;
+  parentEmail?: string;
+  parentInitialPassword?: string;
+  parentCanReceiveSms?: boolean;
+}
+
 // Common Standard API Response Format
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -82,6 +122,12 @@ export interface ApiResponse<T = any> {
   timestamp: string;
 }
 
+export enum AttendanceMethod {
+  MANUAL = 'MANUAL',
+  QR_SCAN = 'QR_SCAN',
+  VOICE_CONFIRMED = 'VOICE_CONFIRMED',
+}
+
 // Export Shared Design Tokens
 export * from './theme';
-
+export * from './voiceMatching';

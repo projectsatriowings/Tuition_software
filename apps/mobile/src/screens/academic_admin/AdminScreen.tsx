@@ -7,21 +7,26 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   TextInput,
+  Modal,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
+import { useMobileToast } from '../../context/ToastContext';
 import { mobileApiFetch, generateIdempotencyKey } from '../../services/api';
 import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { StudentDetailsModal } from '../../components/StudentDetailsModal';
+import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { themeTokens } from '@tuition/shared';
 
 export const AdminScreen: React.FC = () => {
   const { user, institute } = useMobileAuth();
+  const { showToast } = useMobileToast();
 
-  const [activeTab, setActiveTab] = useState<'kpi' | 'finance' | 'students' | 'manualPayment'>('kpi');
+  const [activeTab, setActiveTab] = useState<'kpi' | 'batches' | 'finance' | 'students' | 'manualPayment'>('kpi');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -31,6 +36,27 @@ export const AdminScreen: React.FC = () => {
   const [outstandingReport, setOutstandingReport] = useState<any>(null);
   const [batches, setBatches] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+
+  // Batch Creation State
+  const [showNewBatchModal, setShowNewBatchModal] = useState(false);
+  const [batchName, setBatchName] = useState('');
+  const [batchYear, setBatchYear] = useState('2026-2027');
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+
+  // Modals
+  const [showAdmitModal, setShowAdmitModal] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [statusConfirm, setStatusConfirm] = useState<{
+    isOpen: boolean;
+    student: any;
+    newStatus: string;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    student: null,
+    newStatus: '',
+    loading: false,
+  });
 
   // Manual Payment Entry Form
   const [paymentStudentId, setPaymentStudentId] = useState('');
@@ -93,12 +119,12 @@ export const AdminScreen: React.FC = () => {
 
   const handleRecordPayment = async () => {
     if (!paymentStudentId) {
-      Alert.alert('Validation Error', 'Please select a student from the list');
+      showToast('Please select a student from the list', 'warning');
       return;
     }
     const amt = parseFloat(paymentAmount.trim());
     if (isNaN(amt) || amt <= 0) {
-      Alert.alert('Validation Error', 'Please enter a valid positive payment amount');
+      showToast('Please enter a valid positive payment amount', 'warning');
       return;
     }
 
@@ -118,7 +144,7 @@ export const AdminScreen: React.FC = () => {
       });
 
       if (res.success && res.data) {
-        Alert.alert('Payment Recorded!', `₹${amt} collected via ${paymentMethod}. Electronic receipt generated.`);
+        showToast(`₹${amt} collected via ${paymentMethod}. Electronic receipt generated.`, 'success');
         setPaymentAmount('');
         setPaymentReference('');
 
@@ -132,12 +158,95 @@ export const AdminScreen: React.FC = () => {
         }
         fetchAdminData();
       } else {
-        Alert.alert('Payment Error', res.error || 'Failed to record payment');
+        showToast(res.error || 'Failed to record payment', 'error');
       }
     } catch {
-      Alert.alert('Error', 'Network or server issue.');
+      showToast('Network or server connection issue.', 'error');
     } finally {
       setPaymentSubmitting(false);
+    }
+  };
+
+  const handleCreateBatch = async () => {
+    if (!batchName.trim()) {
+      showToast('Please enter batch name', 'warning');
+      return;
+    }
+    setBatchSubmitting(true);
+    try {
+      const res = await mobileApiFetch('/academics/batches', {
+        method: 'POST',
+        body: {
+          name: batchName.trim(),
+          academicYear: batchYear.trim(),
+        },
+      });
+      if (res.success) {
+        showToast(`Batch '${batchName}' created successfully`, 'success');
+        setShowNewBatchModal(false);
+        setBatchName('');
+        fetchAdminData();
+      } else {
+        showToast(res.error || 'Failed to create batch', 'error');
+      }
+    } catch {
+      showToast('Network error creating batch', 'error');
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
+  const handleToggleBatchStatus = async (batchId: string, currentStatus: boolean, bName: string) => {
+    try {
+      const res = await mobileApiFetch(`/academics/batches/${batchId}/status`, {
+        method: 'PATCH',
+        body: { isActive: !currentStatus },
+      });
+      if (res.success) {
+        showToast(`Batch '${bName}' ${!currentStatus ? 'activated' : 'deactivated'}`, 'success');
+        fetchAdminData();
+      } else {
+        showToast(res.error || 'Failed to update batch status', 'error');
+      }
+    } catch {
+      showToast('Network error updating batch', 'error');
+    }
+  };
+
+  const handleOpenStatusConfirm = (student: any, newStatus: string) => {
+    setStatusConfirm({
+      isOpen: true,
+      student,
+      newStatus,
+      loading: false,
+    });
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!statusConfirm.student || !statusConfirm.newStatus) return;
+    setStatusConfirm((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await mobileApiFetch(`/students/${statusConfirm.student.id}/status`, {
+        method: 'PATCH',
+        body: {
+          status: statusConfirm.newStatus,
+          reason: `Status changed to ${statusConfirm.newStatus} by staff/admin`,
+        },
+      });
+      if (res.success) {
+        showToast(
+          `${statusConfirm.student.firstName || statusConfirm.student.user?.fullName || 'Student'} marked as ${statusConfirm.newStatus.replace('_', ' ')}.`,
+          'success'
+        );
+        setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false });
+        fetchAdminData();
+      } else {
+        showToast(res.error || 'Failed to update student status', 'error');
+        setStatusConfirm((prev) => ({ ...prev, loading: false }));
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+      setStatusConfirm((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -159,6 +268,14 @@ export const AdminScreen: React.FC = () => {
         >
           <Text style={[styles.tabText, activeTab === 'kpi' && styles.activeTabText]}>
             KPIs
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('batches')}
+          style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
+        >
+          <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
+            Batches ({batches.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -252,15 +369,72 @@ export const AdminScreen: React.FC = () => {
 
               {/* Attendance & Campus Operations Overview */}
               <Card style={{ marginTop: 14 }}>
-                <Text style={styles.cardSectionTitle}>📡 Campus Gate & Attendance Summary</Text>
+                <Text style={styles.cardSectionTitle}>📡 Campus Attendance & Notification Summary</Text>
                 <Text style={styles.opsNote}>
-                  Live QR attendance scanning and SMS gate notifications are operational for all registered batches.
+                  Live voice-based attendance confirmation and SMS guardian notifications are operational for all registered batches.
                 </Text>
                 <View style={styles.opsRow}>
-                  <Badge label="QR SCANNER OPERATIONAL" variant="info" size="sm" />
+                  <Badge label="VOICE ATTENDANCE READY" variant="info" size="sm" />
                   <Badge label="SMS OUTBOX QUEUED" variant="success" size="sm" />
                 </View>
               </Card>
+            </View>
+          )}
+
+          {/* TAB 2: BATCHES & CURRICULUM */}
+          {activeTab === 'batches' && (
+            <View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>🏫 Academic Batches ({batches.length})</Text>
+                <TouchableOpacity
+                  onPress={() => setShowNewBatchModal(true)}
+                  style={styles.admitStudentBtn}
+                >
+                  <Text style={styles.admitStudentBtnText}>+ New Batch</Text>
+                </TouchableOpacity>
+              </View>
+
+              {batches.length === 0 ? (
+                <Card>
+                  <Text style={styles.emptyText}>
+                    No academic batches found. Click "+ New Batch" to set up your first class section.
+                  </Text>
+                </Card>
+              ) : (
+                batches.map((b) => (
+                  <Card key={b.id}>
+                    <View style={styles.stuDirRow}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={styles.stuDirName}>{b.name}</Text>
+                          <Badge
+                            label={b.isActive ? 'ACTIVE' : 'INACTIVE'}
+                            variant={b.isActive ? 'success' : 'neutral'}
+                            size="sm"
+                          />
+                        </View>
+                        <Text style={styles.stuDirMeta}>
+                          Academic Year: {b.academicYear} • Enrolled: {b._count?.enrollments || 0} students
+                        </Text>
+                        {b.batchSubjects && b.batchSubjects.length > 0 && (
+                          <Text style={styles.stuDirEmail}>
+                            Subjects: {b.batchSubjects.map((bs: any) => bs.subject?.name || bs.name).join(', ')}
+                          </Text>
+                        )}
+                      </View>
+
+                      <TouchableOpacity
+                        style={b.isActive ? styles.actionBtnDisc : styles.actionBtnActive}
+                        onPress={() => handleToggleBatchStatus(b.id, b.isActive, b.name)}
+                      >
+                        <Text style={b.isActive ? styles.actionBtnDiscText : styles.actionBtnActiveText}>
+                          {b.isActive ? 'Deactivate' : 'Reactivate'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </Card>
+                ))
+              )}
             </View>
           )}
 
@@ -409,21 +583,71 @@ export const AdminScreen: React.FC = () => {
           {activeTab === 'students' && (
             <View>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>👨‍🎓 Student Directory</Text>
-                <Text style={styles.sectionCount}>{students.length} enrolled</Text>
+                <View>
+                  <Text style={styles.sectionTitle}>👨‍🎓 Student Directory</Text>
+                  <Text style={styles.sectionCount}>{students.length} enrolled</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.admitStudentBtn}
+                  onPress={() => setShowAdmitModal(true)}
+                >
+                  <Text style={styles.admitStudentBtnText}>+ Admit Student</Text>
+                </TouchableOpacity>
               </View>
 
               {students.map((st) => (
-                <Card key={st.id}>
+                <Card key={st.id} onPress={() => setSelectedStudentId(st.id)}>
                   <View style={styles.stuDirRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.stuDirName}>{st.user?.fullName}</Text>
+                      <Text style={styles.stuDirName}>{st.user?.fullName || `${st.firstName} ${st.lastName}`}</Text>
                       <Text style={styles.stuDirMeta}>
-                        Roll: {st.rollNumber} • Batch: {st.batch?.name || 'Class 12'}
+                        Adm: {st.admissionNumber || '—'} {st.rollNumber ? `• Roll: ${st.rollNumber}` : ''}
                       </Text>
-                      <Text style={styles.stuDirEmail}>📧 {st.user?.email || 'N/A'}</Text>
+                      <Text style={styles.stuDirEmail}>
+                        {st.enrollments?.[0]?.batch?.name ? `Class: ${st.enrollments[0].batch.name}` : (st.batch?.name ? `Class: ${st.batch.name}` : 'Unassigned')}
+                      </Text>
                     </View>
-                    <Badge label={st.status || 'ACTIVE'} variant="success" size="sm" />
+                    <Badge
+                      label={st.status || 'ACTIVE'}
+                      variant={st.status === 'ACTIVE' ? 'success' : st.status === 'PASSED_OUT' ? 'indigo' : 'neutral'}
+                      size="sm"
+                    />
+                  </View>
+
+                  {/* Lifecycle Action Buttons */}
+                  <View style={styles.actionRowContainer}>
+                    <TouchableOpacity
+                      style={styles.cardDetailsHint}
+                      onPress={() => setSelectedStudentId(st.id)}
+                    >
+                      <Text style={styles.cardDetailsHintText}>Tap for Full Details ➔</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.actionBtnGroup}>
+                      {st.status === 'ACTIVE' ? (
+                        <>
+                          <TouchableOpacity
+                            style={styles.actionBtnPass}
+                            onPress={() => handleOpenStatusConfirm(st, 'PASSED_OUT')}
+                          >
+                            <Text style={styles.actionBtnPassText}>Mark Passed</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.actionBtnDisc}
+                            onPress={() => handleOpenStatusConfirm(st, 'DISCONTINUED')}
+                          >
+                            <Text style={styles.actionBtnDiscText}>Discontinue</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.actionBtnActive}
+                          onPress={() => handleOpenStatusConfirm(st, 'ACTIVE')}
+                        >
+                          <Text style={styles.actionBtnActiveText}>Reactivate</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 </Card>
               ))}
@@ -437,6 +661,111 @@ export const AdminScreen: React.FC = () => {
         visible={showReceiptModal}
         onClose={() => setShowReceiptModal(false)}
         receipt={selectedReceipt}
+      />
+
+      {/* New Batch Modal */}
+      <Modal visible={showNewBatchModal} transparent animationType="slide">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Create Academic Batch</Text>
+            <Text style={styles.modalSub}>Configure a new class section for this institute</Text>
+
+            <TextInput
+              style={styles.textInput}
+              placeholder="Batch Name (e.g. Class 10 - Batch A)"
+              placeholderTextColor="#A1887F"
+              value={batchName}
+              onChangeText={setBatchName}
+            />
+
+            <TextInput
+              style={[styles.textInput, { marginTop: 10 }]}
+              placeholder="Academic Year (e.g. 2026-2027)"
+              placeholderTextColor="#A1887F"
+              value={batchYear}
+              onChangeText={setBatchYear}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                onPress={() => setShowNewBatchModal(false)}
+                style={{
+                  flex: 1,
+                  backgroundColor: themeTokens.colors.surfaceMuted,
+                  borderWidth: 1,
+                  borderColor: themeTokens.colors.border,
+                  paddingVertical: 12,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: themeTokens.colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleCreateBatch}
+                style={{
+                  flex: 1,
+                  backgroundColor: themeTokens.colors.espresso,
+                  paddingVertical: 12,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                }}
+                disabled={batchSubmitting}
+              >
+                {batchSubmitting ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>Create Batch</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Admit Student Modal */}
+      <AdmitStudentModal
+        visible={showAdmitModal}
+        onClose={() => setShowAdmitModal(false)}
+        onSuccess={() => fetchAdminData()}
+      />
+
+      {/* Student Details Modal */}
+      <StudentDetailsModal
+        visible={Boolean(selectedStudentId)}
+        studentId={selectedStudentId}
+        onClose={() => setSelectedStudentId(null)}
+        onStudentUpdated={fetchAdminData}
+      />
+
+      {/* Confirmation Modal for Lifecycle Status Actions */}
+      <ConfirmationModal
+        isOpen={statusConfirm.isOpen}
+        title={
+          statusConfirm.newStatus === 'PASSED_OUT'
+            ? 'Mark Student as Passed Out'
+            : statusConfirm.newStatus === 'DISCONTINUED'
+            ? 'Discontinue Student'
+            : 'Reactivate Student'
+        }
+        message={
+          statusConfirm.newStatus === 'PASSED_OUT'
+            ? `Are you sure you want to mark ${statusConfirm.student?.user?.fullName || statusConfirm.student?.firstName || 'this student'} as Passed Out? Active batch enrollments will be archived.`
+            : statusConfirm.newStatus === 'DISCONTINUED'
+            ? `Are you sure you want to discontinue ${statusConfirm.student?.user?.fullName || statusConfirm.student?.firstName || 'this student'}?`
+            : `Are you sure you want to reactivate ${statusConfirm.student?.user?.fullName || statusConfirm.student?.firstName || 'this student'}?`
+        }
+        confirmLabel={
+          statusConfirm.newStatus === 'PASSED_OUT'
+            ? 'Confirm Passed Out'
+            : statusConfirm.newStatus === 'DISCONTINUED'
+            ? 'Confirm Discontinue'
+            : 'Reactivate'
+        }
+        variant={statusConfirm.newStatus === 'DISCONTINUED' ? 'danger' : statusConfirm.newStatus === 'PASSED_OUT' ? 'warning' : 'primary'}
+        loading={statusConfirm.loading}
+        onConfirm={handleConfirmStatusChange}
+        onCancel={() => setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })}
       />
     </View>
   );
@@ -752,5 +1081,99 @@ const styles = StyleSheet.create({
     color: themeTokens.colors.textSubtle,
     fontSize: 11,
     marginTop: 4,
+  },
+  admitStudentBtn: {
+    backgroundColor: themeTokens.colors.espresso,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  admitStudentBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  actionRowContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F7F2EF',
+  },
+  cardDetailsHint: {
+    paddingVertical: 4,
+  },
+  cardDetailsHintText: {
+    fontSize: 11,
+    color: '#8D6E63',
+    fontWeight: '600',
+  },
+  actionBtnGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionBtnPass: {
+    backgroundColor: '#FAF5FF',
+    borderWidth: 1,
+    borderColor: '#D8B4FE',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  actionBtnPassText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#6B21A8',
+  },
+  actionBtnDisc: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  actionBtnDiscText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  actionBtnActive: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  actionBtnActiveText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#166534',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(45, 30, 24, 0.65)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: themeTokens.colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
+    padding: 20,
+  },
+  modalTitle: {
+    color: themeTokens.colors.textPrimary,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  modalSub: {
+    color: themeTokens.colors.textMuted,
+    fontSize: 13,
+    marginBottom: 12,
   },
 });

@@ -123,9 +123,45 @@ export interface Batch {
   startDate: string;
   endDate?: string | null;
   isActive: boolean;
+  batchSubjects?: Array<{
+    id: string;
+    subjectId: string;
+    subject: Subject;
+  }>;
+  staffAssignments?: Array<{
+    id: string;
+    staffProfileId: string;
+    staffProfile: {
+      id: string;
+      user: {
+        id: string;
+        fullName: string;
+        email: string | null;
+        phone: string | null;
+      };
+    };
+  }>;
+  enrollments?: Array<{
+    id: string;
+    studentId: string;
+    isActive: boolean;
+    student: {
+      id: string;
+      admissionNumber: string;
+      firstName: string;
+      lastName: string;
+      phone?: string | null;
+      status: StudentStatus;
+    };
+    subject?: {
+      id: string;
+      name: string;
+    } | null;
+  }>;
   _count?: {
     enrollments: number;
     staffAssignments: number;
+    batchSubjects?: number;
   };
 }
 
@@ -135,4 +171,8 @@ export interface Subject {
   name: string;
   code?: string | null;
   description?: string | null;
+  _count?: {
+    batchSubjects?: number;
+    enrollments?: number;
+  };
 }
