@@ -64,6 +64,21 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/fees', feesRoutes);
 
+// Root info endpoint & health check redirects
+app.get('/', (_req: Request, res: Response) => {
+  res.json({
+    service: 'tuition-management-api',
+    status: 'running',
+    health: '/api/health',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/health', (_req: Request, res: Response) => {
+  res.redirect(307, '/api/health');
+});
+
 // Health check endpoint
 app.get('/api/health', async (_req: Request, res: Response) => {
   const dbHealth = await checkDatabaseHealth();
@@ -113,10 +128,11 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server if run directly
 const isMain = process.argv[1] && process.argv[1].endsWith('index.ts');
 if (isMain || process.env.NODE_ENV === 'production') {
-  app.listen(config.port, () => {
-    console.log(`[TuitionOS API Server] listening on http://localhost:${config.port}`);
-    console.log(`[TuitionOS API Server] Health check available at http://localhost:${config.port}/api/health`);
+  app.listen(config.port, config.host, () => {
+    console.log(`[TuitionOS API Server] listening on http://${config.host}:${config.port}`);
+    console.log(`[TuitionOS API Server] Health check available at http://${config.host}:${config.port}/api/health`);
   });
 }
 
 export default app;
+

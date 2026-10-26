@@ -11,7 +11,8 @@ import {
   Platform,
 } from 'react-native';
 import { useMobileAuth, MobileInstitute } from '../../context/AuthContext';
-import { AppConfig } from '../../config/index';
+import { AppConfig, normalizeApiUrl } from '../../config/index';
+import { checkServerConnection, HealthCheckResult } from '../../services/api';
 import { themeTokens } from '@tuition/shared';
 
 interface LoginScreenProps {
@@ -38,6 +39,33 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
   // Advanced server connectivity configuration
   const [showHostConfig, setShowHostConfig] = useState(false);
   const [tempHost, setTempHost] = useState(customHost || AppConfig.defaultApiBaseUrl);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [healthResult, setHealthResult] = useState<HealthCheckResult | null>(null);
+
+  const handleTestConnection = async (targetUrl?: string) => {
+    const candidate = normalizeApiUrl(targetUrl || tempHost);
+    setTestingConnection(true);
+    setHealthResult(null);
+    const res = await checkServerConnection(candidate);
+    setHealthResult(res);
+    setTestingConnection(false);
+  };
+
+  const handleSaveHost = () => {
+    const normalized = normalizeApiUrl(tempHost);
+    setTempHost(normalized);
+    setCustomHost(normalized);
+    setErrorMsg(null);
+    handleTestConnection(normalized);
+  };
+
+  const handleSelectPreset = (url: string) => {
+    const normalized = normalizeApiUrl(url);
+    setTempHost(normalized);
+    setCustomHost(normalized);
+    setErrorMsg(null);
+    handleTestConnection(normalized);
+  };
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -55,14 +83,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
 
     if (!res.success) {
       setErrorMsg(res.error || 'Invalid credentials or inactive account.');
-    }
-  };
-
-  const handleSaveHost = () => {
-    if (tempHost.trim()) {
-      setCustomHost(tempHost.trim());
-      setShowHostConfig(false);
-      setErrorMsg(null);
     }
   };
 
@@ -216,7 +236,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
               style={styles.serverSettingsToggle}
             >
               <Text style={styles.serverSettingsToggleText}>
-                ⚙️ {showHostConfig ? 'Hide Server URL' : 'Server Connection Config'}
+                ⚙️ {showHostConfig ? 'Hide Server Configuration' : 'Server Connection Config'}
               </Text>
             </TouchableOpacity>
 
@@ -227,16 +247,78 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
                   style={styles.hostInput}
                   value={tempHost}
                   onChangeText={setTempHost}
-                  placeholder="https://your-domain.com/api"
+                  placeholder="http://192.168.1.5:5000/api"
                   placeholderTextColor={themeTokens.colors.textSubtle}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                <TouchableOpacity style={styles.hostSaveButton} onPress={handleSaveHost}>
-                  <Text style={styles.hostSaveButtonText}>Save API Server URL</Text>
-                </TouchableOpacity>
+
+                {/* Quick Presets */}
+                <Text style={styles.presetLabel}>Quick Presets:</Text>
+                <View style={styles.presetRow}>
+                  <TouchableOpacity
+                    style={styles.presetButton}
+                    onPress={() => handleSelectPreset(AppConfig.presets.localLanDefault)}
+                  >
+                    <Text style={styles.presetButtonText}>Physical Phone LAN (192.168.1.5)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.presetButton}
+                    onPress={() => handleSelectPreset(AppConfig.presets.androidEmulator)}
+                  >
+                    <Text style={styles.presetButtonText}>Android Emulator (10.0.2.2)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.presetButton}
+                    onPress={() => handleSelectPreset(AppConfig.presets.localhost)}
+                  >
+                    <Text style={styles.presetButtonText}>Localhost (127.0.0.1)</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Test & Save Action Row */}
+                <View style={styles.hostActionRow}>
+                  <TouchableOpacity
+                    style={[styles.hostTestButton, testingConnection && styles.disabledButton]}
+                    onPress={() => handleTestConnection()}
+                    disabled={testingConnection}
+                  >
+                    {testingConnection ? (
+                      <ActivityIndicator size="small" color={themeTokens.colors.textLight} />
+                    ) : (
+                      <Text style={styles.hostTestButtonText}>Test Connection</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.hostSaveButton} onPress={handleSaveHost}>
+                    <Text style={styles.hostSaveButtonText}>Save URL</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Real-time Health Test Result */}
+                {healthResult && (
+                  <View
+                    style={[
+                      styles.healthResultBadge,
+                      healthResult.ok ? styles.healthResultSuccess : styles.healthResultError,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.healthResultTitle,
+                        healthResult.ok ? styles.healthTextSuccess : styles.healthTextError,
+                      ]}
+                    >
+                      {healthResult.ok ? '✔ Backend Reachable' : '✖ Backend Unreachable'}
+                    </Text>
+                    <Text style={styles.healthResultMessage}>{healthResult.message}</Text>
+                    <Text style={styles.healthResultUrl}>Endpoint: {healthResult.resolvedUrl}</Text>
+                  </View>
+                )}
+
                 <Text style={styles.hostHelpText}>
-                  For physical phone testing on local network, use: http://192.168.1.5:5000/api
+                  • Physical Android phone: Connect phone & PC to the same Wi-Fi. Use your PC's LAN IP (http://192.168.1.5:5000/api).{'\n'}
+                  • Android Emulator: Use http://10.0.2.2:5000/api.{'\n'}
+                  • /api is automatically normalized.
                 </Text>
               </View>
             ) : null}
@@ -460,22 +542,107 @@ const styles = StyleSheet.create({
     color: themeTokens.colors.textPrimary,
     marginBottom: 8,
   },
+  presetLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: themeTokens.colors.textSecondary,
+    marginTop: 4,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  presetRow: {
+    gap: 6,
+    marginBottom: 10,
+  },
+  presetButton: {
+    backgroundColor: themeTokens.colors.beige,
+    borderWidth: 1,
+    borderColor: themeTokens.colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  presetButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: themeTokens.colors.espresso,
+  },
+  hostActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  hostTestButton: {
+    flex: 1,
+    backgroundColor: themeTokens.colors.taupe,
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hostTestButtonText: {
+    color: themeTokens.colors.textLight,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   hostSaveButton: {
+    flex: 1,
     backgroundColor: themeTokens.colors.cocoa,
     borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 9,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   hostSaveButtonText: {
     color: themeTokens.colors.textLight,
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  healthResultBadge: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  healthResultSuccess: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#A5D6A7',
+  },
+  healthResultError: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#FFCDD2',
+  },
+  healthResultTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  healthTextSuccess: {
+    color: '#1B5E20',
+  },
+  healthTextError: {
+    color: '#B71C1C',
+  },
+  healthResultMessage: {
+    fontSize: 11,
+    color: themeTokens.colors.textPrimary,
+    lineHeight: 15,
+  },
+  healthResultUrl: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: themeTokens.colors.textMuted,
+    marginTop: 3,
   },
   hostHelpText: {
     fontSize: 11,
     color: themeTokens.colors.textMuted,
-    marginTop: 6,
-    lineHeight: 15,
+    marginTop: 10,
+    lineHeight: 16,
   },
   sectionHeading: {
     fontSize: 18,
