@@ -267,7 +267,7 @@ async function runUiFixesTestSuite() {
     const studentLogin = await request('/auth/login', {
       method: 'POST',
       body: {
-        identifier: 'student@apexacademy.com',
+        identifier: 'student@apex.example.com',
         password: 'Password#123',
         role: 'STUDENT',
       },
@@ -279,7 +279,7 @@ async function runUiFixesTestSuite() {
     const badLogin = await request('/auth/login', {
       method: 'POST',
       body: {
-        identifier: 'student@apexacademy.com',
+        identifier: 'student@apex.example.com',
         password: 'WrongPassword#999',
         role: 'STUDENT',
       },

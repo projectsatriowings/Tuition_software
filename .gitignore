@@ -55,3 +55,7 @@ coverage/
 *.apk
 *.aab
 
+# Scratch / Temporary Dev Scripts
+scratch/
+
+

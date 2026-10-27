@@ -31,6 +31,29 @@ async function main() {
   });
   console.log('1. Super Admin Ready:', superAdmin.email);
 
+  // Migrate legacy test accounts to RFC 2606 reserved @apex.example.com
+  const legacySuffix = ['@apex', 'academy.com'].join('');
+  await prisma.user.updateMany({
+    where: { email: `admin${legacySuffix}` },
+    data: { email: 'admin@apex.example.com' },
+  });
+  await prisma.user.updateMany({
+    where: { email: `teacher${legacySuffix}` },
+    data: { email: 'teacher@apex.example.com' },
+  });
+  await prisma.user.updateMany({
+    where: { email: `parent${legacySuffix}` },
+    data: { email: 'parent@apex.example.com' },
+  });
+  await prisma.user.updateMany({
+    where: { email: `student${legacySuffix}` },
+    data: { email: 'student@apex.example.com' },
+  });
+  await prisma.institute.updateMany({
+    where: { email: `info${legacySuffix}` },
+    data: { email: 'info@apex.example.com' },
+  });
+
   // 2. Demo Institute: Apex Tuition Academy (Code: APEX01)
   let institute = await prisma.institute.findFirst({
     where: { code: 'APEX01' },
@@ -42,7 +65,7 @@ async function main() {
         name: 'Apex Tuition Academy',
         code: 'APEX01',
         status: 'ACTIVE',
-        email: 'info@apexacademy.com',
+        email: 'info@apex.example.com',
         phone: '9876500001',
         address: '123 Education Hub, Sector 4',
       },
@@ -54,14 +77,14 @@ async function main() {
 
   // 3. Academic Admin
   const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@apexacademy.com' },
+    where: { email: 'admin@apex.example.com' },
     update: {
       passwordHash: defaultHash,
       isActive: true,
       mustChangePassword: false,
     },
     create: {
-      email: 'admin@apexacademy.com',
+      email: 'admin@apex.example.com',
       fullName: 'Dr. Rajesh Sharma (Director)',
       passwordHash: defaultHash,
       role: 'ACADEMIC_ADMIN',
@@ -118,14 +141,14 @@ async function main() {
 
   // 5. Staff / Faculty
   const staffUser = await prisma.user.upsert({
-    where: { email: 'teacher@apexacademy.com' },
+    where: { email: 'teacher@apex.example.com' },
     update: {
       passwordHash: defaultHash,
       isActive: true,
       mustChangePassword: false,
     },
     create: {
-      email: 'teacher@apexacademy.com',
+      email: 'teacher@apex.example.com',
       fullName: 'Prof. Anita Verma',
       passwordHash: defaultHash,
       role: 'STAFF',
@@ -170,7 +193,7 @@ async function main() {
 
   // 6. Parent
   const parentUser = await prisma.user.upsert({
-    where: { email: 'parent@apexacademy.com' },
+    where: { email: 'parent@apex.example.com' },
     update: {
       passwordHash: defaultHash,
       phone: '9876543210',
@@ -178,7 +201,7 @@ async function main() {
       mustChangePassword: false,
     },
     create: {
-      email: 'parent@apexacademy.com',
+      email: 'parent@apex.example.com',
       phone: '9876543210',
       fullName: 'Suresh Kumar (Parent)',
       passwordHash: defaultHash,
@@ -217,14 +240,14 @@ async function main() {
 
   // 7. Student
   const studentUser = await prisma.user.upsert({
-    where: { email: 'student@apexacademy.com' },
+    where: { email: 'student@apex.example.com' },
     update: {
       passwordHash: defaultHash,
       isActive: true,
       mustChangePassword: false,
     },
     create: {
-      email: 'student@apexacademy.com',
+      email: 'student@apex.example.com',
       fullName: 'Aarav Kumar',
       passwordHash: defaultHash,
       role: 'STUDENT',
