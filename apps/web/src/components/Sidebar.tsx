@@ -88,19 +88,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <Calendar className="w-4 h-4" /> Attendance
             </button>
 
-            <button
-              onClick={() => onSelectTab('materials')}
-              className={navItemClass('materials')}
-            >
-              <BookOpen className="w-4 h-4" /> Learning Materials
-            </button>
+            {role === 'STAFF' && (
+              <>
+                <button
+                  onClick={() => onSelectTab('materials')}
+                  className={navItemClass('materials')}
+                >
+                  <BookOpen className="w-4 h-4" /> Learning Materials
+                </button>
 
-            <button
-              onClick={() => onSelectTab('homework')}
-              className={navItemClass('homework')}
-            >
-              <FileText className="w-4 h-4" /> Homework & Tasks
-            </button>
+                <button
+                  onClick={() => onSelectTab('homework')}
+                  className={navItemClass('homework')}
+                >
+                  <FileText className="w-4 h-4" /> Homework & Tasks
+                </button>
+              </>
+            )}
 
             <button
               onClick={() => onSelectTab('exams')}
