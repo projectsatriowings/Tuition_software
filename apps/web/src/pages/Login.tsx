@@ -14,6 +14,8 @@ import {
   X,
   ChevronRight,
   Sparkles,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface DemoAccount {
@@ -38,33 +40,33 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     role: 'ACADEMIC_ADMIN',
     label: 'Academic Admin',
     roleBadgeColor: 'text-[#4E342E]',
-    identifier: 'admin@apex.example.com',
+    identifier: 'admin@apexacademy.com',
     password: 'Password#123',
-    subtext: 'admin@apex.example.com',
+    subtext: 'admin@apexacademy.com',
   },
   {
     role: 'STAFF',
     label: 'Staff / Faculty',
     roleBadgeColor: 'text-emerald-700',
-    identifier: 'teacher@apex.example.com',
+    identifier: 'teacher@apexacademy.com',
     password: 'Password#123',
-    subtext: 'teacher@apex.example.com',
+    subtext: 'teacher@apexacademy.com',
   },
   {
     role: 'PARENT',
     label: 'Parent Portal',
     roleBadgeColor: 'text-sky-700',
-    identifier: '9876543210',
+    identifier: '9826444306',
     password: 'Password#123',
-    subtext: '9876543210',
+    subtext: 'Phone: 9826444306',
   },
   {
     role: 'STUDENT',
     label: 'Student Portal',
     roleBadgeColor: 'text-[#6D4C41]',
-    identifier: 'student@apex.example.com',
+    identifier: 'student@apexacademy.com',
     password: 'Password#123',
-    subtext: 'student@apex.example.com',
+    subtext: 'student@apexacademy.com',
   },
 ];
 
@@ -75,6 +77,7 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Help Modal State
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -247,9 +250,63 @@ export const Login: React.FC = () => {
               </div>
 
               {error && (
-                <div className="mb-6 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{error}</span>
+                <div className="mb-6 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{error}</span>
+                  </div>
+                  {error.includes('registered as') && (
+                    <div className="pl-6 pt-1">
+                      {error.includes('registered as PARENT') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRole('PARENT');
+                            setError(null);
+                          }}
+                          className="px-2.5 py-1 bg-sky-700 hover:bg-sky-800 text-white rounded-lg font-medium text-[11px] transition shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          Switch to Parent Tab & Sign In <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
+                      {error.includes('registered as STAFF') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRole('STAFF');
+                            setError(null);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-medium text-[11px] transition shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          Switch to Staff Tab & Sign In <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
+                      {error.includes('registered as ACADEMIC_ADMIN') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRole('ACADEMIC_ADMIN');
+                            setError(null);
+                          }}
+                          className="px-2.5 py-1 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-lg font-medium text-[11px] transition shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          Switch to Admin Tab & Sign In <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
+                      {error.includes('registered as STUDENT') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRole('STUDENT');
+                            setError(null);
+                          }}
+                          className="px-2.5 py-1 bg-[#6D4C41] hover:bg-[#5D4037] text-white rounded-lg font-medium text-[11px] transition shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          Switch to Student Tab & Sign In <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -279,7 +336,7 @@ export const Login: React.FC = () => {
                   <div className="relative">
                     <Lock className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-3" />
                     <input
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       name="tuition_user_secret"
                       id="tuition_user_secret"
                       required
@@ -287,8 +344,21 @@ export const Login: React.FC = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Enter your password"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#2D1E18] placeholder-[#A1887F] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] focus:border-[#8D6E63]"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-10 pr-10 py-2.5 text-sm text-[#2D1E18] placeholder-[#A1887F] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] focus:border-[#8D6E63]"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 p-1 text-[#8D6E63] hover:text-[#4E342E] transition-colors rounded-lg focus:outline-none cursor-pointer"
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
                 </div>
 
@@ -351,7 +421,7 @@ export const Login: React.FC = () => {
                     >
                       <div>
                         <div className="font-bold text-[#6D4C41] text-[11px]">Student Portal</div>
-                        <div className="text-[10px] text-[#6D4C41] mt-0.5">student@apex.example.com</div>
+                        <div className="text-[10px] text-[#6D4C41] mt-0.5">student@apexacademy.com</div>
                       </div>
                       <span className="text-[10px] font-mono bg-[#EFEBE9] text-[#4E342E] px-2 py-0.5 rounded border border-[#D7CCC8] font-semibold">
                         Demo Account

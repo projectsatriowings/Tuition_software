@@ -16,6 +16,20 @@ import {
 } from 'lucide-react';
 
 export const ParentPortal: React.FC = () => {
+  const formatKolkataDateTime = (dateString?: string | null) => {
+    if (!dateString) return 'Not available';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return 'Not available';
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(d);
+  };
   const [children, setChildren] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -98,8 +112,9 @@ export const ParentPortal: React.FC = () => {
                     <h2 className="text-xl font-bold text-[#2D1E18] mt-2">
                       {student.firstName} {student.lastName}
                     </h2>
-                    <div className="text-xs text-[#6D4C41] flex items-center gap-2 mt-1">
+                    <div className="text-xs text-[#6D4C41] flex flex-wrap items-center gap-2 mt-1">
                       <span>Admission No: <strong className="font-mono text-[#2D1E18]">{student.admissionNumber}</strong></span>
+                      <span>&bull; Student Created: <strong className="text-[#2D1E18]">{formatKolkataDateTime(student.createdAt)}</strong></span>
                       {student.rollNumber && (
                         <span>&bull; Roll No: <strong className="font-mono text-[#2D1E18]">{student.rollNumber}</strong></span>
                       )}

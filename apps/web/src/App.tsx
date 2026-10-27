@@ -41,6 +41,12 @@ const AppContent: React.FC = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff')) {
+      setCurrentTab('attendance');
+    }
+  }, [user, currentTab]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F7F2EF] flex items-center justify-center text-[#3E2723]">
@@ -81,11 +87,11 @@ const AppContent: React.FC = () => {
                   <AcademicAdminDashboard onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
-                {currentTab === 'staff' && <StaffManagement />}
+                {currentTab === 'staff' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <StaffManagement />}
 
                 {currentTab === 'students' && <StudentManagement />}
 
-                {currentTab === 'academics' && (
+                {currentTab === 'academics' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
                   <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
@@ -104,7 +110,7 @@ const AppContent: React.FC = () => {
                 {currentTab === 'progress_reviews' && <ProgressReviewsManagement />}
 
                 {currentTab === 'messaging' && <MessagingInbox />}
-                {currentTab === 'fees' && <FeesManagement />}
+                {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
               </motion.div>
             </AnimatePresence>
           </div>

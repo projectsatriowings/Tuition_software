@@ -303,7 +303,6 @@ export async function getSubmissions(req: AuthenticatedRequest, res: Response) {
             firstName: true,
             lastName: true,
             admissionNumber: true,
-            rollNumber: true,
           },
         },
         gradedBy: { select: { id: true, fullName: true } },

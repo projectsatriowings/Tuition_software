@@ -74,12 +74,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <GraduationCap className="w-4 h-4" /> Student Admissions
             </button>
 
-            <button
-              onClick={() => onSelectTab('academics')}
-              className={navItemClass('academics')}
-            >
-              <Layers className="w-4 h-4" /> Batches & Subjects
-            </button>
+            {role === 'ACADEMIC_ADMIN' && (
+              <button
+                onClick={() => onSelectTab('academics')}
+                className={navItemClass('academics')}
+              >
+                <Layers className="w-4 h-4" /> Batches & Subjects
+              </button>
+            )}
 
             <button
               onClick={() => onSelectTab('attendance')}
@@ -123,12 +125,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <MessageSquare className="w-4 h-4" /> Parent Messages
             </button>
 
-            <button
-              onClick={() => onSelectTab('fees')}
-              className={navItemClass('fees')}
-            >
-              <CreditCard className="w-4 h-4" /> Fees & Finances
-            </button>
+            {role === 'ACADEMIC_ADMIN' && (
+              <button
+                onClick={() => onSelectTab('fees')}
+                className={navItemClass('fees')}
+              >
+                <CreditCard className="w-4 h-4" /> Fees & Finances
+              </button>
+            )}
           </>
         )}
 

@@ -111,16 +111,24 @@ export function getRelativeStorageKey(instituteId: string, filename: string): st
  * Resolve absolute file path from storage key
  */
 export function resolveAbsolutePath(storageKey: string): string | null {
+  if (!storageKey) return null;
   // Prevent directory traversal
   const normalizedKey = path.normalize(storageKey).replace(/^(\.\.[\/\\])+/, '');
-  const fullPath = path.join(LOCAL_STORAGE_DIR, normalizedKey);
 
-  if (!fullPath.startsWith(LOCAL_STORAGE_DIR)) {
-    return null; // Traversal detected
+  const candidateDirs = [
+    LOCAL_STORAGE_DIR,
+    path.resolve(process.cwd(), 'uploads'),
+    path.resolve(process.cwd(), 'server', 'uploads'),
+    path.resolve(process.cwd(), '..', 'uploads'),
+    path.resolve(process.cwd(), '..', 'server', 'uploads'),
+  ];
+
+  for (const baseDir of candidateDirs) {
+    const fullPath = path.join(baseDir, normalizedKey);
+    if (fullPath.startsWith(baseDir) && fs.existsSync(fullPath)) {
+      return fullPath;
+    }
   }
 
-  if (fs.existsSync(fullPath)) {
-    return fullPath;
-  }
   return null;
 }

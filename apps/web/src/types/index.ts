@@ -71,12 +71,20 @@ export interface Student {
   createdByUserId?: string | null;
   createdByUser?: User | null;
   notes?: string | null;
+  phone?: string | null;
+  user?: User | null;
   enrollments?: Array<{
     id: string;
+    batchId?: string;
+    subjectId?: string | null;
     batch: {
       id: string;
       name: string;
       academicYear: string;
+    };
+    subject?: {
+      id: string;
+      name: string;
     };
   }>;
   parentRelations?: Array<{

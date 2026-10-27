@@ -415,7 +415,6 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           id: student.id,
           name: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           photoUrl: student.photoUrl,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
         },
@@ -509,7 +508,7 @@ export async function getAttendanceReports(req: AuthenticatedRequest, res: Respo
       orderBy: [{ eventDate: 'desc' }, { eventTime: 'desc' }],
       include: {
         student: {
-          select: { id: true, firstName: true, lastName: true, admissionNumber: true, rollNumber: true },
+          select: { id: true, firstName: true, lastName: true, admissionNumber: true },
         },
         batch: { select: { id: true, name: true } },
         markedBy: { select: { id: true, fullName: true } },
@@ -565,7 +564,6 @@ export async function getStudentQrPass(req: AuthenticatedRequest, res: Response)
           id: student.id,
           fullName: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           instituteName: student.institute.name,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
         },
@@ -632,7 +630,6 @@ export async function validateScannedQr(req: AuthenticatedRequest, res: Response
           id: student.id,
           name: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
           batchId: student.enrollments[0]?.batchId,
         },

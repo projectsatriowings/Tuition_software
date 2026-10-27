@@ -570,7 +570,6 @@ export async function listFeeAssignments(req: AuthenticatedRequest, res: Respons
               firstName: true,
               lastName: true,
               admissionNumber: true,
-              rollNumber: true,
             },
           },
           feeStructure: {
@@ -640,7 +639,6 @@ export async function getFeeAssignmentById(req: AuthenticatedRequest, res: Respo
             firstName: true,
             lastName: true,
             admissionNumber: true,
-            rollNumber: true,
             userId: true,
           },
         },
@@ -791,7 +789,6 @@ export async function getStudentFeeStatement(req: AuthenticatedRequest, res: Res
           firstName: student.firstName,
           lastName: student.lastName,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           batches: student.enrollments.map((e) => e.batch),
         },
         summary: {
@@ -1034,7 +1031,6 @@ export async function listPayments(req: AuthenticatedRequest, res: Response) {
               firstName: true,
               lastName: true,
               admissionNumber: true,
-              rollNumber: true,
             },
           },
           feeAssignment: {
@@ -1191,7 +1187,6 @@ export async function getReceipt(req: AuthenticatedRequest, res: Response) {
         id: payment.student.id,
         fullName: `${payment.student.firstName} ${payment.student.lastName}`.trim(),
         admissionNumber: payment.student.admissionNumber,
-        rollNumber: payment.student.rollNumber,
         batchName: activeBatch?.name || 'N/A',
         academicYear: activeBatch?.academicYear || assignment.academicYear || 'N/A',
       },
@@ -1725,7 +1720,6 @@ export async function getOutstandingReport(req: AuthenticatedRequest, res: Respo
             firstName: true,
             lastName: true,
             admissionNumber: true,
-            rollNumber: true,
           },
         },
         feeStructure: { select: { id: true, name: true, frequency: true } },

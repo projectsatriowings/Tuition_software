@@ -18,6 +18,20 @@ import {
 } from 'lucide-react';
 
 export const StudentPortal: React.FC = () => {
+  const formatKolkataDateTime = (dateString?: string | null) => {
+    if (!dateString) return 'Not available';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return 'Not available';
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(d);
+  };
   const [student, setStudent] = useState<any>(null);
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [feeStatement, setFeeStatement] = useState<any>(null);
@@ -98,6 +112,9 @@ export const StudentPortal: React.FC = () => {
             </span>
             <span className="text-xs font-mono text-[#D7CCC8]">
               Admission: <strong className="text-white">{student.admissionNumber}</strong>
+            </span>
+            <span className="text-xs text-[#D7CCC8]">
+              Created: <strong className="text-white">{formatKolkataDateTime(student.createdAt)}</strong>
             </span>
             {student.rollNumber && (
               <span className="text-xs font-mono text-[#D7CCC8]">

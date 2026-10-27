@@ -402,7 +402,7 @@ export async function isStudentAuthorized(
     const student = await prismaClient.student.findFirst({
       where: {
         id: studentId,
-        instituteId: req.instituteId,
+        ...(req.instituteId ? { instituteId: req.instituteId } : {}),
       },
       select: { id: true, createdByUserId: true },
     });

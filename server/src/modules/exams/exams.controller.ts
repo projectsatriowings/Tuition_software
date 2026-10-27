@@ -160,7 +160,7 @@ export async function getExamById(req: AuthenticatedRequest, res: Response) {
         subject: { select: { id: true, name: true, code: true } },
         marks: {
           include: {
-            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, rollNumber: true } },
+            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
           },
           orderBy: { marksObtained: 'desc' },
         },
@@ -402,7 +402,6 @@ export async function getStudentReportCard(req: AuthenticatedRequest, res: Respo
           firstName: student.firstName,
           lastName: student.lastName,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           batchName: student.enrollments[0]?.batch?.name || 'Assigned Batch',
         },
         summary: {

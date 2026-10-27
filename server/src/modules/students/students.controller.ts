@@ -13,11 +13,12 @@ import {
   getAdmissionYear,
 } from './admission-number.service.js';
 
-export function formatStudentResponse<T extends { id: string; photoUrl?: string | null; notes?: string | null }>(student: T): T & { credentialsOnRecord?: { studentPassword: string | null; parentPassword: string | null } } {
+export function formatStudentResponse<T extends { id: string; photoUrl?: string | null; notes?: string | null; updatedAt?: Date | string }>(student: T): T & { credentialsOnRecord?: { studentPassword: string | null; parentPassword: string | null } } {
   if (!student) return student;
   let formattedPhoto = student.photoUrl;
   if (formattedPhoto && !formattedPhoto.startsWith('http://') && !formattedPhoto.startsWith('https://') && !formattedPhoto.startsWith('/api/')) {
-    formattedPhoto = `/api/students/${student.id}/photo`;
+    const v = (student as any).updatedAt ? new Date((student as any).updatedAt).getTime() : '';
+    formattedPhoto = `/api/students/${student.id}/photo${v ? `?v=${v}` : ''}`;
   }
 
   let credentialsOnRecord = {
@@ -57,7 +58,6 @@ const prisma = new PrismaClient();
 
 export const studentAdmissionSchema = z.object({
   admissionNumber: z.string().optional(), // Automatically generated on server
-  rollNumber: z.string().optional(),
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
   studentPhone: z.string().optional().or(z.literal('')),
@@ -88,15 +88,21 @@ export const studentAdmissionSchema = z.object({
 });
 
 export const updateStudentSchema = z.object({
-  rollNumber: z.string().optional(),
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  studentPhone: z.string().optional(),
-  dob: z.string().optional(),
+  firstName: z.string().min(1, 'First name is required').optional(),
+  lastName: z.string().min(1, 'Last name is required').optional(),
+  studentPhone: z.string().optional().or(z.literal('')),
+  studentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
+  dob: z.string().optional().or(z.literal('')),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(),
-  bloodGroup: z.string().optional(),
-  notes: z.string().optional(),
-  photoUrl: z.string().optional(),
+  bloodGroup: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal('')),
+  photoUrl: z.string().optional().or(z.literal('')),
+  batchId: z.string().uuid().optional().or(z.literal('')).nullable(),
+  subjectIds: z.array(z.string().uuid()).optional(),
+  parentFullName: z.string().optional().or(z.literal('')),
+  parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).optional(),
+  parentPhone: z.string().optional().or(z.literal('')),
+  parentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
 });
 
 export const updateStudentStatusSchema = z.object({
@@ -191,7 +197,6 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
       andConditions.push({
         OR: [
           { admissionNumber: { contains: search, mode: 'insensitive' } },
-          { rollNumber: { contains: search, mode: 'insensitive' } },
           { firstName: { contains: search, mode: 'insensitive' } },
           { lastName: { contains: search, mode: 'insensitive' } },
         ],
@@ -380,7 +385,6 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 instituteId,
                 userId: studentUser?.id || null,
                 admissionNumber,
-                rollNumber: data.rollNumber?.trim() || null,
                 firstName: data.firstName.trim(),
                 lastName: data.lastName.trim(),
                 phone: data.studentPhone?.trim() || (data.createLoginAccount ? data.phone?.trim() : null) || null,
@@ -453,8 +457,8 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               });
 
               if (existingUser) {
-                if (existingUser.role !== 'PARENT') {
-                  throw new Error(`Phone or email is already registered to a non-parent account (${existingUser.role}).`);
+                if (existingUser.role === 'STUDENT' && !existingUser.parentProfile) {
+                  throw new Error(`Phone or email is registered to a student account and cannot be linked as a parent.`);
                 }
 
                 parentUser = existingUser;
@@ -905,6 +909,16 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
 
     const existing = await prisma.student.findFirst({
       where: { id, instituteId },
+      include: {
+        user: true,
+        parentRelations: {
+          include: {
+            parent: {
+              include: { user: true },
+            },
+          },
+        },
+      },
     });
 
     if (!existing) {
@@ -914,41 +928,160 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     const data = parse.data;
     const updateData: any = {};
 
-    if (data.rollNumber !== undefined) updateData.rollNumber = data.rollNumber?.trim() || null;
     if (data.firstName) updateData.firstName = data.firstName.trim();
     if (data.lastName) updateData.lastName = data.lastName.trim();
     if (data.studentPhone !== undefined) updateData.phone = data.studentPhone?.trim() || null;
     if (data.gender !== undefined) updateData.gender = data.gender;
     if (data.bloodGroup !== undefined) updateData.bloodGroup = data.bloodGroup?.trim() || null;
-    if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
     if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl?.trim() || null;
-    if (data.dob) updateData.dob = new Date(data.dob);
+    if (data.dob !== undefined) {
+      updateData.dob = data.dob && data.dob.trim() ? new Date(data.dob) : null;
+    }
 
-    const updated = await prisma.student.update({
-      where: { id },
-      data: updateData,
+    // Preserve password credentials in student.notes if previously generated
+    if (data.notes !== undefined) {
+      let existingCreds: any = {};
+      if (existing.notes && existing.notes.startsWith('{') && (existing.notes.includes('studentPassword') || existing.notes.includes('parentPassword'))) {
+        try {
+          existingCreds = JSON.parse(existing.notes);
+        } catch {}
+      }
+      if (existingCreds.studentPassword || existingCreds.parentPassword) {
+        updateData.notes = JSON.stringify({
+          ...existingCreds,
+          userNotes: data.notes?.trim() || null,
+        });
+      } else {
+        updateData.notes = data.notes?.trim() || null;
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Update Student Table
+      await tx.student.update({
+        where: { id },
+        data: updateData,
+      });
+
+      // 2. Update Student User Account (if exists)
+      if (existing.userId) {
+        const userUpdate: any = {};
+        if (data.firstName || data.lastName) {
+          const newFirst = data.firstName ? data.firstName.trim() : existing.firstName;
+          const newLast = data.lastName ? data.lastName.trim() : existing.lastName;
+          userUpdate.fullName = `${newFirst} ${newLast}`;
+        }
+        if (data.studentPhone !== undefined) {
+          userUpdate.phone = data.studentPhone?.trim() || null;
+        }
+        if (data.studentEmail !== undefined) {
+          userUpdate.email = data.studentEmail?.trim().toLowerCase() || null;
+        }
+        if (Object.keys(userUpdate).length > 0) {
+          await tx.user.update({
+            where: { id: existing.userId },
+            data: userUpdate,
+          });
+        }
+      }
+
+      // 3. Update Batch & Subjects if specified
+      if (data.batchId !== undefined) {
+        await tx.studentEnrollment.updateMany({
+          where: { studentId: id, isActive: true },
+          data: { isActive: false },
+        });
+
+        if (data.batchId) {
+          await tx.studentEnrollment.create({
+            data: {
+              studentId: id,
+              batchId: data.batchId,
+              subjectId: null,
+              isActive: true,
+            },
+          });
+
+          if (Array.isArray(data.subjectIds) && data.subjectIds.length > 0) {
+            for (const sid of data.subjectIds) {
+              await tx.studentEnrollment.create({
+                data: {
+                  studentId: id,
+                  batchId: data.batchId,
+                  subjectId: sid,
+                  isActive: true,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Update Parent Relation & Parent User Account if specified
+      if (data.parentFullName || data.parentPhone || data.parentEmail !== undefined || data.parentRelationship) {
+        const primaryRel = existing.parentRelations?.[0];
+        if (primaryRel) {
+          if (data.parentRelationship) {
+            await tx.studentParentRelation.update({
+              where: { id: primaryRel.id },
+              data: { relation: data.parentRelationship },
+            });
+          }
+          if (primaryRel.parent?.user) {
+            const parentUserUpdate: any = {};
+            if (data.parentFullName) parentUserUpdate.fullName = data.parentFullName.trim();
+            if (data.parentPhone) parentUserUpdate.phone = data.parentPhone.trim();
+            if (data.parentEmail !== undefined) parentUserUpdate.email = data.parentEmail?.trim().toLowerCase() || null;
+            if (Object.keys(parentUserUpdate).length > 0) {
+              await tx.user.update({
+                where: { id: primaryRel.parent.user.id },
+                data: parentUserUpdate,
+              });
+            }
+          }
+        }
+      }
+
+      // 5. Record Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_UPDATED',
+          entityType: 'Student',
+          entityId: id,
+          oldValues: existing as any,
+          newValues: { ...updateData, batchId: data.batchId, subjectIds: data.subjectIds },
+        },
+      });
     });
 
-    // Record Audit Log
-    await prisma.auditLog.create({
-      data: {
-        instituteId,
-        userId: req.user?.userId || null,
-        action: 'STUDENT_UPDATED',
-        entityType: 'Student',
-        entityId: id,
-        oldValues: existing as any,
-        newValues: updated as any,
+    const fullUpdated = await prisma.student.findFirst({
+      where: { id, instituteId },
+      include: {
+        user: true,
+        enrollments: {
+          where: { isActive: true },
+          include: { batch: true, subject: true },
+        },
+        parentRelations: {
+          include: {
+            parent: {
+              include: { user: true },
+            },
+          },
+        },
       },
     });
 
     return res.json({
       success: true,
       message: 'Student profile updated successfully',
-      data: { student: formatStudentResponse(updated) },
+      data: { student: formatStudentResponse(fullUpdated || existing) },
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: 'Failed to update student profile' });
+    console.error('Error updating student profile:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to update student profile' });
   }
 }
 
@@ -1285,7 +1418,7 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
         return res.status(403).json({ success: false, error: 'Forbidden: Not authorized to update this student photograph' });
       }
 
-      await prisma.student.update({
+      const updatedStudent = await prisma.student.update({
         where: { id },
         data: { photoUrl: relativeKey },
       });
@@ -1295,7 +1428,7 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
         message: 'Student photograph uploaded successfully',
         data: {
           photoStorageKey: relativeKey,
-          photoUrl: `/api/students/${id}/photo`,
+          photoUrl: `/api/students/${id}/photo?v=${new Date(updatedStudent.updatedAt).getTime()}`,
         },
       });
     }
@@ -1319,7 +1452,7 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
  */
 export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) {
   try {
-    const instituteId = req.instituteId;
+    const targetInstituteId = req.instituteId || (req.query.instituteId as string);
     const { id } = req.params;
 
     const authorized = await isStudentAuthorized(req, id, prisma);
@@ -1327,13 +1460,17 @@ export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) 
       return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view this student photograph' });
     }
 
-    const student = await prisma.student.findFirst({
-      where: { id, instituteId },
-      select: { photoUrl: true },
+    const student = await prisma.student.findUnique({
+      where: { id },
+      select: { photoUrl: true, instituteId: true },
     });
 
     if (!student || !student.photoUrl) {
       return res.status(404).json({ success: false, error: 'No photograph on file for this student' });
+    }
+
+    if (targetInstituteId && student.instituteId !== targetInstituteId && req.user?.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Cross-institute photograph access rejected' });
     }
 
     if (student.photoUrl.startsWith('http://') || student.photoUrl.startsWith('https://')) {
@@ -1354,7 +1491,7 @@ export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) 
     };
 
     res.setHeader('Content-Type', mimeTypes[ext] || 'image/jpeg');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cache-Control', 'no-cache, private');
     return fs.createReadStream(absPath).pipe(res);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to stream student photograph' });
@@ -1458,6 +1595,185 @@ export async function updateStudentAccountStatus(req: AuthenticatedRequest, res:
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to update student account status' });
+  }
+}
+
+/**
+ * Real-time parent account lookup by phone or email for sibling auto-linking during admission
+ */
+export async function lookupParent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const query = ((req.query.query || req.query.phone || req.query.email || '') as string).trim();
+    if (!query || query.length < 3) {
+      return res.json({ success: true, data: { found: false } });
+    }
+
+    const cleanQuery = query.toLowerCase();
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone: { equals: query, mode: 'insensitive' } },
+          { email: { equals: cleanQuery, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        parentProfile: {
+          include: {
+            studentRelations: {
+              include: {
+                student: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    admissionNumber: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!existingUser) {
+      return res.json({ success: true, data: { found: false } });
+    }
+
+    if (existingUser.role === 'STUDENT' && !existingUser.parentProfile) {
+      return res.json({
+        success: true,
+        data: {
+          found: true,
+          isStudent: true,
+          message: 'Phone or email is registered to a student account and cannot be linked as a parent.',
+        },
+      });
+    }
+
+    const children = (existingUser.parentProfile?.studentRelations || []).map((r) => ({
+      name: `${r.student.firstName} ${r.student.lastName}`,
+      admissionNumber: r.student.admissionNumber,
+      relation: r.relation,
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        found: true,
+        isStudent: false,
+        user: {
+          id: existingUser.id,
+          fullName: existingUser.fullName,
+          phone: existingUser.phone,
+          email: existingUser.email,
+          role: existingUser.role,
+        },
+        children,
+      },
+    });
+  } catch (err: any) {
+    console.error('Error looking up parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to lookup parent' });
+  }
+}
+
+/**
+ * Assign or update student batch and subject allocations
+ */
+export async function assignStudentBatch(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const { id } = req.params;
+    const { batchId, subjectIds = [] } = req.body;
+
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+    });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    if (student.status !== 'ACTIVE') {
+      return res.status(400).json({ success: false, error: `Cannot assign batch to student in ${student.status} status` });
+    }
+
+    // Verify batch if provided
+    let batch: any = null;
+    if (batchId) {
+      batch = await prisma.batch.findFirst({
+        where: { id: batchId, instituteId },
+        include: {
+          batchSubjects: {
+            include: { subject: true },
+          },
+        },
+      });
+      if (!batch) {
+        return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Deactivate existing active enrollments for this student
+      await tx.studentEnrollment.updateMany({
+        where: { studentId: id, isActive: true },
+        data: { isActive: false },
+      });
+
+      if (batchId) {
+        // 2. Create primary batch enrollment
+        await tx.studentEnrollment.create({
+          data: {
+            studentId: id,
+            batchId,
+            subjectId: null,
+            isActive: true,
+          },
+        });
+
+        // 3. Create subject enrollments for specified subjectIds
+        if (Array.isArray(subjectIds) && subjectIds.length > 0) {
+          const validSubjectIds = (batch?.batchSubjects || []).map((bs: any) => bs.subjectId);
+          for (const sid of subjectIds) {
+            if (validSubjectIds.includes(sid)) {
+              await tx.studentEnrollment.create({
+                data: {
+                  studentId: id,
+                  batchId,
+                  subjectId: sid,
+                  isActive: true,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_BATCH_ASSIGNED',
+          entityType: 'Student',
+          entityId: id,
+          newValues: { batchId, subjectIds },
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: batchId
+        ? `Student assigned to ${batch?.name} successfully`
+        : 'Student batch unassigned successfully',
+    });
+  } catch (err: any) {
+    console.error('Error assigning student batch:', err);
+    return res.status(500).json({ success: false, error: 'Failed to assign student batch' });
   }
 }
 

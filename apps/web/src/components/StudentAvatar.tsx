@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { getAuthToken, getActiveInstituteId } from '../services/api';
 
 interface StudentAvatarProps {
   studentId?: string;
@@ -53,24 +54,26 @@ export const StudentAvatar: React.FC<StudentAvatarProps> = ({
   alt = '',
 }) => {
   const [hasError, setHasError] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
   const sizeClass = SIZE_MAP[size] || SIZE_MAP.md;
   const initials = getInitials(name);
   const colorClass = getColorForName(name);
 
-  // Build authenticated image source if URL is present
-  const resolvedUrl = React.useMemo(() => {
-    if (!photoUrl || hasError) return null;
+  // Compute the direct authenticated image source
+  const computedSrc = useMemo(() => {
+    if (!photoUrl) return null;
 
-    // External absolute URL
+    // Direct data URI or blob URI
+    if (photoUrl.startsWith('data:') || photoUrl.startsWith('blob:')) {
+      return photoUrl;
+    }
+
+    // External absolute URL (S3, Cloudinary, etc.)
     if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
       return photoUrl;
     }
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('tuition_access_token') : null;
-    const tokenQuery = token ? `token=${encodeURIComponent(token)}` : '';
-
+    // Resolve API endpoint
     let baseEndpoint = photoUrl;
     if (!photoUrl.startsWith('/api/')) {
       if (studentId) {
@@ -80,12 +83,25 @@ export const StudentAvatar: React.FC<StudentAvatarProps> = ({
       }
     }
 
-    if (!tokenQuery) return baseEndpoint;
-    const separator = baseEndpoint.includes('?') ? '&' : '?';
-    return `${baseEndpoint}${separator}${tokenQuery}`;
-  }, [photoUrl, studentId, hasError]);
+    const token = getAuthToken();
+    const instId = getActiveInstituteId();
 
-  if (!resolvedUrl || hasError) {
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    if (instId) params.set('instituteId', instId);
+    const qs = params.toString();
+
+    return qs
+      ? `${baseEndpoint}${baseEndpoint.includes('?') ? '&' : '?'}${qs}`
+      : baseEndpoint;
+  }, [photoUrl, studentId]);
+
+  // Reset error whenever computed source, photoUrl, or studentId changes
+  useEffect(() => {
+    setHasError(false);
+  }, [computedSrc, photoUrl, studentId]);
+
+  if (!computedSrc || hasError) {
     return (
       <div
         className={`${sizeClass.container} rounded-full flex items-center justify-center font-bold select-none shrink-0 border border-[#D7CCC8]/60 ${colorClass} ${className}`}
@@ -98,18 +114,12 @@ export const StudentAvatar: React.FC<StudentAvatarProps> = ({
 
   return (
     <div className={`relative ${sizeClass.container} shrink-0 rounded-full overflow-hidden border border-[#D7CCC8] ${className}`}>
-      {isLoading && (
-        <div className={`absolute inset-0 animate-pulse flex items-center justify-center font-bold ${colorClass}`}>
-          <span className={sizeClass.text}>{initials}</span>
-        </div>
-      )}
       <img
-        src={resolvedUrl}
+        key={computedSrc}
+        src={computedSrc}
         alt={alt || name || 'Student'}
-        className={`w-full h-full object-cover transition-opacity duration-200 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
-        onLoad={() => setIsLoading(false)}
+        className="w-full h-full object-cover"
         onError={() => {
-          setIsLoading(false);
           setHasError(true);
         }}
       />

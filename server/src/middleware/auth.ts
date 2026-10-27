@@ -36,9 +36,9 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   }
 
   req.user = payload;
-  if (payload.instituteId) {
-    req.instituteId = payload.instituteId;
-  }
+  const headerInst = req.headers['x-institute-id'] as string;
+  const queryInst = (req.query.instituteId || req.query.inst) as string;
+  req.instituteId = payload.instituteId || headerInst || queryInst || undefined;
   next();
 }
 

@@ -44,6 +44,25 @@ export const StudentScreen: React.FC = () => {
   const [submissionContent, setSubmissionContent] = useState('');
   const [submissionLoading, setSubmissionLoading] = useState(false);
 
+  const formatKolkataTime = (isoString?: string | null) => {
+    if (!isoString) return 'Not available';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return 'Not available';
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(date);
+    } catch {
+      return 'Not available';
+    }
+  };
+
   const fetchStudentData = useCallback(async () => {
     try {
       // 1. Fetch Student Profile
@@ -239,8 +258,13 @@ export const StudentScreen: React.FC = () => {
                   <View style={styles.profileDetails}>
                     <Text style={styles.studentName}>{user?.fullName || 'Student'}</Text>
                     <Text style={styles.studentRoll}>
-                      Roll: {studentProfile?.rollNumber || 'PENDING'} &bull; Batch: {studentProfile?.batch?.name || 'Assigned'}
+                      Admission: {studentProfile?.admissionNumber || '—'} &bull; Batch: {studentProfile?.batch?.name || 'Assigned'}
                     </Text>
+                    {studentProfile?.createdAt && (
+                      <Text style={[styles.studentRoll, { marginTop: 2, fontSize: 11 }]}>
+                        Created: {formatKolkataTime(studentProfile.createdAt)}
+                      </Text>
+                    )}
                     <View style={styles.badgeRow}>
                       <Badge label="ACTIVE ENROLLED" variant="success" size="sm" />
                       {studentProfile?.batch?.grade && (
