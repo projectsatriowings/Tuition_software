@@ -72,13 +72,13 @@ async function runStaffIsolationAndAttendanceSuite() {
 
     // Create / Find Staff A in Institute A
     let userStaffA = await prisma.user.findFirst({
-      where: { email: 'staff_a_isolation@test.com' },
+      where: { email: 'staff_a_isolation@example.com' },
     });
     if (!userStaffA) {
       userStaffA = await prisma.user.create({
         data: {
           fullName: 'Staff Member Alpha',
-          email: 'staff_a_isolation@test.com',
+          email: 'staff_a_isolation@example.com',
           passwordHash,
           role: 'STAFF',
           isActive: true,
@@ -113,13 +113,13 @@ async function runStaffIsolationAndAttendanceSuite() {
 
     // Create / Find Staff B in Institute A
     let userStaffB = await prisma.user.findFirst({
-      where: { email: 'staff_b_isolation@test.com' },
+      where: { email: 'staff_b_isolation@example.com' },
     });
     if (!userStaffB) {
       userStaffB = await prisma.user.create({
         data: {
           fullName: 'Staff Member Beta',
-          email: 'staff_b_isolation@test.com',
+          email: 'staff_b_isolation@example.com',
           passwordHash,
           role: 'STAFF',
           isActive: true,
@@ -154,13 +154,13 @@ async function runStaffIsolationAndAttendanceSuite() {
 
     // Create / Find Staff in Institute B (Cross-Institute)
     let userStaffBeta = await prisma.user.findFirst({
-      where: { email: 'staff_beta_inst_b@test.com' },
+      where: { email: 'staff_beta_inst_b@example.com' },
     });
     if (!userStaffBeta) {
       userStaffBeta = await prisma.user.create({
         data: {
           fullName: 'Staff Beta CrossTenant',
-          email: 'staff_beta_inst_b@test.com',
+          email: 'staff_beta_inst_b@example.com',
           passwordHash,
           role: 'STAFF',
           isActive: true,
