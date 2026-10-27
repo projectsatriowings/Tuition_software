@@ -122,13 +122,30 @@ export interface Batch {
   id: string;
   instituteId: string;
   name: string;
+  code?: string | null;
   academicYear: string;
   startDate: string;
   endDate?: string | null;
+  description?: string | null;
+  schedule?: string | null;
   isActive: boolean;
   batchSubjects?: Array<{
     id: string;
+    batchId?: string;
     subjectId: string;
+    description?: string | null;
+    schedule?: string | null;
+    isActive?: boolean;
+    staffProfileId?: string | null;
+    staffProfile?: {
+      id: string;
+      user: {
+        id: string;
+        fullName: string;
+        email: string | null;
+        phone: string | null;
+      };
+    } | null;
     subject: Subject;
   }>;
   staffAssignments?: Array<{
@@ -154,12 +171,29 @@ export interface Batch {
       firstName: string;
       lastName: string;
       phone?: string | null;
+      photoUrl?: string | null;
       status: StudentStatus;
     };
     subject?: {
       id: string;
       name: string;
+      code?: string | null;
     } | null;
+  }>;
+  enrolledStudents?: Array<{
+    id: string;
+    admissionNumber: string;
+    firstName: string;
+    lastName: string;
+    phone?: string | null;
+    photoUrl?: string | null;
+    status: StudentStatus;
+    enrolledAt?: string;
+    allocatedSubjects?: Array<{
+      id: string;
+      name: string;
+      code?: string | null;
+    }>;
   }>;
   _count?: {
     enrollments: number;

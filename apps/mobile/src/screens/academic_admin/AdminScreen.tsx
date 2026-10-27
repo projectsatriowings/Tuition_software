@@ -481,7 +481,7 @@ export const AdminScreen: React.FC = () => {
                     <View style={styles.outRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.outName}>{item.studentName || 'Student'}</Text>
-                        <Text style={styles.outRoll}>Roll: {item.rollNumber} • Batch: {item.batchName}</Text>
+                        <Text style={styles.outRoll}>Adm: {item.admissionNumber || item.rollNumber || '—'} • Batch: {item.batchName}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.outAmt}>{formatRupee(item.balanceAmount)}</Text>
@@ -515,7 +515,7 @@ export const AdminScreen: React.FC = () => {
                         style={[styles.stChip, isSelected && styles.stChipActive]}
                       >
                         <Text style={[styles.stChipText, isSelected && styles.stChipTextActive]}>
-                          {st.user?.fullName} ({st.rollNumber})
+                          {st.user?.fullName} ({st.admissionNumber || '—'})
                         </Text>
                       </TouchableOpacity>
                     );
@@ -601,7 +601,7 @@ export const AdminScreen: React.FC = () => {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.stuDirName}>{st.user?.fullName || `${st.firstName} ${st.lastName}`}</Text>
                       <Text style={styles.stuDirMeta}>
-                        Adm: {st.admissionNumber || '—'} {st.rollNumber ? `• Roll: ${st.rollNumber}` : ''}
+                        Adm: {st.admissionNumber || '—'}
                       </Text>
                       <Text style={styles.stuDirEmail}>
                         {st.enrollments?.[0]?.batch?.name ? `Class: ${st.enrollments[0].batch.name}` : (st.batch?.name ? `Class: ${st.batch.name}` : 'Unassigned')}

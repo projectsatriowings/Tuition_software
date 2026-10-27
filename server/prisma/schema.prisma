@@ -206,6 +206,7 @@ model StaffProfile {
   institute   Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments StaffBatchAssignment[]
+  batchSubjects BatchSubject[]
 
   @@unique([instituteId, employeeCode])
   @@index([instituteId])
@@ -309,15 +310,18 @@ model Subject {
 }
 
 model Batch {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   instituteId  String
-  name         String   // e.g., "Class 10 - Batch A (2026-27)"
-  academicYear String   // e.g., "2026-2027"
+  name         String    // e.g., "Class 10 - Batch A (2026-27)"
+  code         String?   // Batch code, unique per institute (e.g., "B-10A")
+  academicYear String    // e.g., "2026-2027"
   startDate    DateTime
   endDate      DateTime?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  description  String?
+  schedule     String?   // Timing / schedule e.g., "Mon-Fri 4:00 PM - 6:00 PM"
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   institute         Institute              @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   batchSubjects     BatchSubject[]
@@ -331,16 +335,22 @@ model Batch {
 
   @@unique([instituteId, name, academicYear])
   @@index([instituteId])
+  @@index([instituteId, code])
 }
 
 model BatchSubject {
-  id        String   @id @default(uuid())
-  batchId   String
-  subjectId String
-  createdAt DateTime @default(now())
+  id             String        @id @default(uuid())
+  batchId        String
+  subjectId      String
+  staffProfileId String?
+  description    String?
+  schedule       String?
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
 
-  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  batch        Batch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  staffProfile StaffProfile? @relation(fields: [staffProfileId], references: [id], onDelete: SetNull)
 
   @@unique([batchId, subjectId])
   @@index([batchId])

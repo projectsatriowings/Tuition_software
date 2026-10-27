@@ -38,6 +38,15 @@ router.patch('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), upda
 router.put('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudent);
 router.patch('/:id/status', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudentStatus);
 
+import {
+  allocateStudentSubjects,
+  getStudentSubjectAllocations,
+} from '../academics/academics.controller.js';
+
+// Student Subject Allocations
+router.get('/:id/subject-allocations', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentSubjectAllocations);
+router.post('/:id/subject-allocations', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), allocateStudentSubjects);
+
 // Student credential management routes
 router.post('/:id/reset-password', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), resetStudentPassword);
 router.patch('/:id/account-identifier', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudentLoginIdentifier);

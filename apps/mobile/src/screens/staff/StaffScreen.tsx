@@ -596,7 +596,7 @@ export const StaffScreen: React.FC = () => {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.studentName}>{st.user?.fullName}</Text>
-                        <Text style={styles.studentRoll}>Roll: {st.rollNumber}</Text>
+                        <Text style={styles.studentRoll}>Adm: {st.admissionNumber || '—'}</Text>
                       </View>
                       <Badge
                         label={isSelected ? 'SELECTED' : 'TAP TO SELECT'}
@@ -632,7 +632,7 @@ export const StaffScreen: React.FC = () => {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.studentName}>{s.user?.fullName || `${s.firstName} ${s.lastName}`}</Text>
                       <Text style={styles.studentSub}>
-                        Adm: {s.admissionNumber || '—'} {s.rollNumber ? `• Roll: ${s.rollNumber}` : ''}
+                        Adm: {s.admissionNumber || '—'}
                       </Text>
                       {s.phone && (
                         <Text style={styles.phoneText}>📞 {s.phone}</Text>
