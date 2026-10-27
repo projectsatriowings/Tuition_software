@@ -302,7 +302,7 @@ async function runTestSuite() {
       staffUser = await prisma.user.create({
         data: {
           fullName: 'Staff Test Teacher',
-          email: 'staff.test@institute-alpha.com',
+          email: 'staff.test@institute-alpha.example.com',
           phone: '9988776655',
           passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$dummyhash',
           role: 'STAFF',

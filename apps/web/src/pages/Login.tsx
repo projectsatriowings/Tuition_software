@@ -38,17 +38,17 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     role: 'ACADEMIC_ADMIN',
     label: 'Academic Admin',
     roleBadgeColor: 'text-[#4E342E]',
-    identifier: 'admin@apexacademy.com',
+    identifier: 'admin@apex.example.com',
     password: 'Password#123',
-    subtext: 'admin@apexacademy.com',
+    subtext: 'admin@apex.example.com',
   },
   {
     role: 'STAFF',
     label: 'Staff / Faculty',
     roleBadgeColor: 'text-emerald-700',
-    identifier: 'teacher@apexacademy.com',
+    identifier: 'teacher@apex.example.com',
     password: 'Password#123',
-    subtext: 'teacher@apexacademy.com',
+    subtext: 'teacher@apex.example.com',
   },
   {
     role: 'PARENT',
@@ -62,9 +62,9 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     role: 'STUDENT',
     label: 'Student Portal',
     roleBadgeColor: 'text-[#6D4C41]',
-    identifier: 'student@apexacademy.com',
+    identifier: 'student@apex.example.com',
     password: 'Password#123',
-    subtext: 'student@apexacademy.com',
+    subtext: 'student@apex.example.com',
   },
 ];
 
@@ -351,7 +351,7 @@ export const Login: React.FC = () => {
                     >
                       <div>
                         <div className="font-bold text-[#6D4C41] text-[11px]">Student Portal</div>
-                        <div className="text-[10px] text-[#6D4C41] mt-0.5">student@apexacademy.com</div>
+                        <div className="text-[10px] text-[#6D4C41] mt-0.5">student@apex.example.com</div>
                       </div>
                       <span className="text-[10px] font-mono bg-[#EFEBE9] text-[#4E342E] px-2 py-0.5 rounded border border-[#D7CCC8] font-semibold">
                         Demo Account
