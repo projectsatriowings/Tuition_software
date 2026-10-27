@@ -107,12 +107,16 @@ Please keep this login and password safe. This is your permanent account passwor
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [staffRes, batchesRes] = await Promise.all([
+      const [staffRes, batchesRes] = await Promise.allSettled([
         apiFetch(`/staff?search=${encodeURIComponent(search)}`),
         apiFetch('/academics/batches'),
       ]);
-      setStaff(staffRes.data?.staff || []);
-      setBatches(batchesRes.data?.batches || []);
+      if (staffRes.status === 'fulfilled') {
+        setStaff(staffRes.value.data?.staff || []);
+      }
+      if (batchesRes.status === 'fulfilled') {
+        setBatches(batchesRes.value.data?.batches || []);
+      }
     } catch (err) {
       console.error(err);
     } finally {
