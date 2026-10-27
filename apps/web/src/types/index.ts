@@ -41,6 +41,7 @@ export interface StaffMember {
   employeeCode?: string | null;
   designation: string;
   qualification?: string | null;
+  permissionsJson?: Record<string, any> | null;
   createdAt: string;
   user: User;
   assignments?: Array<{
