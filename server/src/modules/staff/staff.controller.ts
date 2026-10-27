@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
+import { generateNextEmployeeCode } from './staff-code.service.js';
 
 const prisma = new PrismaClient();
 
@@ -106,6 +107,26 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
 }
 
 /**
+ * Get next auto-generated employee code with academy name
+ */
+export async function getNextEmployeeCodeHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+
+    const employeeCode = await generateNextEmployeeCode(prisma, instituteId);
+    return res.json({
+      success: true,
+      data: { employeeCode },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to generate next employee code' });
+  }
+}
+
+/**
  * Create a new staff account (Academic Admin or Super Admin)
  */
 export async function createStaff(req: AuthenticatedRequest, res: Response) {
@@ -135,20 +156,24 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       });
     }
 
-    // Check employee code uniqueness within institute
-    if (data.employeeCode) {
+    // Auto-generate employee code with academy name if not supplied
+    let employeeCode = data.employeeCode?.trim() || '';
+    if (!employeeCode) {
+      employeeCode = await generateNextEmployeeCode(prisma, instituteId);
+    } else {
+      // Check employee code uniqueness within institute
       const existingCode = await prisma.staffProfile.findUnique({
         where: {
           instituteId_employeeCode: {
             instituteId,
-            employeeCode: data.employeeCode.trim(),
+            employeeCode,
           },
         },
       });
       if (existingCode) {
         return res.status(409).json({
           success: false,
-          error: `Employee code '${data.employeeCode}' already exists in this institute`,
+          error: `Employee code '${employeeCode}' already exists in this institute`,
         });
       }
     }
@@ -190,7 +215,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         data: {
           instituteId,
           userId: user.id,
-          employeeCode: data.employeeCode?.trim() || null,
+          employeeCode,
           designation: data.designation.trim(),
           qualification: data.qualification?.trim() || null,
           permissionsJson: staffPermissions,
@@ -236,6 +261,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       message: 'Permanent staff login created successfully',
       data: {
         staffId: result.staffProfile.id,
+        employeeCode: result.staffProfile.employeeCode,
         user: {
           id: result.user.id,
           fullName: result.user.fullName,

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   listStaff,
+  getNextEmployeeCodeHandler,
   createStaff,
   getStaffById,
   updateStaff,
@@ -17,6 +18,7 @@ router.use(requireInstituteContext);
 
 // Staff management endpoints (Academic Admin & Super Admin)
 router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), listStaff);
+router.get('/next-code', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), getNextEmployeeCodeHandler);
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), createStaff);
 router.get('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getStaffById);
 router.patch('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), updateStaff);
