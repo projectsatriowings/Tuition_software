@@ -299,7 +299,7 @@ export const Login: React.FC = () => {
                     onClick={() => setShowHelpModal(true)}
                     className="text-xs text-[#6D4C41] hover:text-[#3E2723] transition-colors flex items-center gap-1 font-semibold"
                   >
-                    <HelpCircle className="w-3.5 h-3.5 text-[#8D6E63]" /> Need login credentials?
+                    <HelpCircle className="w-3.5 h-3.5 text-[#8D6E63]" /> Need login or password?
                   </button>
                 </div>
 
@@ -380,7 +380,7 @@ export const Login: React.FC = () => {
                   <HelpCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-[#2D1E18]">Need Login Credentials?</h3>
+                  <h3 className="text-base font-bold text-[#2D1E18]">Need Login or Password?</h3>
                   <p className="text-xs text-[#6D4C41]">Official access guidance for your account role</p>
                 </div>
               </div>
@@ -408,7 +408,7 @@ export const Login: React.FC = () => {
                   <Users className="w-4 h-4" /> Staff / Faculty
                 </div>
                 <p className="text-[#5D4037] leading-relaxed">
-                  Contact your institute's Academic Admin to provision or reset your faculty account.
+                  Contact your institute's Academic Admin to provision or reset your faculty account login password.
                 </p>
               </div>
 
@@ -426,7 +426,7 @@ export const Login: React.FC = () => {
                   <User className="w-4 h-4" /> Student
                 </div>
                 <p className="text-[#5D4037] leading-relaxed">
-                  Ask the tuition institute administration to provide or activate your student login credentials.
+                  Ask the tuition institute administration to provide or activate your student login password.
                 </p>
               </div>
 
@@ -441,7 +441,7 @@ export const Login: React.FC = () => {
             </div>
 
             <div className="mt-4 p-3 rounded-xl bg-[#EFEBE9] border border-[#D7CCC8] text-[11px] text-[#5D4037] leading-relaxed">
-              <span className="font-bold text-[#2D1E18]">Security Notice:</span> TuitionOS enforces strict institutional data isolation. Account credentials can only be granted by verified institute administrators.
+              <span className="font-bold text-[#2D1E18]">Security Notice:</span> TuitionOS enforces strict institutional data isolation. Account login details can only be granted by verified institute administrators.
             </div>
 
             <div className="mt-5 flex justify-end">

@@ -13,7 +13,8 @@ export const createStaffSchema = z.object({
   employeeCode: z.string().optional(),
   designation: z.string().min(2, 'Designation is required'), // e.g., "Senior Mathematics Faculty"
   qualification: z.string().optional(),
-  initialPassword: z.string().min(8).optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  initialPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
   permissionsJson: z.record(z.any()).optional(),
   batchIds: z.array(z.string().uuid()).optional(),
 });
@@ -30,6 +31,10 @@ export const updateStaffSchema = z.object({
 export const updateStaffStatusSchema = z.object({
   isActive: z.boolean(),
   reason: z.string().optional(),
+});
+
+export const resetStaffPasswordSchema = z.object({
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
 });
 
 /**
@@ -148,8 +153,8 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       }
     }
 
-    const tempPassword = data.initialPassword || `Staff#${generateSecureRandomToken(4)}2026`;
-    const passwordHash = await hashPassword(tempPassword);
+    const permanentPassword = data.password?.trim() || data.initialPassword?.trim() || `Staff@${generateSecureRandomToken(4)}2026`;
+    const passwordHash = await hashPassword(permanentPassword);
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create User
@@ -161,7 +166,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           passwordHash,
           role: 'STAFF',
           isActive: true,
-          mustChangePassword: true,
+          mustChangePassword: false, // Permanent staff login created by admin - no forced temporary password change
         },
       });
 
@@ -175,7 +180,12 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         },
       });
 
-      // 3. Create Staff Profile
+      // 3. Create Staff Profile with permanent credentials saved in permissionsJson for admin review
+      const staffPermissions = {
+        ...(data.permissionsJson || {}),
+        permanentPassword, // Preserved so academic admin can view and hand over permanent login at any time
+      };
+
       const staffProfile = await tx.staffProfile.create({
         data: {
           instituteId,
@@ -183,7 +193,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           employeeCode: data.employeeCode?.trim() || null,
           designation: data.designation.trim(),
           qualification: data.qualification?.trim() || null,
-          permissionsJson: data.permissionsJson || {},
+          permissionsJson: staffPermissions,
         },
       });
 
@@ -216,9 +226,14 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       return { user, staffProfile };
     });
 
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { id: true, code: true, name: true },
+    });
+
     return res.status(201).json({
       success: true,
-      message: 'Staff account created successfully',
+      message: 'Permanent staff login created successfully',
       data: {
         staffId: result.staffProfile.id,
         user: {
@@ -226,9 +241,11 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           fullName: result.user.fullName,
           email: result.user.email,
           role: result.user.role,
-          mustChangePassword: result.user.mustChangePassword,
+          mustChangePassword: false,
         },
-        temporaryPassword: tempPassword, // Provided once on creation for admin hand-off
+        institute: institute || null,
+        permanentPassword, // Explicit permanent password returned for admin to view and hand over
+        temporaryPassword: permanentPassword, // backward compatibility
       },
     });
   } catch (err: any) {
@@ -484,3 +501,85 @@ export async function assignStaffBatches(req: AuthenticatedRequest, res: Respons
     return res.status(500).json({ success: false, error: 'Failed to assign batches to staff' });
   }
 }
+
+/**
+ * Reset / Set permanent login password for a staff member (Academic Admin & Super Admin)
+ */
+export async function resetStaffPassword(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id } = req.params;
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { id, instituteId },
+      include: { user: true },
+    });
+
+    if (!staff) {
+      return res.status(404).json({ success: false, error: 'Staff member not found in this institute' });
+    }
+
+    const parse = resetStaffPasswordSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Validation failed',
+      });
+    }
+
+    const newPassword = parse.data.password?.trim() || `Staff@${generateSecureRandomToken(4)}2026`;
+    const passwordHash = await hashPassword(newPassword);
+
+    const existingPerms = (staff.permissionsJson as Record<string, any>) || {};
+    const updatedPerms = {
+      ...existingPerms,
+      permanentPassword: newPassword,
+    };
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: staff.userId },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+        },
+      }),
+      prisma.staffProfile.update({
+        where: { id: staff.id },
+        data: {
+          permissionsJson: updatedPerms,
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STAFF_PASSWORD_RESET',
+          entityType: 'StaffProfile',
+          entityId: staff.id,
+          newValues: { resetBy: req.user?.userId },
+        },
+      }),
+    ]);
+
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { id: true, code: true, name: true },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Staff permanent password updated successfully',
+      data: {
+        staffId: staff.id,
+        email: staff.user.email,
+        permanentPassword: newPassword,
+        institute: institute || null,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Reset Staff Password Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset staff password' });
+  }
+}
+
