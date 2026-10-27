@@ -291,10 +291,6 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                       <Text style={styles.rowValueHighlight}>{details.admissionNumber}</Text>
                     </View>
                     <View style={styles.rowItem}>
-                      <Text style={styles.rowLabel}>Class Roll Number</Text>
-                      <Text style={styles.rowValue}>{details.rollNumber || 'Not assigned'}</Text>
-                    </View>
-                    <View style={styles.rowItem}>
                       <Text style={styles.rowLabel}>Joined Date (Admission)</Text>
                       <Text style={styles.rowValue}>{formatKolkataTime(details.admissionDate || details.createdAt)}</Text>
                     </View>

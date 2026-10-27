@@ -85,7 +85,9 @@ const AppContent: React.FC = () => {
 
                 {currentTab === 'students' && <StudentManagement />}
 
-                {currentTab === 'academics' && <AcademicsManagement />}
+                {currentTab === 'academics' && (
+                  <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
+                )}
 
                 {currentTab === 'attendance' && <AttendanceManagement />}
 
