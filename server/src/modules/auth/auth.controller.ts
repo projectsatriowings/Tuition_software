@@ -240,6 +240,14 @@ export async function changePassword(req: AuthenticatedRequest, res: Response) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    // Students and parents cannot self-service modify credentials unless completing mandatory first-login change
+    if ((req.user.role === 'STUDENT' || req.user.role === 'PARENT') && !user.mustChangePassword) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: Self-service credential changes are not permitted for student or parent accounts. Please contact your institute administrator.',
+      });
+    }
+
     const isMatch = await verifyPassword(user.passwordHash, currentPassword);
     if (!isMatch) {
       return res.status(400).json({ success: false, error: 'Current password does not match' });

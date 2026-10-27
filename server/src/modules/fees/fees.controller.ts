@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { PrismaClient, Prisma, FeeFrequency, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
+import { isStudentAuthorized } from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
@@ -731,6 +732,11 @@ export async function getStudentFeeStatement(req: AuthenticatedRequest, res: Res
       });
       if (!relation) {
         return res.status(403).json({ success: false, error: 'Forbidden: Student is not linked to parent profile' });
+      }
+    } else if (req.user?.role === 'STAFF') {
+      const isAuth = await isStudentAuthorized(req, studentId, prisma);
+      if (!isAuth) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view fee statements for this student' });
       }
     }
 

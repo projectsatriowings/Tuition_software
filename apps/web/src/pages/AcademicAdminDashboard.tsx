@@ -6,7 +6,6 @@ import {
   Users,
   Layers,
   BookOpen,
-  UserCheck,
   CheckCircle2,
   Clock,
   ArrowRight,
@@ -138,20 +137,20 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({ 
         </button>
 
         <button
-          onClick={() => onNavigateTab('parents')}
+          onClick={() => onNavigateTab('academics')}
           className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
         >
-          <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-800 border border-sky-200 flex items-center justify-center mb-4">
-            <UserCheck className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 flex items-center justify-center mb-4">
+            <Layers className="w-5 h-5" />
           </div>
           <h3 className="font-bold text-[#2D1E18] text-base group-hover:text-[#4E342E] transition">
-            Parents & Guardian Links
+            Batches & Curriculum
           </h3>
           <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
-            Link verified parents to multiple children and configure SMS channels.
+            Manage academic batches, assign subjects, faculty, and student rosters.
           </p>
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-sky-800 mt-4">
-            Manage Parents <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 mt-4">
+            Manage Batches <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
           </span>
         </button>
       </div>

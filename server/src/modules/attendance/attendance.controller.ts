@@ -5,6 +5,10 @@ import crypto from 'crypto';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { config } from '../../config/index.js';
 import { NotificationService } from '../notifications/notification.service.js';
+import {
+  getAuthorizedStudentScope,
+  isStudentAuthorized,
+} from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
@@ -94,6 +98,12 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
       }
     }
 
+    // Verify authorization scope for student
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to record attendance for this student' });
+    }
+
     // Verify Student belongs to this institute and is ACTIVE
     const student = await prisma.student.findFirst({
       where: { id: studentId, instituteId },
@@ -107,6 +117,13 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     }
     if (student.status !== 'ACTIVE') {
       return res.status(400).json({ success: false, error: `Cannot record attendance for student in ${student.status} status` });
+    }
+
+    if (batchId) {
+      const isEnrolledInBatch = student.enrollments.some((e) => e.batchId === batchId);
+      if (!isEnrolledInBatch) {
+        return res.status(400).json({ success: false, error: 'Student is not enrolled in the specified batch' });
+      }
     }
 
     const assignedBatchId = batchId || student.enrollments[0]?.batchId;
@@ -144,36 +161,39 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     const nextSessionNumber = latestCheckIn ? latestCheckIn.sessionNumber + 1 : 1;
 
     // Record Event in transaction + queue notification
-    const event = await prisma.$transaction(async (tx) => {
-      const createdEvent = await tx.attendanceEvent.create({
-        data: {
-          instituteId,
+    const event = await prisma.$transaction(
+      async (tx) => {
+        const createdEvent = await tx.attendanceEvent.create({
+          data: {
+            instituteId,
+            studentId,
+            batchId: assignedBatchId,
+            eventDate,
+            eventType: 'CHECK_IN',
+            eventTime: serverNow,
+            sessionNumber: nextSessionNumber,
+            method,
+            isLate,
+            markedById: req.user!.userId,
+            remarks: remarks || null,
+            idempotencyKey: idempotencyKey || null,
+          },
+        });
+
+        // Queue SMS notification for guardians
+        await NotificationService.queueAttendanceNotification({
+          attendanceEventId: createdEvent.id,
           studentId,
-          batchId: assignedBatchId,
-          eventDate,
+          instituteId,
           eventType: 'CHECK_IN',
           eventTime: serverNow,
-          sessionNumber: nextSessionNumber,
-          method,
-          isLate,
-          markedById: req.user!.userId,
-          remarks: remarks || null,
-          idempotencyKey: idempotencyKey || null,
-        },
-      });
+          tx,
+        });
 
-      // Queue SMS notification for guardians
-      await NotificationService.queueAttendanceNotification({
-        attendanceEventId: createdEvent.id,
-        studentId,
-        instituteId,
-        eventType: 'CHECK_IN',
-        eventTime: serverNow,
-        tx,
-      });
-
-      return createdEvent;
-    });
+        return createdEvent;
+      },
+      { timeout: 15000, maxWait: 10000 }
+    );
 
     return res.status(201).json({
       success: true,
@@ -215,6 +235,12 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
       }
     }
 
+    // Verify authorization scope for student
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to record check-out for this student' });
+    }
+
     const student = await prisma.student.findFirst({
       where: { id: studentId, instituteId },
     });
@@ -244,36 +270,39 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
     }
 
     // Record Check-out Event + queue notification
-    const event = await prisma.$transaction(async (tx) => {
-      const createdEvent = await tx.attendanceEvent.create({
-        data: {
-          instituteId,
+    const event = await prisma.$transaction(
+      async (tx) => {
+        const createdEvent = await tx.attendanceEvent.create({
+          data: {
+            instituteId,
+            studentId,
+            batchId: activeCheckIn.batchId,
+            eventDate,
+            eventType: 'CHECK_OUT',
+            eventTime: serverNow,
+            sessionNumber: activeCheckIn.sessionNumber,
+            method,
+            isLate: false,
+            markedById: req.user!.userId,
+            remarks: remarks || null,
+            idempotencyKey: idempotencyKey || null,
+          },
+        });
+
+        // Queue SMS notification for guardians
+        await NotificationService.queueAttendanceNotification({
+          attendanceEventId: createdEvent.id,
           studentId,
-          batchId: activeCheckIn.batchId,
-          eventDate,
+          instituteId,
           eventType: 'CHECK_OUT',
           eventTime: serverNow,
-          sessionNumber: activeCheckIn.sessionNumber,
-          method,
-          isLate: false,
-          markedById: req.user!.userId,
-          remarks: remarks || null,
-          idempotencyKey: idempotencyKey || null,
-        },
-      });
+          tx,
+        });
 
-      // Queue SMS notification for guardians
-      await NotificationService.queueAttendanceNotification({
-        attendanceEventId: createdEvent.id,
-        studentId,
-        instituteId,
-        eventType: 'CHECK_OUT',
-        eventTime: serverNow,
-        tx,
-      });
-
-      return createdEvent;
-    });
+        return createdEvent;
+      },
+      { timeout: 15000, maxWait: 10000 }
+    );
 
     return res.status(201).json({
       success: true,
@@ -298,10 +327,20 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
     const dateQuery = req.query.date as string;
     const targetDate = dateQuery ? new Date(dateQuery) : getInstituteLocalDate();
 
-    const studentWhere: any = { instituteId, status: 'ACTIVE' };
+    const scope = await getAuthorizedStudentScope(req, prisma);
+
+    const andConditions: any[] = [
+      { instituteId, status: 'ACTIVE' },
+      scope.whereClause,
+    ];
+
     if (batchId) {
-      studentWhere.enrollments = { some: { batchId, isActive: true } };
+      andConditions.push({
+        enrollments: { some: { batchId, isActive: true } },
+      });
     }
+
+    const studentWhere: any = { AND: andConditions };
 
     const [students, events] = await Promise.all([
       prisma.student.findMany({
@@ -345,6 +384,7 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           name: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
           rollNumber: student.rollNumber,
+          photoUrl: student.photoUrl,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
         },
         status,
@@ -401,8 +441,11 @@ export async function getAttendanceReports(req: AuthenticatedRequest, res: Respo
     let startDate = startDateStr ? new Date(startDateStr) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     let endDate = endDateStr ? new Date(endDateStr) : now;
 
+    const scope = await getAuthorizedStudentScope(req, prisma);
+
     const where: any = {
       instituteId,
+      student: scope.whereClause,
       eventDate: {
         gte: getInstituteLocalDate(startDate),
         lte: getInstituteLocalDate(endDate),
@@ -445,6 +488,11 @@ export async function getStudentQrPass(req: AuthenticatedRequest, res: Response)
   try {
     const instituteId = req.instituteId;
     const { studentId } = req.params;
+
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view this student QR pass' });
+    }
 
     const student = await prisma.student.findFirst({
       where: { id: studentId, instituteId },
@@ -498,6 +546,11 @@ export async function validateScannedQr(req: AuthenticatedRequest, res: Response
 
     if (callerInstituteId && verification.instituteId !== callerInstituteId) {
       return res.status(403).json({ success: false, error: 'This QR pass belongs to another institute' });
+    }
+
+    const isAuth = await isStudentAuthorized(req, verification.studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to scan QR for this student' });
     }
 
     const student = await prisma.student.findUnique({

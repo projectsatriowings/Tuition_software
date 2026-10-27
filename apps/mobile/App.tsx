@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, SafeAreaView, StatusBar } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useMobileAuth } from './src/context/AuthContext';
+import { ToastProvider } from './src/context/ToastContext';
 import { LoginScreen } from './src/screens/auth/LoginScreen';
 import { ChangePasswordScreen } from './src/screens/auth/ChangePasswordScreen';
 import { StudentScreen } from './src/screens/student/StudentScreen';
@@ -57,12 +59,16 @@ const RootNavigator: React.FC = () => {
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={themeTokens.colors.espresso} />
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor={themeTokens.colors.espresso} />
+        <AuthProvider>
+          <ToastProvider>
+            <RootNavigator />
+          </ToastProvider>
+        </AuthProvider>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

@@ -7,19 +7,23 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   TextInput,
   Modal,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
+import { useMobileToast } from '../../context/ToastContext';
 import { mobileApiFetch, generateIdempotencyKey } from '../../services/api';
 import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
-import { themeTokens } from '@tuition/shared';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { StudentDetailsModal } from '../../components/StudentDetailsModal';
+import { AdmitStudentModal } from '../../components/AdmitStudentModal';
+import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 
 export const StaffScreen: React.FC = () => {
   const { user } = useMobileAuth();
+  const { showToast } = useMobileToast();
 
   const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'messages'>('attendance');
   const [loading, setLoading] = useState(true);
@@ -32,13 +36,33 @@ export const StaffScreen: React.FC = () => {
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
 
-  // Attendance Check-in State
+  // Modals & Student Management
+  const [showAdmitModal, setShowAdmitModal] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [statusConfirm, setStatusConfirm] = useState<{
+    isOpen: boolean;
+    student: any;
+    newStatus: string;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    student: null,
+    newStatus: '',
+    loading: false,
+  });
+
+  // Voice Attendance State
+  const [voiceQuery, setVoiceQuery] = useState('');
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [pendingVoiceCandidate, setPendingVoiceCandidate] = useState<any>(null);
+  const [voiceDisambiguation, setVoiceDisambiguation] = useState<any[]>([]);
+  const [voiceSubmitting, setVoiceSubmitting] = useState(false);
+
+  // Attendance Manual Check-in State
   const [selectedStudentForAtt, setSelectedStudentForAtt] = useState<any>(null);
   const [attStatus, setAttStatus] = useState<'PRESENT' | 'ABSENT' | 'LATE'>('PRESENT');
   const [attType, setAttType] = useState<'CHECK_IN' | 'CHECK_OUT'>('CHECK_IN');
   const [attSubmitting, setAttSubmitting] = useState(false);
-  const [qrScanInput, setQrScanInput] = useState('');
-  const [showQrScanModal, setShowQrScanModal] = useState(false);
 
   // Homework Creation State
   const [showNewHwModal, setShowNewHwModal] = useState(false);
@@ -108,7 +132,7 @@ export const StaffScreen: React.FC = () => {
 
   const handleRecordAttendance = async () => {
     if (!selectedStudentForAtt) {
-      Alert.alert('Notice', 'Please select a student first');
+      showToast('Please select a student first', 'warning');
       return;
     }
 
@@ -128,53 +152,93 @@ export const StaffScreen: React.FC = () => {
       });
 
       if (res.success) {
-        Alert.alert(
-          'Attendance Recorded',
-          `${attType === 'CHECK_IN' ? 'Check-In' : 'Check-Out'} marked as ${attStatus} for ${selectedStudentForAtt.user?.fullName}. SMS outbox notification queued.`
+        showToast(
+          `${attType === 'CHECK_IN' ? 'Check-In' : 'Check-Out'} marked as ${attStatus} for ${selectedStudentForAtt.user?.fullName || selectedStudentForAtt.firstName}.`,
+          'success'
         );
         setSelectedStudentForAtt(null);
       } else {
-        Alert.alert('Error', res.error || 'Failed to record attendance');
+        showToast(res.error || 'Failed to record attendance', 'error');
       }
     } catch {
-      Alert.alert('Error', 'Network connection issue');
+      showToast('Network connection issue', 'error');
     } finally {
       setAttSubmitting(false);
     }
   };
 
-  const handleScanQr = async () => {
-    if (!qrScanInput.trim()) {
-      Alert.alert('Error', 'Please enter or scan student QR token');
+  const handleVoiceQueryChange = (text: string) => {
+    setVoiceQuery(text);
+    if (!text.trim() || students.length === 0) {
+      setPendingVoiceCandidate(null);
+      setVoiceDisambiguation([]);
       return;
     }
+    const candidates: EnrolledStudentCandidate[] = students.map((s) => ({
+      id: s.id,
+      firstName: s.firstName || s.user?.fullName?.split(' ')[0] || '',
+      lastName: s.lastName || s.user?.fullName?.split(' ').slice(1).join(' ') || '',
+      admissionNumber: s.admissionNumber,
+      rollNumber: s.rollNumber,
+      phone: s.phone || s.user?.phone,
+      status: s.status,
+    }));
 
-    setAttSubmitting(true);
+    const result = matchStudentVoice(text, candidates);
+    if (result.status === 'EXACT_SINGLE' || result.status === 'FUZZY_SINGLE') {
+      const matched = students.find((s) => s.id === result.bestMatch?.id);
+      setPendingVoiceCandidate(matched || null);
+      setVoiceDisambiguation([]);
+    } else if (result.status === 'EXACT_MULTIPLE' || result.status === 'FUZZY_MULTIPLE') {
+      setPendingVoiceCandidate(null);
+      const matchIds = new Set(
+        result.exactMatches.length > 0
+          ? result.exactMatches.map((m) => m.id)
+          : result.fuzzyMatches.map((m) => m.student.id)
+      );
+      setVoiceDisambiguation(students.filter((s) => matchIds.has(s.id)));
+    } else {
+      setPendingVoiceCandidate(null);
+      setVoiceDisambiguation([]);
+    }
+  };
+
+  const handleConfirmVoiceAttendance = async (student: any) => {
+    setVoiceSubmitting(true);
     try {
-      const res = await mobileApiFetch('/attendance/qr/scan', {
+      const idempotencyKey = generateIdempotencyKey('VOICE');
+      const res = await mobileApiFetch('/attendance/check-in', {
         method: 'POST',
+        idempotencyKey,
         body: {
-          qrToken: qrScanInput.trim(),
+          studentId: student.id,
+          batchId: selectedBatch?.id,
+          method: 'VOICE_CONFIRMED',
         },
       });
 
       if (res.success) {
-        Alert.alert('Verified & Checked In', `Student attendance logged via cryptographic QR scan.`);
-        setShowQrScanModal(false);
-        setQrScanInput('');
+        showToast(
+          `Voice Check-In confirmed for ${student.user?.fullName || student.firstName}. Notification queued.`,
+          'success'
+        );
+        setPendingVoiceCandidate(null);
+        setVoiceDisambiguation([]);
+        setVoiceQuery('');
+        setIsVoiceListening(false);
       } else {
-        Alert.alert('Invalid QR Token', res.error || 'Token expired or invalid signature.');
+        showToast(res.error || 'Failed to record attendance', 'error');
       }
     } catch {
-      Alert.alert('Error', 'Failed to communicate with QR validation service.');
+      showToast('Network connection issue', 'error');
     } finally {
-      setAttSubmitting(false);
+      setVoiceSubmitting(false);
     }
   };
 
   const handleCreateHomework = async () => {
     if (!hwTitle.trim() || !selectedBatch) {
-      Alert.alert('Error', 'Please fill in homework title');
+      showToast('Please fill in homework title', 'warning');
       return;
     }
 
@@ -191,18 +255,55 @@ export const StaffScreen: React.FC = () => {
       });
 
       if (res.success) {
-        Alert.alert('Success', 'Homework published to batch students.');
+        showToast('Homework published to batch students.', 'success');
         setShowNewHwModal(false);
         setHwTitle('');
         setHwDesc('');
         fetchStaffData();
       } else {
-        Alert.alert('Error', res.error || 'Could not publish homework.');
+        showToast(res.error || 'Could not publish homework.', 'error');
       }
     } catch {
-      Alert.alert('Error', 'Server connection error.');
+      showToast('Server connection error.', 'error');
     } finally {
       setHwSubmitting(false);
+    }
+  };
+
+  const handleOpenStatusConfirm = (student: any, newStatus: string) => {
+    setStatusConfirm({
+      isOpen: true,
+      student,
+      newStatus,
+      loading: false,
+    });
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!statusConfirm.student || !statusConfirm.newStatus) return;
+    setStatusConfirm((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await mobileApiFetch(`/students/${statusConfirm.student.id}/status`, {
+        method: 'PATCH',
+        body: {
+          status: statusConfirm.newStatus,
+          reason: `Status changed to ${statusConfirm.newStatus} by faculty staff`,
+        },
+      });
+      if (res.success) {
+        showToast(
+          `${statusConfirm.student.firstName || statusConfirm.student.user?.fullName || 'Student'} marked as ${statusConfirm.newStatus.replace('_', ' ')}.`,
+          'success'
+        );
+        setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false });
+        fetchStaffData();
+      } else {
+        showToast(res.error || 'Failed to update student status', 'error');
+        setStatusConfirm((prev) => ({ ...prev, loading: false }));
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+      setStatusConfirm((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -284,25 +385,121 @@ export const StaffScreen: React.FC = () => {
           contentContainerStyle={styles.scrollContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
         >
-          {/* TAB 1: ATTENDANCE & QR SCANNER */}
+          {/* TAB 1: VOICE-BASED ATTENDANCE & MANUAL FALLBACK */}
           {activeTab === 'attendance' && (
             <View>
-              {/* QR Scanner Launch Card */}
+              {/* Voice-Based Attendance Assistant Card */}
               <Card highlighted>
-                <View style={styles.scannerHeader}>
+                <View style={styles.voiceHeader}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.scannerTitle}>📷 Rapid QR Attendance Scanner</Text>
+                    <Text style={styles.scannerTitle}>🎙️ Voice-Based Attendance</Text>
                     <Text style={styles.scannerSub}>
-                      Verify cryptographically signed student QR passes at classroom entry
+                      Call out student name or dictate via keyboard microphone
                     </Text>
                   </View>
+                  <TouchableOpacity
+                    onPress={() => setIsVoiceListening(!isVoiceListening)}
+                    style={[
+                      styles.voiceListenToggleBtn,
+                      isVoiceListening && styles.voiceListenToggleBtnActive,
+                    ]}
+                  >
+                    <Text style={styles.voiceListenToggleBtnText}>
+                      {isVoiceListening ? '⏹ Stop Listening' : '🎙️ Start Listening'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  onPress={() => setShowQrScanModal(true)}
-                  style={styles.launchScannerBtn}
-                >
-                  <Text style={styles.launchScannerBtnText}>Open QR Token Scanner</Text>
-                </TouchableOpacity>
+
+                {/* Expo Go vs Dev Build info note */}
+                <View style={styles.devBuildNoteBox}>
+                  <Text style={styles.devBuildNoteText}>
+                    💡 Continuous background microphone listening requires an Android Development Client (npx expo run:android). On Expo Go, speak using keyboard voice dictation or type student name below.
+                  </Text>
+                </View>
+
+                {/* Spoken Text / Voice Search Input */}
+                <View style={{ marginTop: 10 }}>
+                  <Text style={styles.voiceInputLabel}>Recognized Speech / Student Name:</Text>
+                  <TextInput
+                    style={styles.voiceTextInput}
+                    placeholder="e.g. 'Aarav Sharma' or 'Kabir present'..."
+                    placeholderTextColor="#A1887F"
+                    value={voiceQuery}
+                    onChangeText={handleVoiceQueryChange}
+                    returnKeyType="search"
+                  />
+                </View>
+
+                {/* Exactly 1 Candidate Matched -> Confirmation Prompt */}
+                {pendingVoiceCandidate && (
+                  <View style={styles.voiceCandidateConfirmCard}>
+                    <View style={styles.voiceCandidateHeader}>
+                      <View style={styles.voiceInitialCircle}>
+                        <Text style={styles.voiceInitialText}>
+                          {(pendingVoiceCandidate.firstName || pendingVoiceCandidate.user?.fullName || '?')[0]}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.voiceCandidateName}>
+                          {pendingVoiceCandidate.user?.fullName ||
+                            `${pendingVoiceCandidate.firstName} ${pendingVoiceCandidate.lastName}`}
+                        </Text>
+                        <Text style={styles.voiceCandidateRoll}>
+                          Adm: {pendingVoiceCandidate.admissionNumber} • Batch: {selectedBatch?.name}
+                        </Text>
+                      </View>
+                      <Badge label="MATCHED" variant="success" size="sm" />
+                    </View>
+
+                    <View style={styles.voiceConfirmActionRow}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setPendingVoiceCandidate(null);
+                          setVoiceQuery('');
+                        }}
+                        style={styles.voiceCancelBtn}
+                      >
+                        <Text style={styles.voiceCancelBtnText}>Skip</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => handleConfirmVoiceAttendance(pendingVoiceCandidate)}
+                        disabled={voiceSubmitting}
+                        style={styles.voiceConfirmBtn}
+                      >
+                        {voiceSubmitting ? (
+                          <ActivityIndicator color="#ffffff" size="small" />
+                        ) : (
+                          <Text style={styles.voiceConfirmBtnText}>
+                            Confirm Check-In ➔
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* Multiple Candidates -> Disambiguation Chips */}
+                {voiceDisambiguation.length > 0 && !pendingVoiceCandidate && (
+                  <View style={styles.voiceDisambiguationBox}>
+                    <Text style={styles.voiceDisambiguationTitle}>
+                      Multiple students match '{voiceQuery}'. Tap intended student:
+                    </Text>
+                    <View style={styles.voiceDisambiguationList}>
+                      {voiceDisambiguation.map((candidate) => (
+                        <TouchableOpacity
+                          key={candidate.id}
+                          onPress={() => setPendingVoiceCandidate(candidate)}
+                          style={styles.voiceDisambigChip}
+                        >
+                          <Text style={styles.voiceDisambigChipText}>
+                            {candidate.user?.fullName || `${candidate.firstName} ${candidate.lastName}`} ({candidate.admissionNumber})
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
               </Card>
 
               {/* Manual Batch Attendance Marker */}
@@ -417,23 +614,71 @@ export const StaffScreen: React.FC = () => {
           {activeTab === 'batches' && (
             <View>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>👨‍🎓 Enrolled Students</Text>
-                <Text style={styles.sectionCount}>{students.length} in this batch</Text>
+                <View>
+                  <Text style={styles.sectionTitle}>👨‍🎓 Enrolled Students</Text>
+                  <Text style={styles.sectionCount}>{students.length} in this batch</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.admitStudentBtn}
+                  onPress={() => setShowAdmitModal(true)}
+                >
+                  <Text style={styles.admitStudentBtnText}>+ Admit Student</Text>
+                </TouchableOpacity>
               </View>
 
               {students.map((s) => (
-                <Card key={s.id}>
+                <Card key={s.id} onPress={() => setSelectedStudentId(s.id)}>
                   <View style={styles.studentCardRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.studentName}>{s.user?.fullName}</Text>
+                      <Text style={styles.studentName}>{s.user?.fullName || `${s.firstName} ${s.lastName}`}</Text>
                       <Text style={styles.studentSub}>
-                        Roll: {s.rollNumber} &bull; Email: {s.user?.email || 'N/A'}
+                        Adm: {s.admissionNumber || '—'} {s.rollNumber ? `• Roll: ${s.rollNumber}` : ''}
                       </Text>
-                      {s.user?.phone && (
-                        <Text style={styles.phoneText}>📞 {s.user.phone}</Text>
+                      {s.phone && (
+                        <Text style={styles.phoneText}>📞 {s.phone}</Text>
                       )}
                     </View>
-                    <Badge label={s.status || 'ACTIVE'} variant="success" size="sm" />
+                    <Badge
+                      label={s.status || 'ACTIVE'}
+                      variant={s.status === 'ACTIVE' ? 'success' : s.status === 'PASSED_OUT' ? 'indigo' : 'neutral'}
+                      size="sm"
+                    />
+                  </View>
+
+                  {/* Lifecycle Action Buttons */}
+                  <View style={styles.actionRowContainer}>
+                    <TouchableOpacity
+                      style={styles.cardDetailsHint}
+                      onPress={() => setSelectedStudentId(s.id)}
+                    >
+                      <Text style={styles.cardDetailsHintText}>Tap for Full Details ➔</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.actionBtnGroup}>
+                      {s.status === 'ACTIVE' ? (
+                        <>
+                          <TouchableOpacity
+                            style={styles.actionBtnPass}
+                            onPress={() => handleOpenStatusConfirm(s, 'PASSED_OUT')}
+                          >
+                            <Text style={styles.actionBtnPassText}>Mark Passed</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.actionBtnDisc}
+                            onPress={() => handleOpenStatusConfirm(s, 'DISCONTINUED')}
+                          >
+                            <Text style={styles.actionBtnDiscText}>Discontinue</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.actionBtnActive}
+                          onPress={() => handleOpenStatusConfirm(s, 'ACTIVE')}
+                        >
+                          <Text style={styles.actionBtnActiveText}>Reactivate</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 </Card>
               ))}
@@ -496,47 +741,6 @@ export const StaffScreen: React.FC = () => {
         </ScrollView>
       )}
 
-      {/* QR Scanner Modal */}
-      <Modal visible={showQrScanModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Scan Student Attendance QR</Text>
-            <Text style={styles.modalSub}>
-              Enter or scan the cryptographic token from the student mobile app
-            </Text>
-
-            <TextInput
-              style={styles.modalInput}
-              multiline
-              numberOfLines={3}
-              placeholder="Paste cryptographically signed QR token or simulation payload..."
-              placeholderTextColor="#64748b"
-              value={qrScanInput}
-              onChangeText={setQrScanInput}
-            />
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                onPress={() => setShowQrScanModal(false)}
-                style={styles.modalCancelBtn}
-              >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleScanQr}
-                style={styles.modalSubmitBtn}
-                disabled={attSubmitting}
-              >
-                {attSubmitting ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.modalSubmitBtnText}>Verify & Log</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* New Homework Modal */}
       <Modal visible={showNewHwModal} transparent animationType="slide">
@@ -585,6 +789,51 @@ export const StaffScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Admit Student Modal */}
+      <AdmitStudentModal
+        visible={showAdmitModal}
+        onClose={() => setShowAdmitModal(false)}
+        onSuccess={() => fetchStaffData()}
+      />
+
+      {/* Student Details Modal */}
+      <StudentDetailsModal
+        visible={Boolean(selectedStudentId)}
+        studentId={selectedStudentId}
+        onClose={() => setSelectedStudentId(null)}
+        onStudentUpdated={fetchStaffData}
+      />
+
+      {/* Confirmation Modal for Lifecycle Status Actions */}
+      <ConfirmationModal
+        isOpen={statusConfirm.isOpen}
+        title={
+          statusConfirm.newStatus === 'PASSED_OUT'
+            ? 'Mark Student as Passed Out'
+            : statusConfirm.newStatus === 'DISCONTINUED'
+            ? 'Discontinue Student'
+            : 'Reactivate Student'
+        }
+        message={
+          statusConfirm.newStatus === 'PASSED_OUT'
+            ? `Are you sure you want to mark ${statusConfirm.student?.user?.fullName || statusConfirm.student?.firstName || 'this student'} as Passed Out? Active batch enrollments will be archived.`
+            : statusConfirm.newStatus === 'DISCONTINUED'
+            ? `Are you sure you want to discontinue ${statusConfirm.student?.user?.fullName || statusConfirm.student?.firstName || 'this student'}?`
+            : `Are you sure you want to reactivate ${statusConfirm.student?.user?.fullName || statusConfirm.student?.firstName || 'this student'}?`
+        }
+        confirmLabel={
+          statusConfirm.newStatus === 'PASSED_OUT'
+            ? 'Confirm Passed Out'
+            : statusConfirm.newStatus === 'DISCONTINUED'
+            ? 'Confirm Discontinue'
+            : 'Reactivate'
+        }
+        variant={statusConfirm.newStatus === 'DISCONTINUED' ? 'danger' : statusConfirm.newStatus === 'PASSED_OUT' ? 'warning' : 'primary'}
+        loading={statusConfirm.loading}
+        onConfirm={handleConfirmStatusChange}
+        onCancel={() => setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })}
+      />
     </View>
   );
 };
@@ -964,5 +1213,222 @@ const styles = StyleSheet.create({
   modalSubmitBtnText: {
     color: themeTokens.colors.textLight,
     fontWeight: 'bold',
+  },
+  admitStudentBtn: {
+    backgroundColor: themeTokens.colors.espresso,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  admitStudentBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  actionRowContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F7F2EF',
+  },
+  cardDetailsHint: {
+    paddingVertical: 4,
+  },
+  cardDetailsHintText: {
+    fontSize: 11,
+    color: '#8D6E63',
+    fontWeight: '600',
+  },
+  actionBtnGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionBtnPass: {
+    backgroundColor: '#FAF5FF',
+    borderWidth: 1,
+    borderColor: '#D8B4FE',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  actionBtnPassText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#6B21A8',
+  },
+  actionBtnDisc: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  actionBtnDiscText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  actionBtnActive: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  actionBtnActiveText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#166534',
+  },
+  voiceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  voiceListenToggleBtn: {
+    backgroundColor: themeTokens.colors.espresso,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  voiceListenToggleBtnActive: {
+    backgroundColor: '#991B1B',
+  },
+  voiceListenToggleBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  devBuildNoteBox: {
+    backgroundColor: '#FAF7F2',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  devBuildNoteText: {
+    fontSize: 10,
+    color: '#6D4C41',
+    lineHeight: 14,
+  },
+  voiceInputLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#4E342E',
+    marginBottom: 4,
+  },
+  voiceTextInput: {
+    backgroundColor: '#FDFBF7',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#2D1E18',
+  },
+  voiceCandidateConfirmCard: {
+    backgroundColor: '#FAF7F2',
+    borderWidth: 2,
+    borderColor: '#4E342E',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  voiceCandidateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  voiceInitialCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#4E342E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceInitialText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  voiceCandidateName: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#2D1E18',
+  },
+  voiceCandidateRoll: {
+    fontSize: 10,
+    color: '#6D4C41',
+    marginTop: 1,
+  },
+  voiceConfirmActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#D7CCC8',
+  },
+  voiceCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  voiceCancelBtnText: {
+    color: '#6D4C41',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  voiceConfirmBtn: {
+    backgroundColor: '#047857',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  voiceConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  voiceDisambiguationBox: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  voiceDisambiguationTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#78350F',
+    marginBottom: 6,
+  },
+  voiceDisambiguationList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  voiceDisambigChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  voiceDisambigChipText: {
+    fontSize: 11,
+    color: '#78350F',
+    fontWeight: '600',
   },
 });

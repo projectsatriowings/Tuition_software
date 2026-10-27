@@ -109,6 +109,7 @@ model Institute {
   email        String?
   status       InstituteStatus @default(ACTIVE)
   logoUrl      String?
+  admissionPrefix   String?         @unique // Stable abbreviation used for automatic student admission numbers
   settingsJson Json?           // Dynamic settings like timezones, SMS templates, academic terms
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -116,6 +117,7 @@ model Institute {
   memberships       InstituteMembership[]
   staffProfiles     StaffProfile[]
   students          Student[]
+  admissionSequences AdmissionSequence[]
   subjects          Subject[]
   batches           Batch[]
   attendanceEvents  AttendanceEvent[]
@@ -162,6 +164,7 @@ model User {
   receivedPayments    Payment[]             @relation("RecordedByStaff")
   authorizedAdjusts   PaymentAdjustment[]   @relation("AuthorizedByStaff")
   passwordResetTokens PasswordResetToken[]
+  createdStudents     Student[]             @relation("StudentCreator")
   auditLogs           AuditLog[]
 
   @@index([role])
@@ -235,14 +238,18 @@ model Student {
   dob             DateTime?
   gender          String?       // "MALE", "FEMALE", "OTHER"
   bloodGroup      String?
+  phone           String?
   status          StudentStatus @default(ACTIVE)
   admissionDate   DateTime      @default(now())
+  photoUrl        String?
+  createdByUserId String?
   notes           String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   institute        Institute               @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   user             User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdByUser    User?                   @relation("StudentCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   parentRelations  StudentParentRelation[]
   enrollments      StudentEnrollment[]
   attendanceEvents AttendanceEvent[]
@@ -258,6 +265,7 @@ model Student {
   @@index([instituteId])
   @@index([status])
   @@index([firstName, lastName])
+  @@index([createdByUserId])
 }
 
 model StudentParentRelation {
@@ -291,6 +299,7 @@ model Subject {
   updatedAt   DateTime @updatedAt
 
   institute         Institute           @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  batchSubjects     BatchSubject[]
   enrollments       StudentEnrollment[]
   learningMaterials LearningMaterial[]
   examinations      Examination[]
@@ -311,6 +320,7 @@ model Batch {
   updatedAt    DateTime @updatedAt
 
   institute         Institute              @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  batchSubjects     BatchSubject[]
   staffAssignments  StaffBatchAssignment[]
   enrollments       StudentEnrollment[]
   attendanceEvents  AttendanceEvent[]
@@ -321,6 +331,20 @@ model Batch {
 
   @@unique([instituteId, name, academicYear])
   @@index([instituteId])
+}
+
+model BatchSubject {
+  id        String   @id @default(uuid())
+  batchId   String
+  subjectId String
+  createdAt DateTime @default(now())
+
+  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, subjectId])
+  @@index([batchId])
+  @@index([subjectId])
 }
 
 model StaffBatchAssignment {
@@ -745,4 +769,22 @@ model AuditLog {
 
   @@index([instituteId, createdAt])
   @@index([entityType, entityId])
+}
+
+// -------------------------------------------------------------
+// ADMISSION SEQUENCE COUNTER (CONCURRENCY-SAFE)
+// -------------------------------------------------------------
+
+model AdmissionSequence {
+  id          String   @id @default(uuid())
+  instituteId String
+  year        Int
+  lastSerial  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+
+  @@unique([instituteId, year])
+  @@index([instituteId, year])
 }
