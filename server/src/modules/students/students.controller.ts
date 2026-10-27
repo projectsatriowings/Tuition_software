@@ -8,11 +8,48 @@ import { hashPassword, generateSecureRandomToken } from '../../utils/security.js
 import {
   generateNextAdmissionNumber,
   getOrSetInstitutePrefix,
+  getOrSetCompactInstituteCode,
+  deriveBatchCode,
   getAdmissionYear,
 } from './admission-number.service.js';
+
+export function formatStudentResponse<T extends { id: string; photoUrl?: string | null; notes?: string | null }>(student: T): T & { credentialsOnRecord?: { studentPassword: string | null; parentPassword: string | null } } {
+  if (!student) return student;
+  let formattedPhoto = student.photoUrl;
+  if (formattedPhoto && !formattedPhoto.startsWith('http://') && !formattedPhoto.startsWith('https://') && !formattedPhoto.startsWith('/api/')) {
+    formattedPhoto = `/api/students/${student.id}/photo`;
+  }
+
+  let credentialsOnRecord = {
+    studentPassword: null as string | null,
+    parentPassword: null as string | null,
+  };
+  let cleanNotes = student.notes;
+
+  if (student.notes && student.notes.startsWith('{') && (student.notes.includes('studentPassword') || student.notes.includes('parentPassword'))) {
+    try {
+      const parsed = JSON.parse(student.notes);
+      credentialsOnRecord = {
+        studentPassword: parsed.studentPassword || null,
+        parentPassword: parsed.parentPassword || null,
+      };
+      cleanNotes = parsed.userNotes || null;
+    } catch {}
+  }
+
+  return {
+    ...student,
+    photoUrl: formattedPhoto,
+    notes: cleanNotes,
+    credentialsOnRecord,
+  };
+}
 import {
   getAuthorizedStudentScope,
   isStudentAuthorized,
+  isStaffAssignedToBatch,
+  isStaffAssignedToBatchSubject,
+  getAuthorizedStaffAssignments,
 } from './student-authorization.service.js';
 import { getRelativeStorageKey, resolveAbsolutePath } from '../../utils/storage.js';
 
@@ -31,11 +68,15 @@ export const studentAdmissionSchema = z.object({
   admissionDate: z.string().optional(), // YYYY-MM-DD
   // Optional batch enrollment
   batchId: z.string().uuid().optional(),
-  // Optional student login account creation
-  createLoginAccount: z.boolean().default(false),
+  // Optional batch subject enrollments
+  subjectIds: z.array(z.string().uuid()).optional(),
+  // Student login account creation (defaults to true for enterprise credentials workflow)
+  createLoginAccount: z.boolean().default(true),
   email: z.string().email().optional().or(z.literal('')),
+  studentEmail: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
   initialPassword: z.string().min(8).optional(),
+  studentInitialPassword: z.string().min(8).optional(),
   // Parent / Guardian fields during admission (Requirement 3)
   parentFullName: z.string().min(2, 'Parent/guardian full name is required').optional(),
   parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).default('GUARDIAN').optional(),
@@ -91,10 +132,33 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
     const search = (req.query.search as string || '').trim();
     const status = req.query.status as any;
     const batchId = req.query.batchId as string;
+    const subjectId = req.query.subjectId as string;
 
     const skip = (page - 1) * limit;
 
-    const scope = await getAuthorizedStudentScope(req, prisma);
+    // Staff validation if batchId / subjectId is provided
+    if (req.user?.role === 'STAFF') {
+      if (batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({
+            success: false,
+            error: 'Forbidden: You are not authorized to view students in this batch.',
+          });
+        }
+      }
+      if (batchId && subjectId) {
+        const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, subjectId, prisma);
+        if (!isAssignedSub) {
+          return res.status(403).json({
+            success: false,
+            error: 'Forbidden: You are not authorized to view students in this subject.',
+          });
+        }
+      }
+    }
+
+    const scope = await getAuthorizedStudentScope(req, prisma, { batchId, subjectId });
 
     const andConditions: any[] = [
       { instituteId },
@@ -105,12 +169,22 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
       andConditions.push({ status });
     }
 
-    if (batchId) {
-      andConditions.push({
-        enrollments: {
-          some: { batchId, isActive: true },
-        },
-      });
+    // For admin roles where scope.whereClause is broad, apply explicit query filters
+    if (req.user?.role !== 'STAFF') {
+      if (batchId) {
+        andConditions.push({
+          enrollments: {
+            some: { batchId, isActive: true },
+          },
+        });
+      }
+      if (subjectId) {
+        andConditions.push({
+          enrollments: {
+            some: { batchId: batchId || undefined, subjectId, isActive: true },
+          },
+        });
+      }
     }
 
     if (search) {
@@ -140,7 +214,13 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
               batch: {
                 select: { id: true, name: true, academicYear: true },
               },
+              subject: {
+                select: { id: true, name: true, code: true },
+              },
             },
+          },
+          user: {
+            select: { id: true, fullName: true, email: true, phone: true, isActive: true, mustChangePassword: true },
           },
           parentRelations: {
             include: {
@@ -157,10 +237,12 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
       }),
     ]);
 
+    const formattedStudents = students.map(formatStudentResponse);
+
     return res.json({
       success: true,
       data: {
-        students,
+        students: formattedStudents,
         pagination: {
           total,
           page,
@@ -204,16 +286,41 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       parsedAdmissionDate = new Date(data.admissionDate);
     }
 
+    // Verify staff authorization for batch and subjects before proceeding
+    if (req.user?.role === 'STAFF') {
+      if (data.batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, data.batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({
+            success: false,
+            error: 'Forbidden: You are not authorized to admit students into this batch.',
+          });
+        }
+      }
+      if (data.batchId && data.subjectIds && data.subjectIds.length > 0) {
+        for (const sid of data.subjectIds) {
+          const isAssignedSub = await isStaffAssignedToBatchSubject(req, data.batchId, sid, prisma);
+          if (!isAssignedSub) {
+            return res.status(403).json({
+              success: false,
+              error: `Forbidden: You are not authorized to enroll students into subject '${sid}' in this batch.`,
+            });
+          }
+        }
+      }
+    }
+
     // Execute in transaction with safe retry handling for pooler concurrency and unique-constraint conflicts
     let result: any;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         result = await prisma.$transaction(
           async (tx) => {
-            // Generate atomic, concurrency-safe institute-based admission number
+            // Generate atomic, concurrency-safe institute-based admission number (7-character format)
             const admissionInfo = await generateNextAdmissionNumber(
               tx,
               instituteId,
+              data.batchId,
               parsedAdmissionDate
             );
             const admissionNumber = admissionInfo.admissionNumber;
@@ -221,14 +328,34 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
             let studentUser = null;
             let tempPassword = null;
 
-            if (data.createLoginAccount && (data.email || data.phone)) {
-              tempPassword = data.initialPassword || `Student#${generateSecureRandomToken(4)}2026`;
+            if (data.createLoginAccount !== false) {
+              const cleanEmail = data.studentEmail?.trim().toLowerCase() || data.email?.trim().toLowerCase() || null;
+              const cleanPhone = data.studentPhone?.trim() || data.phone?.trim() || null;
+
+              if (cleanEmail) {
+                const existing = await tx.user.findFirst({ where: { email: cleanEmail } });
+                if (existing) {
+                  throw new Error(`Email '${cleanEmail}' is already registered to another account.`);
+                }
+              }
+
+              if (cleanPhone) {
+                const existing = await tx.user.findFirst({ where: { phone: cleanPhone } });
+                if (existing) {
+                  throw new Error(`Phone number '${cleanPhone}' is already registered to another account.`);
+                }
+              }
+
+              tempPassword =
+                data.studentInitialPassword?.trim() ||
+                data.initialPassword?.trim() ||
+                `Student#${generateSecureRandomToken(4)}2026`;
               const passwordHash = await hashPassword(tempPassword);
 
               studentUser = await tx.user.create({
                 data: {
-                  email: data.email?.trim() || null,
-                  phone: data.phone?.trim() || null,
+                  email: cleanEmail,
+                  phone: cleanPhone,
                   fullName: `${data.firstName.trim()} ${data.lastName.trim()}`,
                   passwordHash,
                   role: 'STUDENT',
@@ -279,19 +406,36 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 throw new Error('Selected batch does not belong to this institute');
               }
 
+              // Create primary batch enrollment
               await tx.studentEnrollment.create({
                 data: {
                   studentId: student.id,
                   batchId: data.batchId,
+                  subjectId: null,
                   isActive: true,
                 },
               });
+
+              // Create subject enrollments if provided
+              if (data.subjectIds && data.subjectIds.length > 0) {
+                for (const sid of data.subjectIds) {
+                  await tx.studentEnrollment.create({
+                    data: {
+                      studentId: student.id,
+                      batchId: data.batchId,
+                      subjectId: sid,
+                      isActive: true,
+                    },
+                  });
+                }
+              }
             }
 
             // Parent Account Creation & Linking (Requirement 3)
             let parentUser = null;
             let parentProfile = null;
             let parentTempPassword = null;
+            let isExistingParentAccount = false;
 
             if (data.parentFullName && data.parentPhone) {
               const cleanParentPhone = data.parentPhone.trim();
@@ -314,6 +458,8 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 }
 
                 parentUser = existingUser;
+                isExistingParentAccount = true;
+                parentTempPassword = null; // Do not reset or expose existing parent's password!
 
                 // Ensure ParentProfile exists
                 if (existingUser.parentProfile) {
@@ -346,6 +492,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 }
               } else {
                 // Create new parent account
+                isExistingParentAccount = false;
                 parentTempPassword = data.parentInitialPassword?.trim() || `Parent#${generateSecureRandomToken(4)}2026`;
                 const parentPasswordHash = await hashPassword(parentTempPassword);
 
@@ -401,6 +548,17 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               });
             }
 
+            // Save credentials in student.notes for authorized staff/admin review
+            const credentialNotes = {
+              studentPassword: tempPassword || null,
+              parentPassword: parentTempPassword || null,
+              userNotes: data.notes?.trim() || null,
+            };
+            await tx.student.update({
+              where: { id: student.id },
+              data: { notes: JSON.stringify(credentialNotes) },
+            });
+
             // Record Audit Log
             await tx.auditLog.create({
               data: {
@@ -414,11 +572,21 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                   name: `${student.firstName} ${student.lastName}`,
                   batchId: data.batchId || null,
                   hasParentAccount: !!parentUser,
+                  isExistingParentAccount,
                 },
               },
             });
 
-            return { student, studentUser, tempPassword, admissionInfo, parentUser, parentProfile, parentTempPassword };
+            return {
+              student,
+              studentUser,
+              tempPassword,
+              admissionInfo,
+              parentUser,
+              parentProfile,
+              parentTempPassword,
+              isExistingParentAccount,
+            };
           },
           {
             maxWait: 15000,
@@ -439,13 +607,35 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       }
     }
 
+    const studentIdentifier = result.studentUser?.email || result.studentUser?.phone || result.student.admissionNumber;
+    const parentIdentifier = result.parentUser?.phone || result.parentUser?.email;
+
     return res.status(201).json({
       success: true,
       message: 'Student admitted successfully',
       data: {
-        student: result.student,
+        student: formatStudentResponse(result.student),
         admissionNumber: result.student.admissionNumber,
         admissionInfo: result.admissionInfo,
+        studentCredentials: result.studentUser ? {
+          fullName: result.studentUser.fullName,
+          admissionNumber: result.student.admissionNumber,
+          identifier: studentIdentifier,
+          email: result.studentUser.email,
+          phone: result.studentUser.phone,
+          temporaryPassword: result.tempPassword,
+          mustChangePassword: true,
+        } : null,
+        parentCredentials: result.parentUser ? {
+          fullName: result.parentUser.fullName,
+          studentName: `${result.student.firstName} ${result.student.lastName}`,
+          identifier: parentIdentifier,
+          phone: result.parentUser.phone,
+          email: result.parentUser.email,
+          isExistingAccount: result.isExistingParentAccount,
+          temporaryPassword: result.parentTempPassword,
+          mustChangePassword: !result.isExistingParentAccount,
+        } : null,
         userAccount: result.studentUser ? {
           id: result.studentUser.id,
           email: result.studentUser.email,
@@ -458,6 +648,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
           phone: result.parentUser.phone,
           email: result.parentUser.email,
           temporaryPassword: result.parentTempPassword,
+          isExistingAccount: result.isExistingParentAccount,
         } : null,
       },
     });
@@ -480,16 +671,38 @@ export async function getAdmissionPrefixInfo(req: AuthenticatedRequest, res: Res
       return res.status(400).json({ success: false, error: 'Institute context required' });
     }
 
-    const prefix = await getOrSetInstitutePrefix(prisma, instituteId);
+    const batchId = (req.query.batchId as string) || undefined;
+    const compactInst = await getOrSetCompactInstituteCode(prisma, instituteId);
+    let batchCode = '00';
+
+    if (batchId) {
+      const batch = await prisma.batch.findFirst({
+        where: { id: batchId, instituteId },
+      });
+      if (batch) {
+        const instituteBatches = await prisma.batch.findMany({
+          where: { instituteId },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        const batchIndex = instituteBatches.findIndex((b) => b.id === batchId);
+        batchCode = deriveBatchCode(batch, Math.max(0, batchIndex));
+      }
+    }
+
     const currentYear = getAdmissionYear(new Date());
 
     return res.json({
       success: true,
       data: {
-        prefix,
+        format: '7-character alphanumeric [INST 2][BATCH 2][SERIAL 3]',
+        compactInstitute: compactInst,
+        batchCode,
+        prefix: compactInst,
         currentYear,
-        previewFormat: `${prefix}-${currentYear}-001`,
-        note: 'Generated automatically for this institute',
+        previewFormat: `${compactInst}${batchCode}###`,
+        example: `${compactInst}${batchCode}001`,
+        note: 'Generated automatically by server upon admission',
       },
     });
   } catch (err: any) {
@@ -546,7 +759,7 @@ export async function getMyStudentProfile(req: AuthenticatedRequest, res: Respon
 
     return res.json({
       success: true,
-      data: { student },
+      data: { student: formatStudentResponse(student) },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to fetch student profile' });
@@ -619,6 +832,18 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
                     lastLoginAt: true,
                   },
                 },
+                studentRelations: {
+                  include: {
+                    student: {
+                      select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        admissionNumber: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -647,7 +872,7 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
 
     return res.json({
       success: true,
-      data: { student },
+      data: { student: formatStudentResponse(student) },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to fetch student details' });
@@ -720,7 +945,7 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     return res.json({
       success: true,
       message: 'Student profile updated successfully',
-      data: { student: updated },
+      data: { student: formatStudentResponse(updated) },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to update student profile' });
@@ -810,6 +1035,22 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
       where: { userId: targetUserId },
     });
 
+    // Update credentialNotes in student.notes
+    let credentialNotes: any = {};
+    if (student.notes && student.notes.startsWith('{')) {
+      try {
+        credentialNotes = JSON.parse(student.notes);
+      } catch {}
+    } else if (student.notes) {
+      credentialNotes.userNotes = student.notes;
+    }
+    credentialNotes.studentPassword = temporaryPassword;
+
+    await prisma.student.update({
+      where: { id: student.id },
+      data: { notes: JSON.stringify(credentialNotes) },
+    });
+
     // Record audit log
     await prisma.auditLog.create({
       data: {
@@ -831,6 +1072,7 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
       message: 'Student password reset successfully',
       data: {
         temporaryPassword,
+        permanentPassword: temporaryPassword,
         mustChangePassword: true,
       },
     });
@@ -1026,6 +1268,15 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ success: false, error: 'No photograph file was uploaded' });
     }
 
+    // Server-side validation for file type and size (5MB max)
+    const allowedPhotoMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedPhotoMimes.includes(req.file.mimetype)) {
+      return res.status(400).json({ success: false, error: `Invalid photograph type: ${req.file.mimetype}. Allowed types: JPEG, PNG, WebP.` });
+    }
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Photo file size exceeds maximum limit of 5MB' });
+    }
+
     const relativeKey = getRelativeStorageKey(instituteId, req.file.filename);
 
     if (id && id !== 'admission') {
@@ -1116,7 +1367,9 @@ export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) 
 export async function getRawPhoto(req: AuthenticatedRequest, res: Response) {
   try {
     const instituteId = req.instituteId;
-    const key = decodeURIComponent(req.params.key);
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+    const rawKey = decodeURIComponent(req.params.key);
+    const key = rawKey.startsWith(`${instituteId}/`) ? rawKey : `${instituteId}/${rawKey}`;
 
     if (!key.startsWith(`${instituteId}/`)) {
       return res.status(403).json({ success: false, error: 'Forbidden: Cross-institute photograph access rejected' });
@@ -1141,3 +1394,70 @@ export async function getRawPhoto(req: AuthenticatedRequest, res: Response) {
     return res.status(500).json({ success: false, error: 'Failed to stream photograph' });
   }
 }
+
+/**
+ * Activate or deactivate a student login account
+ */
+export async function updateStudentAccountStatus(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'isActive boolean flag is required' });
+    }
+
+    const authorized = await isStudentAuthorized(req, id, prisma);
+    if (!authorized) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to update account status for this student',
+      });
+    }
+
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+      include: { user: true },
+    });
+
+    if (!student || !student.userId) {
+      return res.status(404).json({ success: false, error: 'Student login account not found' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: student.userId! },
+        data: { isActive },
+      });
+
+      await tx.instituteMembership.updateMany({
+        where: { instituteId, userId: student.userId! },
+        data: { isActive },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_ACCOUNT_STATUS_CHANGED',
+          entityType: 'User',
+          entityId: student.userId!,
+          newValues: { isActive, studentId: student.id },
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: `Student account has been ${isActive ? 'activated' : 'deactivated'} successfully`,
+      data: { isActive },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to update student account status' });
+  }
+}
+

@@ -561,6 +561,26 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       where: { userId: parentProfile.userId },
     });
 
+    // Update parent password in linked students' notes
+    for (const rel of parentProfile.studentRelations) {
+      try {
+        const st = await prisma.student.findUnique({ where: { id: rel.studentId }, select: { id: true, notes: true } });
+        if (st) {
+          let cNotes: any = {};
+          if (st.notes && st.notes.startsWith('{')) {
+            try { cNotes = JSON.parse(st.notes); } catch {}
+          } else if (st.notes) {
+            cNotes.userNotes = st.notes;
+          }
+          cNotes.parentPassword = temporaryPassword;
+          await prisma.student.update({
+            where: { id: st.id },
+            data: { notes: JSON.stringify(cNotes) },
+          });
+        }
+      } catch {}
+    }
+
     // Record audit log
     await prisma.auditLog.create({
       data: {
@@ -582,6 +602,7 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       message: 'Parent password reset successfully',
       data: {
         temporaryPassword,
+        permanentPassword: temporaryPassword,
         mustChangePassword: true,
       },
     });
@@ -702,4 +723,91 @@ export async function updateParentLoginIdentifier(req: AuthenticatedRequest, res
     return res.status(500).json({ success: false, error: 'Failed to update parent login identifier' });
   }
 }
+
+/**
+ * Activate or deactivate a parent login account
+ */
+export async function updateParentAccountStatus(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+    const { parentId } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'isActive boolean flag is required' });
+    }
+
+    const parentProfile = await prisma.parentProfile.findUnique({
+      where: { id: parentId },
+      include: {
+        user: true,
+        studentRelations: {
+          include: { student: true },
+        },
+      },
+    });
+
+    if (!parentProfile) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    // Check institute scope
+    const isInstStudent = parentProfile.studentRelations.some((r) => r.student.instituteId === instituteId);
+    if (!isInstStudent) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent is not linked to this institute' });
+    }
+
+    // For staff, ensure at least one linked student is in staff scope
+    if (req.user?.role === 'STAFF') {
+      let hasAuthorizedStudent = false;
+      for (const rel of parentProfile.studentRelations) {
+        if (await isStudentAuthorized(req, rel.studentId, prisma)) {
+          hasAuthorizedStudent = true;
+          break;
+        }
+      }
+      if (!hasAuthorizedStudent) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: You are not authorized to manage this parent account',
+        });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: parentProfile.userId },
+        data: { isActive },
+      });
+
+      await tx.instituteMembership.updateMany({
+        where: { instituteId, userId: parentProfile.userId },
+        data: { isActive },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'PARENT_ACCOUNT_STATUS_CHANGED',
+          entityType: 'User',
+          entityId: parentProfile.userId,
+          newValues: { isActive, parentId },
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: `Parent account has been ${isActive ? 'activated' : 'deactivated'} successfully`,
+      data: { isActive },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to update parent account status' });
+  }
+}
+
 

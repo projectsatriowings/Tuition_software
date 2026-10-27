@@ -30,12 +30,13 @@ export async function login(req: Request, res: Response) {
 
     const { identifier, password, role, instituteCode } = parseResult.data;
 
-    // Search user by email or phone
+    // Search user by email, phone, or student admission number
     const user = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: identifier },
+          { email: { equals: identifier, mode: 'insensitive' } },
           { phone: identifier },
+          { studentProfile: { admissionNumber: { equals: identifier, mode: 'insensitive' } } },
         ],
       },
       include: {
@@ -244,7 +245,7 @@ export async function changePassword(req: AuthenticatedRequest, res: Response) {
     if ((req.user.role === 'STUDENT' || req.user.role === 'PARENT') && !user.mustChangePassword) {
       return res.status(403).json({
         success: false,
-        error: 'Forbidden: Self-service credential changes are not permitted for student or parent accounts. Please contact your institute administrator.',
+        error: 'Forbidden: Please contact your institute staff to reset your password.',
       });
     }
 

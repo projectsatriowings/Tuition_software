@@ -15,6 +15,7 @@ import {
 import { api, getApiBaseUrl } from '../services/api';
 import { useMobileToast } from '../context/ToastContext';
 import { ConfirmationModal } from './ConfirmationModal';
+import { StudentAvatar } from './StudentAvatar';
 import { themeTokens } from '@tuition/shared';
 
 interface StudentDetailsModalProps {
@@ -186,6 +187,37 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
     }
   };
 
+  const handleToggleStudentAccountStatus = async (currentActive: boolean) => {
+    if (!studentId) return;
+    try {
+      const res = await api.patch(`/students/${studentId}/account-status`, {
+        isActive: !currentActive,
+      });
+      if (res.data?.success) {
+        showToast(`Student account ${!currentActive ? 'activated' : 'deactivated'} successfully`, 'success');
+        fetchDetails();
+        onStudentUpdated?.();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error updating student account status', 'error');
+    }
+  };
+
+  const handleToggleParentAccountStatus = async (parentId: string, currentActive: boolean) => {
+    try {
+      const res = await api.patch(`/parents/${parentId}/account-status`, {
+        isActive: !currentActive,
+      });
+      if (res.data?.success) {
+        showToast(`Parent account ${!currentActive ? 'activated' : 'deactivated'} successfully`, 'success');
+        fetchDetails();
+        onStudentUpdated?.();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error updating parent account status', 'error');
+    }
+  };
+
   if (!visible) return null;
 
   return (
@@ -259,23 +291,13 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                 <View style={styles.sectionContainer}>
                   {/* Photo & Identity Hero */}
                   <View style={styles.avatarCard}>
-                    {details.photoUrl ? (
-                      <Image
-                        source={{
-                          uri: details.photoUrl.startsWith('http')
-                            ? details.photoUrl
-                            : `${getApiBaseUrl().replace('/api', '')}${details.photoUrl}`,
-                        }}
-                        style={styles.avatarImage}
-                      />
-                    ) : (
-                      <View style={styles.avatarFallback}>
-                        <Text style={styles.avatarText}>
-                          {details.firstName?.[0] || ''}
-                          {details.lastName?.[0] || ''}
-                        </Text>
-                      </View>
-                    )}
+                    <StudentAvatar
+                      studentId={details.id}
+                      photoUrl={details.photoUrl}
+                      name={`${details.firstName} ${details.lastName}`}
+                      size={64}
+                      style={styles.avatarImage}
+                    />
                     <View style={styles.avatarMeta}>
                       <Text style={styles.avatarName}>
                         {details.firstName} {details.lastName}
@@ -410,6 +432,23 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                         >
                           <Text style={styles.actionBtnPrimaryText}>Reset Password</Text>
                         </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.actionBtnSecondary,
+                            { borderColor: details.user.isActive ? '#FFCDD2' : '#C8E6C9' },
+                          ]}
+                          onPress={() => handleToggleStudentAccountStatus(details.user.isActive)}
+                        >
+                          <Text
+                            style={[
+                              styles.actionBtnSecondaryText,
+                              { color: details.user.isActive ? '#C62828' : '#2E7D32' },
+                            ]}
+                          >
+                            {details.user.isActive ? 'Deactivate' : 'Reactivate'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   ) : (
@@ -460,6 +499,17 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                             <Text style={styles.rowLabel}>Last Login Recorded</Text>
                             <Text style={styles.rowValue}>{formatKolkataTime(parentUser?.lastLoginAt)}</Text>
                           </View>
+                          {rel.parent?.studentRelations && rel.parent.studentRelations.length > 1 && (
+                            <View style={styles.rowItem}>
+                              <Text style={styles.rowLabel}>Other Children</Text>
+                              <Text style={styles.rowValue}>
+                                {rel.parent.studentRelations
+                                  .filter((r: any) => r.student?.id !== details.id)
+                                  .map((r: any) => `${r.student?.firstName} ${r.student?.lastName}`)
+                                  .join(', ')}
+                              </Text>
+                            </View>
+                          )}
 
                           {/* Guardian Credential Actions */}
                           <View style={styles.actionButtonGroup}>
@@ -497,6 +547,25 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                               }
                             >
                               <Text style={styles.actionBtnPrimaryText}>Reset Password</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.actionBtnSecondary,
+                                { borderColor: parentUser?.isActive ? '#FFCDD2' : '#C8E6C9' },
+                              ]}
+                              onPress={() =>
+                                handleToggleParentAccountStatus(rel.parent.id, parentUser?.isActive ?? true)
+                              }
+                            >
+                              <Text
+                                style={[
+                                  styles.actionBtnSecondaryText,
+                                  { color: parentUser?.isActive ? '#C62828' : '#2E7D32' },
+                                ]}
+                              >
+                                {parentUser?.isActive ? 'Deactivate' : 'Reactivate'}
+                              </Text>
                             </TouchableOpacity>
                           </View>
                         </View>

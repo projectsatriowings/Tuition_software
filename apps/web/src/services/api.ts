@@ -2,7 +2,22 @@ const API_BASE = '/api';
 
 export async function apiFetch<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('tuition_token');
-  const instituteId = localStorage.getItem('tuition_active_institute_id');
+  let instituteId = localStorage.getItem('tuition_active_institute_id');
+
+  if (!instituteId) {
+    const savedInst = localStorage.getItem('tuition_active_institute');
+    if (savedInst) {
+      try {
+        const parsed = JSON.parse(savedInst);
+        if (parsed?.id) {
+          instituteId = parsed.id;
+          localStorage.setItem('tuition_active_institute_id', parsed.id);
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+  }
 
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),

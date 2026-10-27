@@ -7,6 +7,7 @@ import {
   getMyStudentProfile,
   updateStudent,
   updateStudentStatus,
+  updateStudentAccountStatus,
   resetStudentPassword,
   updateStudentLoginIdentifier,
   uploadStudentPhoto,
@@ -14,7 +15,19 @@ import {
   getRawPhoto,
 } from './students.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
-import { fileUpload } from '../../utils/storage.js';
+import { fileUpload, photoUpload } from '../../utils/storage.js';
+
+const handlePhotoUpload = (req: any, res: any, next: any) => {
+  photoUpload.single('photo')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, error: 'Photo file size exceeds maximum limit of 5MB' });
+      }
+      return res.status(400).json({ success: false, error: err.message || 'Invalid photo file upload' });
+    }
+    next();
+  });
+};
 
 const router = Router();
 
@@ -28,8 +41,8 @@ router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listStude
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), admitStudent);
 
 // Photograph upload & streaming routes
-router.post('/upload-photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), fileUpload.single('photo'), uploadStudentPhoto);
-router.post('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), fileUpload.single('photo'), uploadStudentPhoto);
+router.post('/upload-photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), handlePhotoUpload, uploadStudentPhoto);
+router.post('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), handlePhotoUpload, uploadStudentPhoto);
 router.get('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentPhoto);
 router.get('/photo-raw/:key', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getRawPhoto);
 
@@ -50,6 +63,7 @@ router.post('/:id/subject-allocations', requireRole('SUPER_ADMIN', 'ACADEMIC_ADM
 // Student credential management routes
 router.post('/:id/reset-password', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), resetStudentPassword);
 router.patch('/:id/account-identifier', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudentLoginIdentifier);
+router.patch('/:id/account-status', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudentAccountStatus);
 
 export default router;
 

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { apiFetch } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { StudentAvatar } from '../components/StudentAvatar';
 import { Batch } from '../types';
 import { matchStudentVoice, EnrolledStudentCandidate, AttendanceMethod } from '@tuition/shared';
 import { useWebSpeechRecognition } from '../hooks/useWebSpeechRecognition';
@@ -26,8 +28,12 @@ import {
 } from 'lucide-react';
 
 export const AttendanceManagement: React.FC = () => {
+  const { activeInstitute } = useAuth();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [batchLoading, setBatchLoading] = useState<boolean>(true);
+  const [batchError, setBatchError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [attendanceData, setAttendanceData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -66,18 +72,36 @@ export const AttendanceManagement: React.FC = () => {
   });
   const [reportEndDate, setReportEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
-  // Load batches on mount
+  // Load batches reliably with institute context
+  const loadBatches = useCallback(async () => {
+    try {
+      setBatchLoading(true);
+      setBatchError(null);
+      const res = await apiFetch('/academics/batches');
+      const b: Batch[] = res.data?.batches || [];
+      setBatches(b);
+      if (b.length > 0) {
+        setSelectedBatchId((prev) => (prev && b.some((x) => x.id === prev) ? prev : b[0].id));
+      } else {
+        setSelectedBatchId('');
+        setSelectedSubjectId('');
+      }
+    } catch (err: any) {
+      console.error('[AttendanceManagement] Failed to load batches:', err);
+      setBatchError(err.message || 'Failed to load academic batches');
+    } finally {
+      setBatchLoading(false);
+    }
+  }, [activeInstitute?.id]);
+
   useEffect(() => {
-    apiFetch('/academics/batches')
-      .then((res) => {
-        const b = res.data?.batches || [];
-        setBatches(b);
-        if (b.length > 0 && !selectedBatchId) {
-          setSelectedBatchId(b[0].id);
-        }
-      })
-      .catch(console.error);
-  }, []);
+    loadBatches();
+  }, [loadBatches]);
+
+  const availableSubjects = useMemo(() => {
+    const b = batches.find((x) => x.id === selectedBatchId);
+    return b?.batchSubjects || [];
+  }, [batches, selectedBatchId]);
 
   // Fetch Attendance Summary
   const fetchSummary = useCallback(async () => {
@@ -92,6 +116,7 @@ export const AttendanceManagement: React.FC = () => {
       const query = new URLSearchParams({
         batchId: selectedBatchId,
         date: selectedDate,
+        ...(selectedSubjectId ? { subjectId: selectedSubjectId } : {}),
       });
       const res = await apiFetch(`/attendance/summary?${query.toString()}`);
       setAttendanceData(res.data);
@@ -101,7 +126,14 @@ export const AttendanceManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedBatchId, selectedDate]);
+  }, [selectedBatchId, selectedSubjectId, selectedDate]);
+
+  const handleRefreshRoster = useCallback(async () => {
+    if (batches.length === 0) {
+      await loadBatches();
+    }
+    await fetchSummary();
+  }, [batches.length, loadBatches, fetchSummary]);
 
   useEffect(() => {
     if (viewTab === 'daily' || viewTab === 'voice') {
@@ -115,12 +147,13 @@ export const AttendanceManagement: React.FC = () => {
         startDate: reportStartDate,
         endDate: reportEndDate,
         ...(selectedBatchId ? { batchId: selectedBatchId } : {}),
+        ...(selectedSubjectId ? { subjectId: selectedSubjectId } : {}),
       });
       apiFetch(`/attendance/reports?${q.toString()}`)
         .then((res) => setReportsData(res.data?.events || []))
         .catch(console.error);
     }
-  }, [selectedBatchId, selectedDate, viewTab, reportStartDate, reportEndDate, fetchSummary]);
+  }, [selectedBatchId, selectedSubjectId, selectedDate, viewTab, reportStartDate, reportEndDate, fetchSummary]);
 
   // Candidates enrolled in the selected batch
   const enrolledCandidates: EnrolledStudentCandidate[] = useMemo(() => {
@@ -221,6 +254,7 @@ export const AttendanceManagement: React.FC = () => {
         body: JSON.stringify({
           studentId: student.id,
           batchId: selectedBatchId || undefined,
+          subjectId: selectedSubjectId || undefined,
           method: 'VOICE_CONFIRMED',
           idempotencyKey,
         }),
@@ -259,6 +293,7 @@ export const AttendanceManagement: React.FC = () => {
         body: JSON.stringify({
           studentId,
           batchId: selectedBatchId || undefined,
+          subjectId: selectedSubjectId || undefined,
           isLate,
           method: 'MANUAL',
         }),
@@ -430,17 +465,46 @@ export const AttendanceManagement: React.FC = () => {
             <span className="text-xs font-bold text-[#4E342E]">Class Batch:</span>
             <select
               value={selectedBatchId}
+              disabled={batchLoading}
               onChange={(e) => {
                 setSelectedBatchId(e.target.value);
                 setPendingVoiceCandidate(null);
                 setCandidateOptions([]);
                 resetTranscript();
               }}
-              className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+              className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-60"
             >
-              {batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.academicYear})
+              {batchLoading ? (
+                <option value="">Loading batches...</option>
+              ) : batches.length === 0 ? (
+                <option value="">No batches found</option>
+              ) : (
+                batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.academicYear})
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#4E342E]">Subject:</span>
+            <select
+              value={selectedSubjectId}
+              disabled={batchLoading}
+              onChange={(e) => {
+                setSelectedSubjectId(e.target.value);
+                setPendingVoiceCandidate(null);
+                setCandidateOptions([]);
+                resetTranscript();
+              }}
+              className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-60"
+            >
+              <option value="">All Assigned Subjects</option>
+              {availableSubjects.map((bs: any) => (
+                <option key={bs.subject.id} value={bs.subject.id}>
+                  {bs.subject.name} {bs.subject.code ? `(${bs.subject.code})` : ''}
                 </option>
               ))}
             </select>
@@ -623,18 +687,7 @@ export const AttendanceManagement: React.FC = () => {
               <div className="p-5 rounded-2xl bg-[#FAF7F2] border-2 border-[#4E342E] shadow-md animate-in fade-in space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    {pendingVoiceCandidate.photoUrl ? (
-                      <img
-                        src={pendingVoiceCandidate.photoUrl.startsWith('http') ? pendingVoiceCandidate.photoUrl : `/api/students/${pendingVoiceCandidate.id}/photo`}
-                        alt={pendingVoiceCandidate.firstName}
-                        className="w-12 h-12 rounded-2xl object-cover border border-[#D7CCC8]"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-2xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-lg">
-                        {pendingVoiceCandidate.firstName[0]}
-                        {pendingVoiceCandidate.lastName[0]}
-                      </div>
-                    )}
+                    <StudentAvatar studentId={pendingVoiceCandidate.id} photoUrl={pendingVoiceCandidate.photoUrl} name={`${pendingVoiceCandidate.firstName} ${pendingVoiceCandidate.lastName}`} size="lg" />
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-extrabold text-[#2D1E18]">
@@ -706,17 +759,7 @@ export const AttendanceManagement: React.FC = () => {
                       className="p-3 rounded-xl bg-white border border-amber-200 hover:border-[#4E342E] text-left transition flex items-center justify-between group shadow-sm"
                     >
                       <div className="flex items-center gap-2.5">
-                        {candidate.photoUrl ? (
-                          <img
-                            src={candidate.photoUrl.startsWith('http') ? candidate.photoUrl : `/api/students/${candidate.id}/photo`}
-                            alt={candidate.firstName}
-                            className="w-9 h-9 rounded-xl object-cover border border-[#D7CCC8]"
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-xs">
-                            {candidate.firstName[0]}{candidate.lastName[0]}
-                          </div>
-                        )}
+                        <StudentAvatar studentId={candidate.id} photoUrl={candidate.photoUrl} name={`${candidate.firstName} ${candidate.lastName}`} size="sm" />
                         <div>
                           <div className="font-bold text-xs text-[#2D1E18]">
                             {candidate.firstName} {candidate.lastName}
@@ -747,7 +790,7 @@ export const AttendanceManagement: React.FC = () => {
               </div>
 
               <button
-                onClick={fetchSummary}
+                onClick={handleRefreshRoster}
                 className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] font-semibold hover:underline"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh Roster
@@ -765,7 +808,40 @@ export const AttendanceManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEBE9]">
-                  {fetchError ? (
+                  {batchError ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-rose-700 space-y-2">
+                        <div>Failed to load academic batches: {batchError}</div>
+                        <button
+                          onClick={loadBatches}
+                          className="px-3 py-1 bg-[#4E342E] text-white rounded-lg text-xs font-semibold"
+                        >
+                          Retry Loading Batches
+                        </button>
+                      </td>
+                    </tr>
+                  ) : batchLoading ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-[#6D4C41]">
+                        <div className="flex items-center justify-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-[#4E342E]" />
+                          <span>Loading academic batches...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : batches.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-[#6D4C41] space-y-2">
+                        <div>No academic batches found in your institute. Please create a batch first.</div>
+                        <button
+                          onClick={loadBatches}
+                          className="px-3 py-1 bg-[#FAF7F2] border border-[#D7CCC8] text-[#4E342E] rounded-lg text-xs font-semibold hover:bg-[#F0EAE1]"
+                        >
+                          Refresh Batches
+                        </button>
+                      </td>
+                    </tr>
+                  ) : fetchError ? (
                     <tr>
                       <td colSpan={4} className="py-6 text-center text-rose-700 space-y-2">
                         <div>Failed to load batch roster: {fetchError}</div>
@@ -786,12 +862,6 @@ export const AttendanceManagement: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                  ) : batches.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-6 text-center text-[#6D4C41]">
-                        No academic batches found in your institute. Please create a batch first.
-                      </td>
-                    </tr>
                   ) : filteredRecords.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-6 text-center text-[#6D4C41]">
@@ -805,13 +875,7 @@ export const AttendanceManagement: React.FC = () => {
                         <tr key={student.id} className="hover:bg-[#FDFBF7]">
                           <td className="py-2.5 px-3 font-bold text-[#2D1E18]">
                             <div className="flex items-center gap-2">
-                              {student.photoUrl ? (
-                                <img
-                                  src={student.photoUrl.startsWith('http') ? student.photoUrl : `/api/students/${student.id}/photo`}
-                                  alt={student.name}
-                                  className="w-6 h-6 rounded-full object-cover border border-[#D7CCC8]"
-                                />
-                              ) : null}
+                              <StudentAvatar studentId={student.id} photoUrl={student.photoUrl} name={student.name} size="xs" />
                               <span>{student.name}</span>
                             </div>
                           </td>
@@ -895,10 +959,22 @@ export const AttendanceManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EFEBE9]">
-                  {loading ? (
+                  {batchLoading || loading ? (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-[#6D4C41]">
                         Loading attendance data...
+                      </td>
+                    </tr>
+                  ) : batches.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-[#6D4C41] space-y-2">
+                        <div>No academic batches found. Please create or assign a batch first.</div>
+                        <button
+                          onClick={loadBatches}
+                          className="px-3 py-1 bg-[#FAF7F2] border border-[#D7CCC8] text-[#4E342E] rounded-lg text-xs font-semibold hover:bg-[#F0EAE1]"
+                        >
+                          Refresh Batches
+                        </button>
                       </td>
                     </tr>
                   ) : filteredRecords.length === 0 ? (

@@ -8,6 +8,9 @@ import { NotificationService } from '../notifications/notification.service.js';
 import {
   getAuthorizedStudentScope,
   isStudentAuthorized,
+  isStaffAssignedToBatch,
+  isStaffAssignedToBatchSubject,
+  getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
@@ -50,6 +53,7 @@ export function verifyQrPassToken(qrToken: string): { valid: boolean; studentId?
 export const checkInSchema = z.object({
   studentId: z.string().uuid(),
   batchId: z.string().uuid().optional(),
+  subjectId: z.string().uuid().optional(),
   method: z.enum(['MANUAL', 'QR_SCAN', 'VOICE_CONFIRMED']).default('MANUAL'),
   isLate: z.boolean().default(false),
   remarks: z.string().optional(),
@@ -58,6 +62,8 @@ export const checkInSchema = z.object({
 
 export const checkOutSchema = z.object({
   studentId: z.string().uuid(),
+  batchId: z.string().uuid().optional(),
+  subjectId: z.string().uuid().optional(),
   method: z.enum(['MANUAL', 'QR_SCAN', 'VOICE_CONFIRMED']).default('MANUAL'),
   remarks: z.string().optional(),
   idempotencyKey: z.string().optional(),
@@ -82,24 +88,26 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
       return res.status(400).json({ success: false, error: parse.error.errors[0]?.message });
     }
 
-    const { studentId, batchId, method, isLate, remarks, idempotencyKey } = parse.data;
+    const { studentId, batchId, subjectId, method, isLate, remarks, idempotencyKey } = parse.data;
 
-    // Idempotency check if provided
-    if (idempotencyKey) {
-      const existing = await prisma.attendanceEvent.findUnique({
-        where: { idempotencyKey },
-      });
-      if (existing) {
-        return res.status(200).json({
-          success: true,
-          message: 'Check-in request was previously processed',
-          data: { event: existing },
-        });
+    // Staff validation for batch and subject
+    if (req.user?.role === 'STAFF') {
+      if (batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to mark attendance in this batch' });
+        }
+      }
+      if (batchId && subjectId) {
+        const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, subjectId, prisma);
+        if (!isAssignedSub) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to mark attendance for this subject' });
+        }
       }
     }
 
     // Verify authorization scope for student
-    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    const isAuth = await isStudentAuthorized(req, studentId, prisma, { batchId, subjectId });
     if (!isAuth) {
       return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to record attendance for this student' });
     }
@@ -324,20 +332,44 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
     if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
 
     const batchId = req.query.batchId as string;
+    const subjectId = req.query.subjectId as string;
     const dateQuery = req.query.date as string;
     const targetDate = dateQuery ? new Date(dateQuery) : getInstituteLocalDate();
 
-    const scope = await getAuthorizedStudentScope(req, prisma);
+    // Staff authorization check on batchId & subjectId
+    if (req.user?.role === 'STAFF') {
+      if (batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to access this batch' });
+        }
+      }
+      if (batchId && subjectId) {
+        const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, subjectId, prisma);
+        if (!isAssignedSub) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to access this subject' });
+        }
+      }
+    }
+
+    const scope = await getAuthorizedStudentScope(req, prisma, { batchId, subjectId });
 
     const andConditions: any[] = [
       { instituteId, status: 'ACTIVE' },
       scope.whereClause,
     ];
 
-    if (batchId) {
-      andConditions.push({
-        enrollments: { some: { batchId, isActive: true } },
-      });
+    if (req.user?.role !== 'STAFF') {
+      if (batchId) {
+        andConditions.push({
+          enrollments: { some: { batchId, isActive: true } },
+        });
+      }
+      if (subjectId) {
+        andConditions.push({
+          enrollments: { some: { batchId: batchId || undefined, subjectId, isActive: true } },
+        });
+      }
     }
 
     const studentWhere: any = { AND: andConditions };
@@ -435,13 +467,30 @@ export async function getAttendanceReports(req: AuthenticatedRequest, res: Respo
     const startDateStr = req.query.startDate as string;
     const endDateStr = req.query.endDate as string;
     const batchId = req.query.batchId as string;
+    const subjectId = req.query.subjectId as string;
     const reportType = req.query.type as string; // 'daily' | 'weekly' | 'monthly' | 'missing_checkout' | 'late'
+
+    // Staff validation for reports
+    if (req.user?.role === 'STAFF') {
+      if (batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to access reports for this batch' });
+        }
+      }
+      if (batchId && subjectId) {
+        const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, subjectId, prisma);
+        if (!isAssignedSub) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to access reports for this subject' });
+        }
+      }
+    }
 
     const now = new Date();
     let startDate = startDateStr ? new Date(startDateStr) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     let endDate = endDateStr ? new Date(endDateStr) : now;
 
-    const scope = await getAuthorizedStudentScope(req, prisma);
+    const scope = await getAuthorizedStudentScope(req, prisma, { batchId, subjectId });
 
     const where: any = {
       instituteId,
@@ -620,6 +669,12 @@ export async function correctAttendanceEvent(req: AuthenticatedRequest, res: Res
 
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Attendance record not found' });
+    }
+
+    // Verify caller is authorized to correct attendance for this student
+    const isAuth = await isStudentAuthorized(req, existing.studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to correct attendance for this student' });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
