@@ -3,6 +3,7 @@ import { apiFetch } from '../services/api';
 import { Batch, Subject } from '../types';
 import { useToast } from '../context/ToastContext';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+import { StudentAvatar } from '../components/StudentAvatar';
 import {
   Layers,
   BookOpen,
@@ -280,7 +281,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
           method: 'PUT',
           body: JSON.stringify({
             name: subjectForm.name,
-            code: subjectForm.code || undefined,
+            code: subjectForm.code && subjectForm.code.trim() ? subjectForm.code.trim() : null,
             description: subjectForm.description || undefined,
             staffProfileId: subjectForm.staffProfileId || null,
             schedule: subjectForm.schedule || undefined,
@@ -299,7 +300,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
           method: 'POST',
           body: JSON.stringify({
             name: subjectForm.name,
-            code: subjectForm.code || undefined,
+            code: subjectForm.code && subjectForm.code.trim() ? subjectForm.code.trim() : null,
             description: subjectForm.description || undefined,
             staffProfileId: subjectForm.staffProfileId || undefined,
             schedule: subjectForm.schedule || undefined,
@@ -904,18 +905,12 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                       <tr key={st.id} className="hover:bg-[#FAF8F5] transition">
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-2.5">
-                            {st.photoUrl ? (
-                              <img
-                                src={`/api/students/photo-raw/${encodeURIComponent(st.photoUrl)}`}
-                                alt={st.firstName}
-                                className="w-8 h-8 rounded-full object-cover border border-[#D7CCC8]"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-[#EFEBE9] text-[#6D4C41] flex items-center justify-center font-bold text-xs">
-                                {st.firstName[0]}
-                                {st.lastName[0]}
-                              </div>
-                            )}
+                            <StudentAvatar
+                              studentId={st.id}
+                              photoUrl={st.photoUrl}
+                              name={`${st.firstName} ${st.lastName}`}
+                              size="sm"
+                            />
                             <div>
                               <span className="font-bold text-[#2D1E18] block">
                                 {st.firstName} {st.lastName}
@@ -1134,7 +1129,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-[#4E342E] mb-1">Subject Code</label>
+                    <label className="block font-bold text-[#4E342E] mb-1">Subject Code <span className="font-normal text-[#8D6E63]">(Optional)</span></label>
                     <input
                       type="text"
                       placeholder="e.g. MATH101"

@@ -11,7 +11,12 @@ export interface AuthenticatedRequest extends Request {
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  let token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+
+  // Also accept token from query parameter (for media/image streaming where browsers and <img> tags cannot attach Authorization headers)
+  if (!token && (req.query.token || req.query.t)) {
+    token = (req.query.token || req.query.t) as string;
+  }
 
   if (!token) {
     return res.status(401).json({
@@ -74,7 +79,7 @@ export async function requireInstituteContext(req: AuthenticatedRequest, res: Re
   }
 
   // For institute-bound roles, verify active membership
-  const instituteId = req.user.instituteId || (req.headers['x-institute-id'] as string);
+  const instituteId = req.user.instituteId || (req.headers['x-institute-id'] as string) || (req.query.instituteId as string);
   if (!instituteId) {
     return res.status(400).json({
       success: false,

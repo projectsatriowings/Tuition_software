@@ -4,17 +4,21 @@ export const DEFAULT_SERIAL_WIDTH = 3;
 export const DEFAULT_TIMEZONE = 'Asia/Kolkata';
 
 /**
- * Format admission number according to {INSTITUTE_PREFIX}-{YEAR}-{SERIAL}
- * Serial width expands naturally beyond 999 (e.g., 001..999, 1000, 1001)
+ * Format compact 7-character admission number according to:
+ * [INSTITUTE 2-CHAR][BATCH 2-CHAR][SERIAL 3-CHAR]
+ * Example: A102001
+ * Expands naturally to 8 characters if serial exceeds 999 (e.g. A1021000)
  */
-export function formatAdmissionNumber(
-  prefix: string,
-  year: number,
+export function formatCompactAdmissionNumber(
+  instituteCode: string,
+  batchCode: string,
   serial: number,
-  minWidth = DEFAULT_SERIAL_WIDTH
+  minSerialWidth = DEFAULT_SERIAL_WIDTH
 ): string {
-  const serialStr = String(serial).padStart(minWidth, '0');
-  return `${prefix.toUpperCase()}-${year}-${serialStr}`;
+  const cleanInst = (instituteCode || 'IN').slice(0, 2).toUpperCase().padEnd(2, '1');
+  const cleanBatch = (batchCode || '00').slice(0, 2).toUpperCase().padStart(2, '0');
+  const serialStr = String(serial).padStart(minSerialWidth, '0');
+  return `${cleanInst}${cleanBatch}${serialStr}`;
 }
 
 /**
@@ -32,127 +36,193 @@ export function getAdmissionYear(dateInput?: Date | string | null, timeZone = DE
 }
 
 /**
- * Derive initial candidate prefix from institute name using a normalized, readable abbreviation.
- * Example: 'Apex Science Academy' -> 'APEX'
+ * Derive a 2-character batch code deterministically.
+ * Uses batch code or grade/batch digits if available, falling back to batch sequence index.
+ * Example: "Class 10" -> "10", "Batch 02" -> "02", "G10-EXC" -> "10", unassigned -> "00"
  */
-export function deriveCandidatePrefix(name: string): string {
-  if (!name || !name.trim()) {
-    return 'INST';
+export function deriveBatchCode(
+  batch?: { code?: string | null; name?: string; id?: string } | null,
+  batchIndex: number = 0
+): string {
+  if (!batch) {
+    return '00';
   }
 
-  // Remove special characters, keep letters and digits
-  const cleaned = name.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
-  const words = cleaned.split(/\s+/).filter(Boolean);
-
-  if (words.length === 0) {
-    return 'INST';
-  }
-
-  const genericWords = new Set(['THE', 'OF', 'FOR', 'AND', 'IN', 'AT', 'AN', 'A']);
-  const significantWords = words.filter((w) => !genericWords.has(w));
-  const effectiveWords = significantWords.length > 0 ? significantWords : words;
-
-  const firstWord = effectiveWords[0];
-
-  // If first word is between 3 and 8 chars, it's ideal (e.g. APEX, OXFORD, BRIGHT)
-  if (firstWord.length >= 3 && firstWord.length <= 8) {
-    return firstWord;
-  }
-
-  // If first word is short (< 3 chars) like "ST" in "ST MARYS SCHOOL", combine first 2 words
-  if (firstWord.length < 3 && effectiveWords.length >= 2) {
-    const combined = (firstWord + effectiveWords[1]).slice(0, 8);
-    if (combined.length >= 3) {
-      return combined;
+  // 1. If batch.code is explicitly 2 alphanumeric characters
+  if (batch.code) {
+    const clean = batch.code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (clean.length === 2) {
+      return clean;
+    }
+    // Check if code contains 2 consecutive digits, e.g. "G10-EXC" -> "10", "B-10A" -> "10"
+    const digitMatch = clean.match(/\d{2}/);
+    if (digitMatch) {
+      return digitMatch[0];
     }
   }
 
-  // If multiple words, try acronym of first letters
-  if (effectiveWords.length >= 3) {
-    const acronym = effectiveWords.map((w) => w[0]).join('');
-    if (acronym.length >= 3 && acronym.length <= 8) {
-      return acronym;
+  // 2. Check if batch.name has a 1- or 2-digit number (e.g. "Class 10" -> "10", "Batch 2" -> "02")
+  if (batch.name) {
+    const nameMatch = batch.name.match(/\b(\d{1,2})\b/);
+    if (nameMatch) {
+      return nameMatch[1].padStart(2, '0');
     }
   }
 
-  // Fallback: take first 3 to 6 alphanumeric characters
-  const condensed = cleaned.replace(/\s+/g, '');
-  return condensed.slice(0, Math.min(6, Math.max(3, condensed.length))) || 'INST';
+  // 3. Fallback: 1-based sequential batch index in institute
+  const idx = batchIndex + 1;
+  if (idx < 100) {
+    return String(idx).padStart(2, '0');
+  }
+  // Base-36 representation if > 99
+  return idx.toString(36).toUpperCase().padStart(2, '0').slice(-2);
 }
 
 /**
- * Persist or fetch a stable, unique admission prefix for the given institute.
- * Resolves collisions across institutes deterministically without altering existing ones.
+ * Get or establish a stable, unique 2-character compact institute identifier.
+ * Persists in institute.settingsJson.compactCode while preserving any historical admissionPrefix.
+ * Ensures zero collision across all institutes.
  */
-export async function getOrSetInstitutePrefix(
+export async function getOrSetCompactInstituteCode(
   db: PrismaClient | Prisma.TransactionClient,
   instituteId: string
 ): Promise<string> {
   const institute = await db.institute.findUnique({
     where: { id: instituteId },
-    select: { id: true, name: true, admissionPrefix: true },
+    select: { id: true, name: true, code: true, settingsJson: true, admissionPrefix: true },
   });
 
   if (!institute) {
     throw new Error(`Institute not found for ID: ${instituteId}`);
   }
 
-  // If stable prefix is already set, return it immediately (do not recalculate on name change)
-  if (institute.admissionPrefix) {
-    return institute.admissionPrefix;
+  // 1. If compact code is already persisted in settingsJson, return it immediately
+  const settings = (institute.settingsJson as any) || {};
+  if (settings.compactCode && typeof settings.compactCode === 'string') {
+    return settings.compactCode.toUpperCase();
   }
 
-  // Derive candidate prefix
-  const baseCandidate = deriveCandidatePrefix(institute.name);
-
-  // Check for collisions across institutes
-  let resolvedPrefix = baseCandidate;
-  let counter = 1;
-
-  while (true) {
-    const collision = await db.institute.findFirst({
-      where: {
-        admissionPrefix: resolvedPrefix,
-        id: { not: instituteId },
+  // 2. If existing admissionPrefix is exactly 2 characters, reuse it
+  if (institute.admissionPrefix && institute.admissionPrefix.length === 2) {
+    const code = institute.admissionPrefix.toUpperCase();
+    await db.institute.update({
+      where: { id: instituteId },
+      data: {
+        settingsJson: {
+          ...settings,
+          compactCode: code,
+        },
       },
-      select: { id: true },
     });
-
-    if (!collision) {
-      break;
-    }
-
-    // Deterministic collision resolution: append sequential suffix e.g. APEX2, APEX3
-    counter++;
-    resolvedPrefix = `${baseCandidate}${counter}`;
+    return code;
   }
 
-  // Persist the stable prefix on the institute
-  await db.institute.update({
-    where: { id: instituteId },
-    data: { admissionPrefix: resolvedPrefix },
+  // 3. Derive 2-character candidate: First letter of name/code + sequential suffix
+  const cleanName = (institute.name || institute.code || 'INST')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  const letter = cleanName.charAt(0) || 'A';
+
+  // Gather existing compact codes across all other institutes
+  const allInstitutes = await db.institute.findMany({
+    where: { id: { not: instituteId } },
+    select: { settingsJson: true },
   });
 
-  return resolvedPrefix;
+  const usedCodes = new Set<string>();
+  for (const inst of allInstitutes) {
+    const instSettings = (inst.settingsJson as any) || {};
+    if (instSettings.compactCode) {
+      usedCodes.add(String(instSettings.compactCode).toUpperCase());
+    }
+  }
+
+  // Deterministically find the next unused candidate: e.g. A1, A2, ... A9, AA, AB...
+  const suffixes = '123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let candidate = `${letter}1`;
+  let suffixIdx = 0;
+
+  while (usedCodes.has(candidate)) {
+    suffixIdx++;
+    if (suffixIdx < suffixes.length) {
+      candidate = `${letter}${suffixes[suffixIdx]}`;
+    } else {
+      candidate = `${letter}${suffixIdx}`;
+    }
+  }
+
+  // Persist the compact code into settingsJson without disturbing existing admissionPrefix
+  await db.institute.update({
+    where: { id: instituteId },
+    data: {
+      settingsJson: {
+        ...settings,
+        compactCode: candidate,
+      },
+    },
+  });
+
+  return candidate;
 }
 
 /**
- * Concurrency-safe atomic generation of the next admission number for an institute.
+ * Concurrency-safe atomic generation of the next stable student admission number.
+ * Scheme: [INSTITUTE 2-CHAR][BATCH 2-CHAR][SERIAL 3-CHAR] (e.g. A102001)
  * Must be executed within a database transaction.
  */
 export async function generateNextAdmissionNumber(
   tx: Prisma.TransactionClient,
   instituteId: string,
+  batchIdOrDate?: string | Date | null,
   admissionDateInput?: Date | string | null,
   minSerialWidth = DEFAULT_SERIAL_WIDTH
-): Promise<{ admissionNumber: string; year: number; serial: number; prefix: string }> {
-  // 1. Get or establish permanent institute prefix
-  const prefix = await getOrSetInstitutePrefix(tx, instituteId);
+): Promise<{
+  admissionNumber: string;
+  year: number;
+  serial: number;
+  prefix: string;
+  compactInstitute: string;
+  batchCode: string;
+}> {
+  // Disambiguate arguments: batchId vs admissionDate
+  let batchId: string | null = null;
+  let effectiveDate: Date | string | null = admissionDateInput || null;
 
-  // 2. Determine admission year in Asia/Kolkata
-  const year = getAdmissionYear(admissionDateInput);
+  if (typeof batchIdOrDate === 'string') {
+    // Check if it is a UUID or batch identifier (not an ISO date string)
+    if (!batchIdOrDate.includes('T') && !batchIdOrDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+      batchId = batchIdOrDate;
+    } else if (!effectiveDate) {
+      effectiveDate = batchIdOrDate;
+    }
+  } else if (batchIdOrDate instanceof Date) {
+    effectiveDate = batchIdOrDate;
+  }
 
-  // 3. Atomically upsert sequence counter (row-locked in PostgreSQL)
+  // 1. Get or establish permanent 2-character institute code (e.g. 'A1')
+  const compactInstitute = await getOrSetCompactInstituteCode(tx, instituteId);
+
+  // 2. Derive 2-character batch code (e.g. '02' or '00' if unassigned)
+  let batchCode = '00';
+  if (batchId) {
+    const batch = await tx.batch.findFirst({
+      where: { id: batchId, instituteId },
+    });
+    if (batch) {
+      const instituteBatches = await tx.batch.findMany({
+        where: { instituteId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      const batchIndex = instituteBatches.findIndex((b) => b.id === batchId);
+      batchCode = deriveBatchCode(batch, Math.max(0, batchIndex));
+    }
+  }
+
+  // 3. Determine admission year in Asia/Kolkata
+  const year = getAdmissionYear(effectiveDate);
+
+  // 4. Atomically upsert sequence counter (row-locked in PostgreSQL)
   const sequence = await tx.admissionSequence.upsert({
     where: {
       instituteId_year: {
@@ -173,10 +243,9 @@ export async function generateNextAdmissionNumber(
   });
 
   let serial = sequence.lastSerial;
-  let admissionNumber = formatAdmissionNumber(prefix, year, serial, minSerialWidth);
+  let admissionNumber = formatCompactAdmissionNumber(compactInstitute, batchCode, serial, minSerialWidth);
 
-  // 4. Ensure safety against any legacy records that were manually inserted before
-  // If a student already exists with this admissionNumber, advance the counter safely
+  // 5. Check uniqueness against any legacy or manual records in the institute
   while (
     await tx.student.findUnique({
       where: {
@@ -203,13 +272,25 @@ export async function generateNextAdmissionNumber(
     });
 
     serial = advanced.lastSerial;
-    admissionNumber = formatAdmissionNumber(prefix, year, serial, minSerialWidth);
+    admissionNumber = formatCompactAdmissionNumber(compactInstitute, batchCode, serial, minSerialWidth);
   }
 
   return {
     admissionNumber,
     year,
     serial,
-    prefix,
+    prefix: compactInstitute,
+    compactInstitute,
+    batchCode,
   };
+}
+
+/**
+ * Legacy compatibility export for existing tests
+ */
+export async function getOrSetInstitutePrefix(
+  db: PrismaClient | Prisma.TransactionClient,
+  instituteId: string
+): Promise<string> {
+  return getOrSetCompactInstituteCode(db, instituteId);
 }

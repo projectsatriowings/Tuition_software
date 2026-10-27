@@ -44,6 +44,7 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
   const [dob, setDob] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
   const [batchId, setBatchId] = useState('');
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
 
   // Parent fields
@@ -58,13 +59,19 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
   const [admittedResult, setAdmittedResult] = useState<{
     name: string;
     admissionNumber: string;
+    studentIdentifier?: string;
+    studentPassword?: string;
     parentIdentifier?: string;
     parentPassword?: string;
+    isExistingParentAccount?: boolean;
   } | null>(null);
+
+  const [showStudentCreatedPassword, setShowStudentCreatedPassword] = useState(false);
+  const [showParentCreatedPassword, setShowParentCreatedPassword] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      api.get('/students/admission-prefix')
+      api.get(`/students/admission-prefix${batchId ? `?batchId=${batchId}` : ''}`)
         .then((res) => {
           if (res.data?.success && res.data?.data) {
             setPrefixInfo(res.data.data);
@@ -82,7 +89,7 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
     } else {
       setAdmittedResult(null);
     }
-  }, [visible]);
+  }, [visible, batchId]);
 
   const handleSubmit = async () => {
     if (!firstName.trim() || !lastName.trim()) {
@@ -108,6 +115,7 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
         dob: dob.trim() || undefined,
         bloodGroup: bloodGroup.trim() || undefined,
         batchId: batchId || undefined,
+        subjectIds: selectedSubjectIds.length > 0 ? selectedSubjectIds : undefined,
         notes: notes.trim() || undefined,
         parentFullName: parentFullName.trim(),
         parentRelationship,
@@ -119,14 +127,18 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
 
       if (res.data?.success) {
         const student = res.data.data.student;
-        const parentInfo = res.data.data.parentAccount;
+        const studentCreds = res.data.data.studentCredentials;
+        const parentCreds = res.data.data.parentCredentials;
         const admissionNum = res.data.data.admissionNumber || student.admissionNumber;
 
         setAdmittedResult({
           name: `${firstName.trim()} ${lastName.trim()}`,
           admissionNumber: admissionNum,
-          parentIdentifier: parentInfo?.phone || parentInfo?.email,
-          parentPassword: parentInfo?.temporaryPassword,
+          studentIdentifier: studentCreds?.identifier || admissionNum,
+          studentPassword: studentCreds?.temporaryPassword,
+          parentIdentifier: parentCreds?.identifier || parentCreds?.phone,
+          parentPassword: parentCreds?.temporaryPassword,
+          isExistingParentAccount: parentCreds?.isExistingAccount,
         });
 
         showToast('Student admitted successfully!', 'success');
@@ -179,23 +191,82 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
                 <Text style={styles.admissionNumberText}>{admittedResult.admissionNumber}</Text>
               </View>
 
-              {admittedResult.parentIdentifier && (
+              {/* Student Login Credentials */}
+              {admittedResult.studentIdentifier && (
                 <View style={styles.credBox}>
-                  <Text style={styles.credBoxHeader}>Parent Login Credentials</Text>
+                  <Text style={styles.credBoxHeader}>Student Login Credentials</Text>
                   <Text style={styles.credRow}>
-                    <Text style={styles.credBold}>Login ID: </Text>
-                    {admittedResult.parentIdentifier}
-                  </Text>
-                  {admittedResult.parentPassword ? (
-                    <Text style={styles.credRow}>
-                      <Text style={styles.credBold}>Temp Password: </Text>
-                      <Text style={styles.credHighlight}>{admittedResult.parentPassword}</Text>
+                    <Text style={styles.credBold}>Login Username / ID: </Text>
+                    <Text selectable={true} style={styles.credHighlight}>
+                      {admittedResult.studentIdentifier}
                     </Text>
-                  ) : (
-                    <Text style={styles.credHint}>Linked to existing guardian account.</Text>
+                  </Text>
+                  {admittedResult.studentPassword && (
+                    <View style={{ marginTop: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={styles.credRow}>
+                          <Text style={styles.credBold}>Initial Password: </Text>
+                          <Text selectable={true} style={styles.credHighlight}>
+                            {showStudentCreatedPassword ? admittedResult.studentPassword : '••••••••••••'}
+                          </Text>
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setShowStudentCreatedPassword(!showStudentCreatedPassword)}
+                          style={{ paddingHorizontal: 8, paddingVertical: 2, backgroundColor: '#EFEBE9', borderRadius: 6 }}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#4E342E' }}>
+                            {showStudentCreatedPassword ? 'Hide' : 'Show'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   )}
                   <Text style={styles.credSecurity}>
-                    Password must be changed upon first login. Never share passwords insecurely.
+                    Student must change temporary password upon first login.
+                  </Text>
+                </View>
+              )}
+
+              {/* Parent Login Credentials */}
+              {admittedResult.parentIdentifier && (
+                <View style={[styles.credBox, { borderColor: '#FFE082', backgroundColor: '#FFFDF5' }]}>
+                  <Text style={[styles.credBoxHeader, { color: '#8D6E63' }]}>
+                    Parent Portal Credentials
+                  </Text>
+                  <Text style={styles.credRow}>
+                    <Text style={styles.credBold}>Login ID (Phone): </Text>
+                    <Text selectable={true} style={styles.credHighlight}>
+                      {admittedResult.parentIdentifier}
+                    </Text>
+                  </Text>
+                  {admittedResult.isExistingParentAccount ? (
+                    <Text style={[styles.credHint, { color: '#2E7D32', fontWeight: '600' }]}>
+                      ✓ Linked to existing guardian account. Existing login password preserved.
+                    </Text>
+                  ) : admittedResult.parentPassword ? (
+                    <View style={{ marginTop: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={styles.credRow}>
+                          <Text style={styles.credBold}>Initial Password: </Text>
+                          <Text selectable={true} style={styles.credHighlight}>
+                            {showParentCreatedPassword ? admittedResult.parentPassword : '••••••••••••'}
+                          </Text>
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setShowParentCreatedPassword(!showParentCreatedPassword)}
+                          style={{ paddingHorizontal: 8, paddingVertical: 2, backgroundColor: '#FFE082', borderRadius: 6 }}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#5D4037' }}>
+                            {showParentCreatedPassword ? 'Hide' : 'Show'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : null}
+                  <Text style={styles.credSecurity}>
+                    {admittedResult.isExistingParentAccount
+                      ? 'Parent can log in immediately with their existing password.'
+                      : 'Parent must change password upon first login. Never share passwords insecurely.'}
                   </Text>
                 </View>
               )}
@@ -219,7 +290,7 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
                 <Text style={styles.fieldLabel}>Admission Number</Text>
                 <View style={styles.autoField}>
                   <Text style={styles.autoFieldText}>
-                    {prefixInfo ? `${prefixInfo.prefix}-${prefixInfo.currentYear}-###` : 'Auto-generated on save'}
+                    {prefixInfo ? `${prefixInfo.previewFormat} (7-char scheme)` : 'Auto-generated on save'}
                   </Text>
                   <Text style={styles.autoTag}>AUTO</Text>
                 </View>
@@ -306,7 +377,10 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
                       <TouchableOpacity
                         key={b.id}
                         style={[styles.batchChip, batchId === b.id && styles.batchChipActive]}
-                        onPress={() => setBatchId(batchId === b.id ? '' : b.id)}
+                        onPress={() => {
+                          setBatchId(batchId === b.id ? '' : b.id);
+                          setSelectedSubjectIds([]);
+                        }}
                       >
                         <Text style={[styles.batchChipText, batchId === b.id && styles.batchChipTextActive]}>
                           {b.name}
@@ -316,6 +390,40 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
                   </ScrollView>
                 </View>
               )}
+
+              {/* Subject Selection for Chosen Batch */}
+              {(() => {
+                const selectedBatch = batches.find((b) => b.id === batchId);
+                const subjects = selectedBatch?.batchSubjects || [];
+                if (!batchId || subjects.length === 0) return null;
+                return (
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>Allocate Batch Subjects (Optional)</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.batchScroll}>
+                      {subjects.map((bs: any) => {
+                        const isSelected = selectedSubjectIds.includes(bs.subject.id);
+                        return (
+                          <TouchableOpacity
+                            key={bs.subject.id}
+                            style={[styles.batchChip, isSelected && styles.batchChipActive]}
+                            onPress={() => {
+                              setSelectedSubjectIds(
+                                isSelected
+                                  ? selectedSubjectIds.filter((id) => id !== bs.subject.id)
+                                  : [...selectedSubjectIds, bs.subject.id]
+                              );
+                            }}
+                          >
+                            <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
+                              {isSelected ? '✓ ' : ''}{bs.subject.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                );
+              })()}
 
               {/* Parent Details Section */}
               <Text style={[styles.sectionHeading, { marginTop: 20 }]}>Parent / Guardian Account</Text>

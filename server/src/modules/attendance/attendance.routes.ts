@@ -28,6 +28,6 @@ router.get('/students/:studentId/qr', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN
 router.post('/qr/scan', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), validateScannedQr);
 
 // Corrections
-router.patch('/:eventId/correction', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), correctAttendanceEvent);
+router.patch('/:eventId/correction', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), correctAttendanceEvent);
 
 export default router;

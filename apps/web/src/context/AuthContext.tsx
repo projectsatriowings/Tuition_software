@@ -29,11 +29,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .then((res) => {
           if (res.data?.user) {
             setUser(res.data.user);
-            if (!activeInstitute && res.data.user.memberships?.[0]?.institute) {
-              const inst = res.data.user.memberships[0].institute;
-              setActiveInstituteState(inst);
-              localStorage.setItem('tuition_active_institute', JSON.stringify(inst));
-              localStorage.setItem('tuition_active_institute_id', inst.id);
+            const targetInst = activeInstitute || res.data.user.memberships?.[0]?.institute;
+            if (targetInst) {
+              setActiveInstituteState(targetInst);
+              localStorage.setItem('tuition_active_institute', JSON.stringify(targetInst));
+              localStorage.setItem('tuition_active_institute_id', targetInst.id);
             }
           }
         })

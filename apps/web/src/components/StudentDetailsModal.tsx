@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../services/api';
+import { StudentAvatar } from './StudentAvatar';
 import { useToast } from '../context/ToastContext';
 import { ConfirmationModal } from './ConfirmationModal';
 import {
@@ -211,6 +212,45 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
       error(err.message || 'Error updating status');
     } finally {
       setStatusLoading(false);
+    }
+  };
+
+  // Handle Student Account Active / Inactive Toggle
+  const handleToggleStudentAccountStatus = async (currentActive: boolean) => {
+    if (!student) return;
+    try {
+      const res = await apiFetch(`/students/${student.id}/account-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !currentActive }),
+      });
+      if (res.success) {
+        success(`Student account ${!currentActive ? 'activated' : 'deactivated'} successfully`);
+        fetchDetails();
+        if (onStudentUpdated) onStudentUpdated();
+      } else {
+        error(res.error || 'Failed to update student account status');
+      }
+    } catch (err: any) {
+      error(err.message || 'Error updating student account status');
+    }
+  };
+
+  // Handle Parent Account Active / Inactive Toggle
+  const handleToggleParentAccountStatus = async (parentId: string, currentActive: boolean) => {
+    try {
+      const res = await apiFetch(`/parents/${parentId}/account-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !currentActive }),
+      });
+      if (res.success) {
+        success(`Parent account ${!currentActive ? 'activated' : 'deactivated'} successfully`);
+        fetchDetails();
+        if (onStudentUpdated) onStudentUpdated();
+      } else {
+        error(res.error || 'Failed to update parent account status');
+      }
+    } catch (err: any) {
+      error(err.message || 'Error updating parent account status');
     }
   };
 
@@ -554,6 +594,16 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                         >
                           <Edit2 className="w-3.5 h-3.5" /> Update Login Identifier
                         </button>
+                        <button
+                          onClick={() => handleToggleStudentAccountStatus(student.user.isActive)}
+                          className={`text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 border ${
+                            student.user.isActive
+                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                          }`}
+                        >
+                          {student.user.isActive ? 'Deactivate Login Account' : 'Reactivate Login Account'}
+                        </button>
                       </div>
                     </div>
                   ) : (
@@ -649,6 +699,24 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                                 {rel.canReceiveSms ? 'Eligible (Consent On)' : 'Disabled'}
                               </span>
                             </div>
+                            {rel.parent?.studentRelations && rel.parent.studentRelations.length > 1 && (
+                              <div className="col-span-full pt-1 border-t border-[#EFEBE9]">
+                                <span className="text-[#8D6E63] block mb-1">Other Linked Children (Siblings):</span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {rel.parent.studentRelations
+                                    .filter((r: any) => r.student?.id !== student.id)
+                                    .map((r: any) => (
+                                      <span
+                                        key={r.student?.id || r.id}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EFEBE9] text-[#4E342E] text-[11px] font-semibold border border-[#D7CCC8]"
+                                      >
+                                        <GraduationCap className="w-3 h-3 text-[#6D4C41]" />
+                                        {r.student?.firstName} {r.student?.lastName} ({r.student?.admissionNumber})
+                                      </span>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Authorized Guardian Actions */}
@@ -682,6 +750,16 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                               className="bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5"
                             >
                               <Edit2 className="w-3.5 h-3.5" /> Update Contact / Login ID
+                            </button>
+                            <button
+                              onClick={() => handleToggleParentAccountStatus(rel.parent.id, parentUser?.isActive ?? true)}
+                              className={`text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 border ${
+                                parentUser?.isActive
+                                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                              }`}
+                            >
+                              {parentUser?.isActive ? 'Deactivate Login Account' : 'Reactivate Login Account'}
                             </button>
                           </div>
                         </div>

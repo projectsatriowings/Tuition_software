@@ -34,6 +34,14 @@ export const ALLOWED_MIME_TYPES = [
 // Max file size: 25MB
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
+// Photo specific constraints (5MB max, image types only)
+export const ALLOWED_PHOTO_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+];
+export const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024; // 5MB max
+
 /**
  * Sanitize filename to prevent directory traversal
  */
@@ -73,6 +81,21 @@ export const fileUpload = multer({
       cb(null, true);
     } else {
       cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed types: PDF, Audio, and Images.`));
+    }
+  },
+});
+
+/**
+ * Dedicated student photo upload middleware (5MB limit, strictly image formats)
+ */
+export const photoUpload = multer({
+  storage,
+  limits: { fileSize: MAX_PHOTO_SIZE_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_PHOTO_MIME_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid photograph type: ${file.mimetype}. Allowed types: JPEG, PNG, WebP.`));
     }
   },
 });

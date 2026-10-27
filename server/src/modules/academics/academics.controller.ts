@@ -5,13 +5,15 @@ import { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
   isStudentAuthorized,
   isStaffAssignedToBatch,
+  isStaffAssignedToBatchSubject,
+  getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
 export const createBatchSchema = z.object({
   name: z.string().min(2, 'Batch name is required'),
-  code: z.string().optional(),
+  code: z.string().trim().optional().nullable().or(z.literal('')),
   academicYear: z.string().min(4, 'Academic year is required'), // e.g., "2026-2027"
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -23,7 +25,7 @@ export const createBatchSchema = z.object({
 
 export const updateBatchSchema = z.object({
   name: z.string().min(2, 'Batch name is required').optional(),
-  code: z.string().optional(),
+  code: z.string().trim().optional().nullable().or(z.literal('')),
   academicYear: z.string().min(4, 'Academic year is required').optional(),
   startDate: z.string().optional(),
   endDate: z.string().nullable().optional(),
@@ -34,13 +36,13 @@ export const updateBatchSchema = z.object({
 
 export const createSubjectSchema = z.object({
   name: z.string().min(2, 'Subject name is required'),
-  code: z.string().optional(),
+  code: z.string().trim().optional().nullable().or(z.literal('')),
   description: z.string().optional(),
 });
 
 export const updateSubjectSchema = z.object({
   name: z.string().min(2, 'Subject name is required').optional(),
-  code: z.string().optional(),
+  code: z.string().trim().optional().nullable().or(z.literal('')),
   description: z.string().optional(),
 });
 
@@ -48,7 +50,7 @@ export const assignSubjectsSchema = z.object({
   subjectIds: z.array(z.string().uuid()).optional(),
   subjectId: z.string().uuid().optional(),
   name: z.string().min(2).optional(),
-  code: z.string().optional(),
+  code: z.string().trim().optional().nullable().or(z.literal('')),
   description: z.string().optional(),
   staffProfileId: z.string().uuid().optional(),
   schedule: z.string().optional(),
@@ -71,8 +73,27 @@ export async function listBatches(req: AuthenticatedRequest, res: Response) {
     const instituteId = req.instituteId;
     if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
 
+    const isStaff = req.user?.role === 'STAFF';
+    let batchWhere: any = { instituteId };
+    let authorizedSubjectIds: string[] | null = null;
+    let staffProfileId: string | null = null;
+
+    if (isStaff) {
+      const assignments = await getAuthorizedStaffAssignments(req, prisma);
+      if (assignments.authorizedBatchIds.length === 0) {
+        return res.json({ success: true, data: { batches: [] } });
+      }
+      batchWhere = {
+        instituteId,
+        id: { in: assignments.authorizedBatchIds },
+        isActive: true,
+      };
+      authorizedSubjectIds = assignments.allAuthorizedSubjectIds;
+      staffProfileId = assignments.staffProfileId || null;
+    }
+
     const batches = await prisma.batch.findMany({
-      where: { instituteId },
+      where: batchWhere,
       orderBy: { createdAt: 'desc' },
       include: {
         batchSubjects: {
@@ -110,7 +131,22 @@ export async function listBatches(req: AuthenticatedRequest, res: Response) {
       },
     });
 
-    return res.json({ success: true, data: { batches } });
+    // If caller is STAFF, filter each batch's batchSubjects to only those assigned to this staff member
+    const filteredBatches = isStaff
+      ? batches.map((b) => {
+          const staffSubjects = b.batchSubjects.filter(
+            (bs) =>
+              (staffProfileId && bs.staffProfileId === staffProfileId) ||
+              (authorizedSubjectIds && authorizedSubjectIds.includes(bs.subjectId))
+          );
+          return {
+            ...b,
+            batchSubjects: staffSubjects,
+          };
+        })
+      : batches;
+
+    return res.json({ success: true, data: { batches: filteredBatches } });
   } catch (err: any) {
     console.error('[listBatches error]', err);
     return res.status(500).json({ success: false, error: 'Failed to list batches' });
@@ -192,6 +228,7 @@ export async function getBatchDetails(req: AuthenticatedRequest, res: Response) 
       if (!enrolledStudentsMap.has(enr.student.id)) {
         enrolledStudentsMap.set(enr.student.id, {
           ...enr.student,
+          photoUrl: (enr.student.photoUrl && !enr.student.photoUrl.startsWith('http') && !enr.student.photoUrl.startsWith('/api')) ? `/api/students/${enr.student.id}/photo` : enr.student.photoUrl,
           enrolledAt: enr.enrolledAt,
           allocatedSubjects: [],
         });
@@ -419,7 +456,24 @@ export async function assignSubjectsToBatch(req: AuthenticatedRequest, res: Resp
     // Direct Subject Creation / Addition inside Batch
     if (parse.data.name && parse.data.name.trim()) {
       const subjectName = parse.data.name.trim();
-      const subjectCode = parse.data.code ? parse.data.code.trim().toUpperCase() : null;
+      const subjectCode = parse.data.code && parse.data.code.trim() ? parse.data.code.trim().toUpperCase() : null;
+
+      // Validate subject code uniqueness within the institute if code is supplied
+      if (subjectCode) {
+        const codeCollision = await prisma.subject.findFirst({
+          where: {
+            instituteId,
+            code: subjectCode,
+            NOT: { name: { equals: subjectName, mode: 'insensitive' } },
+          },
+        });
+        if (codeCollision) {
+          return res.status(409).json({
+            success: false,
+            error: `Subject code '${subjectCode}' is already in use by '${codeCollision.name}' in this institute`,
+          });
+        }
+      }
 
       // Find or create reusable subject in this institute
       let subject = await prisma.subject.findFirst({
@@ -625,11 +679,20 @@ export async function updateBatchSubject(req: AuthenticatedRequest, res: Respons
 
     // Optionally update Subject title/code if provided
     if (name || code !== undefined) {
+      if (code && code.trim()) {
+        const cleanCode = code.trim().toUpperCase();
+        const codeCollision = await prisma.subject.findFirst({
+          where: { instituteId, code: cleanCode, id: { not: subjectId } },
+        });
+        if (codeCollision) {
+          return res.status(409).json({ success: false, error: `Subject code '${cleanCode}' is already in use in this institute` });
+        }
+      }
       await prisma.subject.update({
         where: { id: subjectId },
         data: {
           ...(name ? { name: name.trim() } : {}),
-          ...(code !== undefined ? { code: code ? code.trim().toUpperCase() : null } : {}),
+          ...(code !== undefined ? { code: (code && code.trim()) ? code.trim().toUpperCase() : null } : {}),
         },
       });
     }
@@ -736,6 +799,19 @@ export async function allocateStudentSubjects(req: AuthenticatedRequest, res: Re
           success: false,
           error: 'One or more subjects are not assigned to this batch. Students can only be allocated to subjects assigned to their batch.',
         });
+      }
+
+      // If caller is STAFF, verify staff is assigned to teach ALL requested subjects in this batch
+      if (req.user?.role === 'STAFF') {
+        for (const sid of subjectIds) {
+          const isAssigned = await isStaffAssignedToBatchSubject(req, batchId, sid, prisma);
+          if (!isAssigned) {
+            return res.status(403).json({
+              success: false,
+              error: `Forbidden: You are not authorized to allocate subject '${sid}' in this batch.`,
+            });
+          }
+        }
       }
     }
 
@@ -1256,11 +1332,20 @@ export async function createSubject(req: AuthenticatedRequest, res: Response) {
       return res.status(409).json({ success: false, error: `Subject '${name}' already exists in this institute` });
     }
 
+    if (code && code.trim()) {
+      const codeCollision = await prisma.subject.findFirst({
+        where: { instituteId, code: code.trim().toUpperCase() },
+      });
+      if (codeCollision) {
+        return res.status(409).json({ success: false, error: `Subject code '${code.trim().toUpperCase()}' is already in use in this institute` });
+      }
+    }
+
     const subject = await prisma.subject.create({
       data: {
         instituteId,
         name: name.trim(),
-        code: code?.trim().toUpperCase() || null,
+        code: (code && code.trim()) ? code.trim().toUpperCase() : null,
         description: description?.trim() || null,
       },
     });
@@ -1303,11 +1388,25 @@ export async function updateSubject(req: AuthenticatedRequest, res: Response) {
       }
     }
 
+    const cleanCode = code !== undefined ? ((code && code.trim()) ? code.trim().toUpperCase() : null) : undefined;
+    if (cleanCode) {
+      const codeCollision = await prisma.subject.findFirst({
+        where: {
+          instituteId,
+          code: cleanCode,
+          id: { not: id },
+        },
+      });
+      if (codeCollision) {
+        return res.status(409).json({ success: false, error: `Subject code '${cleanCode}' is already in use in this institute` });
+      }
+    }
+
     const updated = await prisma.subject.update({
       where: { id },
       data: {
         ...(name ? { name: name.trim() } : {}),
-        ...(code !== undefined ? { code: code ? code.trim().toUpperCase() : null } : {}),
+        ...(code !== undefined ? { code: cleanCode } : {}),
         ...(description !== undefined ? { description: description ? description.trim() : null } : {}),
       },
     });

@@ -18,6 +18,7 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { themeTokens } from '@tuition/shared';
@@ -598,6 +599,7 @@ export const AdminScreen: React.FC = () => {
               {students.map((st) => (
                 <Card key={st.id} onPress={() => setSelectedStudentId(st.id)}>
                   <View style={styles.stuDirRow}>
+                    <StudentAvatar studentId={st.id} photoUrl={st.photoUrl} name={st.user?.fullName || `${st.firstName} ${st.lastName}`} size={38} style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.stuDirName}>{st.user?.fullName || `${st.firstName} ${st.lastName}`}</Text>
                       <Text style={styles.stuDirMeta}>

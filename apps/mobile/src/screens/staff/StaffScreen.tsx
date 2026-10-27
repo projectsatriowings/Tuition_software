@@ -17,6 +17,7 @@ import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
@@ -32,6 +33,7 @@ export const StaffScreen: React.FC = () => {
   // Staff Data
   const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -105,9 +107,10 @@ export const StaffScreen: React.FC = () => {
     }
   }, [selectedBatch]);
 
-  const loadStudentsForBatch = async (batchId: string) => {
+  const loadStudentsForBatch = async (batchId: string, subjectId?: string) => {
     try {
-      const res = await mobileApiFetch(`/students?batchId=${batchId}`);
+      const q = new URLSearchParams({ batchId, ...(subjectId ? { subjectId } : {}) });
+      const res = await mobileApiFetch(`/students?${q.toString()}`);
       if (res.success && res.data) {
         setStudents(Array.isArray(res.data) ? res.data : res.data.students || []);
       }
@@ -127,6 +130,7 @@ export const StaffScreen: React.FC = () => {
 
   const handleSelectBatch = (b: any) => {
     setSelectedBatch(b);
+    setSelectedSubject(null);
     loadStudentsForBatch(b.id);
   };
 
@@ -146,6 +150,7 @@ export const StaffScreen: React.FC = () => {
         body: {
           studentId: selectedStudentForAtt.id,
           batchId: selectedBatch?.id,
+          subjectId: selectedSubject?.id || undefined,
           isLate: attStatus === 'LATE',
           method: 'MANUAL',
         },
@@ -213,6 +218,7 @@ export const StaffScreen: React.FC = () => {
         body: {
           studentId: student.id,
           batchId: selectedBatch?.id,
+          subjectId: selectedSubject?.id || undefined,
           method: 'VOICE_CONFIRMED',
         },
       });
@@ -329,7 +335,43 @@ export const StaffScreen: React.FC = () => {
                   style={[styles.batchChip, isSelected && styles.batchChipActive]}
                 >
                   <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
-                    🏫 {b.name} (Grade {b.grade})
+                    🏫 {b.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {selectedBatch?.batchSubjects && selectedBatch.batchSubjects.length > 0 && (
+        <View style={[styles.batchBar, { paddingTop: 0 }]}>
+          <Text style={styles.batchLabel}>ASSIGNED SUBJECT:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.batchChips}>
+            <TouchableOpacity
+              onPress={() => {
+                setSelectedSubject(null);
+                loadStudentsForBatch(selectedBatch.id);
+              }}
+              style={[styles.batchChip, !selectedSubject && styles.batchChipActive]}
+            >
+              <Text style={[styles.batchChipText, !selectedSubject && styles.batchChipTextActive]}>
+                All Subjects
+              </Text>
+            </TouchableOpacity>
+            {selectedBatch.batchSubjects.map((bs: any) => {
+              const isSelected = selectedSubject?.id === bs.subject.id;
+              return (
+                <TouchableOpacity
+                  key={bs.subject.id}
+                  onPress={() => {
+                    setSelectedSubject(bs.subject);
+                    loadStudentsForBatch(selectedBatch.id, bs.subject.id);
+                  }}
+                  style={[styles.batchChip, isSelected && styles.batchChipActive]}
+                >
+                  <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
+                    📖 {bs.subject.name}
                   </Text>
                 </TouchableOpacity>
               );
@@ -629,6 +671,7 @@ export const StaffScreen: React.FC = () => {
               {students.map((s) => (
                 <Card key={s.id} onPress={() => setSelectedStudentId(s.id)}>
                   <View style={styles.studentCardRow}>
+                    <StudentAvatar studentId={s.id} photoUrl={s.photoUrl} name={s.user?.fullName || `${s.firstName} ${s.lastName}`} size={38} style={{ marginRight: 10 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.studentName}>{s.user?.fullName || `${s.firstName} ${s.lastName}`}</Text>
                       <Text style={styles.studentSub}>
