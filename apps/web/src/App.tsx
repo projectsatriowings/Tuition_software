@@ -34,7 +34,7 @@ const AppContent: React.FC = () => {
       } else if (user.role === 'STAFF') {
         setCurrentTab('attendance');
       } else if (user.role === 'PARENT') {
-        setCurrentTab('parent_portal');
+        setCurrentTab('parent_dashboard');
       } else if (user.role === 'STUDENT') {
         setCurrentTab('student_portal');
       }
@@ -100,7 +100,15 @@ const AppContent: React.FC = () => {
 
                 {currentTab === 'attendance' && <AttendanceManagement />}
 
-                {currentTab === 'parent_portal' && <ParentPortal />}
+                {(currentTab === 'parent_portal' || currentTab.startsWith('parent_')) && (
+                  <ParentPortal
+                    initialTab={
+                      currentTab === 'parent_portal' || currentTab === 'parent_dashboard'
+                        ? 'dashboard'
+                        : currentTab.replace('parent_', '')
+                    }
+                  />
+                )}
 
                 {currentTab === 'student_portal' && <StudentPortal />}
 

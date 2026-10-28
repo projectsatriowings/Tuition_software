@@ -98,3 +98,138 @@ export async function retrySmsNotification(req: AuthenticatedRequest, res: Respo
     return res.status(400).json({ success: false, error: err.message });
   }
 }
+
+/**
+ * List in-app notifications for authenticated user
+ */
+export async function listInAppNotifications(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const unreadOnly = req.query.unreadOnly === 'true';
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '30', 10)));
+
+    const where: any = { userId };
+    if (unreadOnly) {
+      where.isRead = false;
+    }
+
+    const [notifications, unreadCount] = await Promise.all([
+      prisma.inAppNotification.findMany({
+        where,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.inAppNotification.count({
+        where: { userId, isRead: false },
+      }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        notifications,
+        unreadCount,
+      },
+    });
+  } catch (err: any) {
+    console.error('[List InApp Notifications Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to list in-app notifications' });
+  }
+}
+
+/**
+ * Mark a single in-app notification as read
+ */
+export async function markInAppNotificationRead(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+
+    const notif = await prisma.inAppNotification.findFirst({
+      where: { id, userId },
+    });
+
+    if (!notif) {
+      return res.status(404).json({ success: false, error: 'Notification not found' });
+    }
+
+    const updated = await prisma.inAppNotification.update({
+      where: { id },
+      data: { isRead: true, readAt: new Date() },
+    });
+
+    return res.json({
+      success: true,
+      data: { notification: updated },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to mark notification as read' });
+  }
+}
+
+/**
+ * Mark all in-app notifications as read
+ */
+export async function markAllInAppNotificationsRead(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    await prisma.inAppNotification.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+
+    return res.json({
+      success: true,
+      message: 'All notifications marked as read',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to mark all notifications as read' });
+  }
+}
+
+/**
+ * Helper to dispatch an in-app notification
+ */
+export async function createInAppNotification({
+  instituteId,
+  userId,
+  studentId,
+  type,
+  title,
+  message,
+  link,
+}: {
+  instituteId: string;
+  userId: string;
+  studentId?: string;
+  type: string;
+  title: string;
+  message: string;
+  link?: string;
+}) {
+  try {
+    return await prisma.inAppNotification.create({
+      data: {
+        instituteId,
+        userId,
+        studentId: studentId || null,
+        type,
+        title,
+        message,
+        link: link || null,
+      },
+    });
+  } catch (err) {
+    console.error('[Create In-App Notification Error]', err);
+    return null;
+  }
+}
+

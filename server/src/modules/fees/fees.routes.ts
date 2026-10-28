@@ -23,6 +23,9 @@ import {
   getFinancialSummary,
   getCollectionsReport,
   getOutstandingReport,
+  createOnlinePaymentOrder,
+  verifyOnlinePayment,
+  handlePaymentWebhook,
 } from './fees.controller.js';
 
 const router = Router();
@@ -139,6 +142,24 @@ router.get(
   '/reports/outstanding',
   requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
   getOutstandingReport
+);
+
+// ============================================================================
+// MODULE G: ONLINE PAYMENT WORKFLOW (RAZORPAY)
+// ============================================================================
+router.post(
+  '/online/create-order',
+  requireRole('PARENT', 'STUDENT', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'),
+  createOnlinePaymentOrder
+);
+router.post(
+  '/online/verify-payment',
+  requireRole('PARENT', 'STUDENT', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'),
+  verifyOnlinePayment
+);
+router.post(
+  '/online/webhook',
+  handlePaymentWebhook
 );
 
 export default router;

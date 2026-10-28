@@ -12,6 +12,8 @@ import {
   Sparkles,
   MessageSquare,
   CreditCard,
+  Bell,
+  User,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -144,38 +146,59 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
         {role === 'PARENT' && (
           <>
             <button
-              onClick={() => onSelectTab('parent_portal')}
-              className={navItemClass('parent_portal')}
+              onClick={() => onSelectTab('parent_dashboard')}
+              className={navItemClass('parent_dashboard')}
             >
-              <GraduationCap className="w-4 h-4" /> My Linked Children
+              <LayoutDashboard className="w-4 h-4" /> Parent Dashboard
             </button>
 
             <button
-              onClick={() => onSelectTab('materials')}
-              className={navItemClass('materials')}
+              onClick={() => onSelectTab('parent_attendance')}
+              className={navItemClass('parent_attendance')}
             >
-              <BookOpen className="w-4 h-4" /> Learning Materials
+              <Calendar className="w-4 h-4" /> Attendance Report
             </button>
 
             <button
-              onClick={() => onSelectTab('homework')}
-              className={navItemClass('homework')}
-            >
-              <FileText className="w-4 h-4" /> Children's Homework
-            </button>
-
-            <button
-              onClick={() => onSelectTab('progress_reviews')}
-              className={navItemClass('progress_reviews')}
-            >
-              <Sparkles className="w-4 h-4" /> Progress & Feedback
-            </button>
-
-            <button
-              onClick={() => onSelectTab('messaging')}
-              className={navItemClass('messaging')}
+              onClick={() => onSelectTab('parent_communication')}
+              className={navItemClass('parent_communication')}
             >
               <MessageSquare className="w-4 h-4" /> Message Teachers
+            </button>
+
+            <button
+              onClick={() => onSelectTab('parent_fees')}
+              className={navItemClass('parent_fees')}
+            >
+              <CreditCard className="w-4 h-4" /> Fee Payments
+            </button>
+
+            <button
+              onClick={() => onSelectTab('parent_academics')}
+              className={navItemClass('parent_academics')}
+            >
+              <BookOpen className="w-4 h-4" /> Academic Reports
+            </button>
+
+            <button
+              onClick={() => onSelectTab('parent_results')}
+              className={navItemClass('parent_results')}
+            >
+              <Award className="w-4 h-4" /> Test Results
+            </button>
+
+            <button
+              onClick={() => onSelectTab('parent_notifications')}
+              className={navItemClass('parent_notifications')}
+            >
+              <Bell className="w-4 h-4" /> Notifications
+            </button>
+
+            <button
+              onClick={() => onSelectTab('parent_profile')}
+              className={navItemClass('parent_profile')}
+            >
+              <User className="w-4 h-4" /> Student Profile
             </button>
           </>
         )}
