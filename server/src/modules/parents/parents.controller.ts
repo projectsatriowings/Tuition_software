@@ -809,4 +809,712 @@ export async function updateParentAccountStatus(req: AuthenticatedRequest, res: 
   }
 }
 
+/**
+ * Aggregated dashboard summary for authenticated parent
+ */
+export async function getParentDashboardSummary(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (req.user?.role !== 'PARENT') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent access only' });
+    }
+
+    const parentProfile = await prisma.parentProfile.findUnique({
+      where: { userId: req.user.userId },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, phone: true } },
+      },
+    });
+
+    if (!parentProfile) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    // Get linked children
+    const relations = await prisma.studentParentRelation.findMany({
+      where: { parentId: parentProfile.id },
+      include: {
+        student: {
+          include: {
+            institute: { select: { id: true, name: true, code: true } },
+            enrollments: {
+              where: { isActive: true },
+              include: { batch: { select: { id: true, name: true, academicYear: true, schedule: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+
+    let totalOutstandingFees = 0;
+    let nextUpcomingDueDate: Date | null = null;
+
+    const childrenSummaries = await Promise.all(
+      relations.map(async (rel) => {
+        const student = rel.student;
+
+        // Today's attendance
+        const todayEvents = await prisma.attendanceEvent.findMany({
+          where: {
+            studentId: student.id,
+            eventDate: { gte: todayStart, lte: todayEnd },
+          },
+          orderBy: { eventTime: 'asc' },
+        });
+
+        const checkIn = todayEvents.find((e) => e.eventType === 'CHECK_IN');
+        const checkOut = todayEvents.find((e) => e.eventType === 'CHECK_OUT');
+
+        let todayStatus: 'CHECKED_IN' | 'CHECKED_OUT' | 'NOT_MARKED' | 'LATE' = 'NOT_MARKED';
+        if (checkOut) {
+          todayStatus = 'CHECKED_OUT';
+        } else if (checkIn) {
+          todayStatus = checkIn.isLate ? 'LATE' : 'CHECKED_IN';
+        }
+
+        // Monthly attendance percentage
+        const monthEvents = await prisma.attendanceEvent.findMany({
+          where: {
+            studentId: student.id,
+            eventType: 'CHECK_IN',
+            eventDate: { gte: monthStart, lte: todayEnd },
+          },
+          select: { eventDate: true, isLate: true },
+        });
+
+        // Batch working days in this month up to today
+        const batchId = student.enrollments[0]?.batch?.id;
+        let totalWorkingDays = 0;
+        if (batchId) {
+          const distinctBatchDays = await prisma.attendanceEvent.findMany({
+            where: {
+              batchId,
+              eventDate: { gte: monthStart, lte: todayEnd },
+            },
+            distinct: ['eventDate'],
+            select: { eventDate: true },
+          });
+          totalWorkingDays = distinctBatchDays.length;
+        }
+
+        const presentDays = monthEvents.length;
+        const attendancePercentage = totalWorkingDays > 0 ? Math.round((presentDays / totalWorkingDays) * 100) : 100;
+
+        // Fee Dues
+        const feeAssignments = await prisma.studentFeeAssignment.findMany({
+          where: {
+            studentId: student.id,
+            status: { in: ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'] },
+          },
+          include: {
+            feeStructure: { select: { name: true } },
+            payments: { where: { status: 'SUCCESS' }, select: { amountPaid: true } },
+          },
+          orderBy: { dueDate: 'asc' },
+        });
+
+        let studentPendingFees = 0;
+        for (const fa of feeAssignments) {
+          const totalPaid = fa.payments.reduce((acc, p) => acc + Number(p.amountPaid), 0);
+          const remaining = Math.max(0, Number(fa.finalAmount) - totalPaid);
+          studentPendingFees += remaining;
+
+          if (!nextUpcomingDueDate || fa.dueDate < nextUpcomingDueDate) {
+            nextUpcomingDueDate = fa.dueDate;
+          }
+        }
+        totalOutstandingFees += studentPendingFees;
+
+        // Latest Exam Result
+        const latestMark = await prisma.examMark.findFirst({
+          where: {
+            studentId: student.id,
+            exam: { isPublished: true },
+          },
+          include: {
+            exam: {
+              include: { subject: { select: { name: true } } },
+            },
+          },
+          orderBy: { exam: { examDate: 'desc' } },
+        });
+
+        const latestExamResult = latestMark
+          ? {
+              examTitle: latestMark.exam.title,
+              subject: latestMark.exam.subject.name,
+              score: Number(latestMark.marksObtained),
+              totalMarks: Number(latestMark.exam.totalMarks),
+              percentage:
+                Number(latestMark.exam.totalMarks) > 0
+                  ? Math.round((Number(latestMark.marksObtained) / Number(latestMark.exam.totalMarks)) * 100)
+                  : 0,
+              examDate: latestMark.exam.examDate,
+              isAbsent: latestMark.isAbsent,
+            }
+          : null;
+
+        return {
+          studentId: student.id,
+          fullName: `${student.firstName} ${student.lastName}`,
+          admissionNumber: student.admissionNumber,
+          gender: student.gender,
+          photoUrl: student.photoUrl,
+          batchName: student.enrollments[0]?.batch?.name || 'Class',
+          relationship: rel.relation,
+          todayAttendance: {
+            status: todayStatus,
+            checkInTime: checkIn?.eventTime || null,
+            checkOutTime: checkOut?.eventTime || null,
+            isLate: checkIn?.isLate || false,
+          },
+          monthlyAttendance: {
+            presentDays,
+            totalWorkingDays,
+            percentage: attendancePercentage,
+          },
+          fees: {
+            pendingAmount: studentPendingFees,
+            pendingAssignmentsCount: feeAssignments.length,
+          },
+          latestExamResult,
+        };
+      })
+    );
+
+    // Unread messages count
+    const parentConversations = await prisma.conversation.findMany({
+      where: {
+        members: { some: { userId: req.user.userId } },
+      },
+      include: {
+        members: { where: { userId: req.user.userId } },
+        messages: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    let unreadMessagesCount = 0;
+    for (const conv of parentConversations) {
+      const myMembership = conv.members[0];
+      const lastMessage = conv.messages[0];
+      if (
+        lastMessage &&
+        lastMessage.senderId !== req.user.userId &&
+        (!myMembership?.lastReadAt || new Date(myMembership.lastReadAt) < new Date(lastMessage.createdAt))
+      ) {
+        unreadMessagesCount++;
+      }
+    }
+
+    // Unread in-app notifications count
+    const unreadNotificationsCount = await prisma.inAppNotification.count({
+      where: {
+        userId: req.user.userId,
+        isRead: false,
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        parent: {
+          id: parentProfile.id,
+          fullName: parentProfile.user.fullName,
+          email: parentProfile.user.email,
+          phone: parentProfile.user.phone,
+        },
+        children: childrenSummaries,
+        financialOverview: {
+          totalOutstandingFees,
+          nextUpcomingDueDate,
+        },
+        unreadCounts: {
+          messages: unreadMessagesCount,
+          notifications: unreadNotificationsCount,
+        },
+      },
+    });
+  } catch (err: any) {
+    console.error('[Parent Dashboard Summary Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to generate parent dashboard summary' });
+  }
+}
+
+/**
+ * Monthly attendance calendar and stats for parent's linked child
+ */
+export async function getParentStudentAttendance(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (req.user?.role !== 'PARENT') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent access only' });
+    }
+
+    const { studentId } = req.params;
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized for this student' });
+    }
+
+    const now = new Date();
+    const month = parseInt((req.query.month as string) || String(now.getMonth() + 1), 10);
+    const year = parseInt((req.query.year as string) || String(now.getFullYear()), 10);
+
+    if (month < 1 || month > 12 || year < 2000 || year > 2100) {
+      return res.status(400).json({ success: false, error: 'Invalid month or year parameter' });
+    }
+
+    const startDate = new Date(year, month - 1, 1, 0, 0, 0);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: {
+        enrollments: {
+          where: { isActive: true },
+          include: { batch: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    const batchId = student.enrollments[0]?.batch?.id;
+
+    // Fetch all attendance events for this student in this month
+    const studentEvents = await prisma.attendanceEvent.findMany({
+      where: {
+        studentId,
+        eventDate: { gte: startDate, lte: endDate },
+      },
+      orderBy: { eventTime: 'asc' },
+    });
+
+    // Determine batch working days in this month
+    let distinctWorkingDates: string[] = [];
+    if (batchId) {
+      const batchEvents = await prisma.attendanceEvent.findMany({
+        where: {
+          batchId,
+          eventDate: { gte: startDate, lte: endDate },
+        },
+        distinct: ['eventDate'],
+        select: { eventDate: true },
+      });
+      distinctWorkingDates = batchEvents.map((e) => e.eventDate.toISOString().split('T')[0]);
+    }
+
+    // Map student events by date string YYYY-MM-DD
+    const dailyRecords: Record<string, any> = {};
+    for (const ev of studentEvents) {
+      const dateKey = ev.eventDate.toISOString().split('T')[0];
+      if (!dailyRecords[dateKey]) {
+        dailyRecords[dateKey] = {
+          date: dateKey,
+          checkIn: null,
+          checkOut: null,
+          isLate: false,
+          remarks: null,
+          status: 'PRESENT',
+        };
+      }
+
+      if (ev.eventType === 'CHECK_IN') {
+        dailyRecords[dateKey].checkIn = ev.eventTime;
+        dailyRecords[dateKey].isLate = ev.isLate;
+        dailyRecords[dateKey].remarks = ev.remarks;
+        if (ev.isLate) dailyRecords[dateKey].status = 'LATE';
+      } else if (ev.eventType === 'CHECK_OUT') {
+        dailyRecords[dateKey].checkOut = ev.eventTime;
+      }
+    }
+
+    // Build complete daily timeline including absent days for working days
+    let presentDaysCount = 0;
+    let lateDaysCount = 0;
+    let absentDaysCount = 0;
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const calendarDays = [];
+
+    const todayStr = now.toISOString().split('T')[0];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayDate = new Date(year, month - 1, day);
+      const dateKey = dayDate.toISOString().split('T')[0];
+      const isPastOrToday = dateKey <= todayStr;
+      const isBatchWorkingDay = distinctWorkingDates.includes(dateKey);
+
+      const record = dailyRecords[dateKey];
+
+      if (record) {
+        presentDaysCount++;
+        if (record.isLate) lateDaysCount++;
+        calendarDays.push({
+          date: dateKey,
+          day,
+          status: record.isLate ? 'LATE' : 'PRESENT',
+          checkIn: record.checkIn,
+          checkOut: record.checkOut,
+          isLate: record.isLate,
+          remarks: record.remarks,
+        });
+      } else if (isBatchWorkingDay && isPastOrToday) {
+        absentDaysCount++;
+        calendarDays.push({
+          date: dateKey,
+          day,
+          status: 'ABSENT',
+          checkIn: null,
+          checkOut: null,
+          isLate: false,
+          remarks: 'Marked Absent',
+        });
+      } else {
+        calendarDays.push({
+          date: dateKey,
+          day,
+          status: 'HOLIDAY_OR_NO_SESSION',
+          checkIn: null,
+          checkOut: null,
+          isLate: false,
+          remarks: null,
+        });
+      }
+    }
+
+    const totalWorkingDays = presentDaysCount + absentDaysCount;
+    const attendancePercentage = totalWorkingDays > 0 ? Math.round((presentDaysCount / totalWorkingDays) * 100) : 100;
+
+    return res.json({
+      success: true,
+      data: {
+        month,
+        year,
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          admissionNumber: student.admissionNumber,
+          batchName: student.enrollments[0]?.batch?.name || 'Class',
+        },
+        metrics: {
+          totalWorkingDays,
+          presentDays: presentDaysCount,
+          absentDays: absentDaysCount,
+          lateDays: lateDaysCount,
+          attendancePercentage,
+        },
+        calendar: calendarDays,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Parent Student Attendance Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch student attendance records' });
+  }
+}
+
+/**
+ * Retrieve teachers assigned to student's class / batch for direct communication
+ */
+export async function getParentStudentTeachers(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (req.user?.role !== 'PARENT') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent access only' });
+    }
+
+    const { studentId } = req.params;
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized for this student' });
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: {
+        enrollments: {
+          where: { isActive: true },
+          include: {
+            batch: {
+              include: {
+                batchSubjects: {
+                  where: { isActive: true },
+                  include: {
+                    subject: true,
+                    staffProfile: {
+                      include: {
+                        user: { select: { id: true, fullName: true, email: true, phone: true } },
+                      },
+                    },
+                  },
+                },
+                staffAssignments: {
+                  include: {
+                    staffProfile: {
+                      include: {
+                        user: { select: { id: true, fullName: true, email: true, phone: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    const teachersMap = new Map<string, any>();
+
+    for (const enrollment of student.enrollments) {
+      const batch = enrollment.batch;
+      if (!batch) continue;
+
+      // Subject-specific teachers
+      for (const bs of batch.batchSubjects) {
+        if (bs.staffProfile && bs.staffProfile.user) {
+          const staffUserId = bs.staffProfile.user.id;
+          if (!teachersMap.has(staffUserId)) {
+            teachersMap.set(staffUserId, {
+              staffProfileId: bs.staffProfile.id,
+              userId: staffUserId,
+              fullName: bs.staffProfile.user.fullName,
+              email: bs.staffProfile.user.email,
+              phone: bs.staffProfile.user.phone,
+              designation: bs.staffProfile.designation || 'Faculty Teacher',
+              qualification: bs.staffProfile.qualification || null,
+              batchName: batch.name,
+              subjects: [bs.subject.name],
+            });
+          } else {
+            const existing = teachersMap.get(staffUserId);
+            if (!existing.subjects.includes(bs.subject.name)) {
+              existing.subjects.push(bs.subject.name);
+            }
+          }
+        }
+      }
+
+      // General batch coordinators / assigned staff
+      for (const sa of batch.staffAssignments) {
+        if (sa.staffProfile && sa.staffProfile.user) {
+          const staffUserId = sa.staffProfile.user.id;
+          if (!teachersMap.has(staffUserId)) {
+            teachersMap.set(staffUserId, {
+              staffProfileId: sa.staffProfile.id,
+              userId: staffUserId,
+              fullName: sa.staffProfile.user.fullName,
+              email: sa.staffProfile.user.email,
+              phone: sa.staffProfile.user.phone,
+              designation: sa.staffProfile.designation || 'Class Coordinator',
+              qualification: sa.staffProfile.qualification || null,
+              batchName: batch.name,
+              subjects: ['General Academics'],
+            });
+          }
+        }
+      }
+    }
+
+    const teachers = Array.from(teachersMap.values());
+
+    return res.json({
+      success: true,
+      data: {
+        teachers,
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          admissionNumber: student.admissionNumber,
+        },
+      },
+    });
+  } catch (err: any) {
+    console.error('[Parent Student Teachers Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch teachers for student' });
+  }
+}
+
+/**
+ * Consolidated academic report: timetable, subjects, homework, and progress feedback
+ */
+export async function getParentStudentAcademics(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (req.user?.role !== 'PARENT') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Parent access only' });
+    }
+
+    const { studentId } = req.params;
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized for this student' });
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: {
+        institute: { select: { id: true, name: true, code: true } },
+        enrollments: {
+          where: { isActive: true },
+          include: {
+            batch: {
+              include: {
+                batchSubjects: {
+                  where: { isActive: true },
+                  include: {
+                    subject: true,
+                    staffProfile: { include: { user: { select: { fullName: true } } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    const activeBatch = student.enrollments[0]?.batch;
+    const batchId = activeBatch?.id;
+
+    // Subjects & Timetable
+    const subjects = activeBatch?.batchSubjects.map((bs) => ({
+      id: bs.subject.id,
+      name: bs.subject.name,
+      code: bs.subject.code,
+      schedule: bs.schedule || activeBatch.schedule || 'Scheduled session',
+      teacher: bs.staffProfile?.user.fullName || 'Assigned Faculty',
+    })) || [];
+
+    // Active Homework & Tasks
+    let homework: any[] = [];
+    if (batchId) {
+      const materials = await prisma.learningMaterial.findMany({
+        where: {
+          batchId,
+          type: { in: ['HOMEWORK', 'PDF'] },
+        },
+        include: {
+          subject: { select: { name: true } },
+          uploader: { select: { fullName: true } },
+          submissions: {
+            where: { studentId },
+            select: { status: true, submittedAt: true, grade: true, feedback: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
+
+      homework = materials.map((m) => {
+        const sub = m.submissions[0];
+        return {
+          id: m.id,
+          title: m.title,
+          description: m.description,
+          type: m.type,
+          subject: m.subject.name,
+          teacher: m.uploader.fullName,
+          dueDate: m.dueDate,
+          createdAt: m.createdAt,
+          submissionStatus: sub?.status || 'PENDING',
+          submittedAt: sub?.submittedAt || null,
+          grade: sub?.grade || null,
+          teacherFeedback: sub?.feedback || null,
+        };
+      });
+    }
+
+    // Teacher Progress Feedbacks
+    const feedbacks = await prisma.progressFeedback.findMany({
+      where: {
+        studentId,
+        isPublished: true,
+      },
+      include: {
+        staff: { select: { fullName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    const formattedFeedbacks = feedbacks.map((f) => ({
+      id: f.id,
+      termName: f.termName,
+      teacher: f.staff.fullName,
+      remarks: f.remarks,
+      rating: f.rating,
+      strengths: f.strengths,
+      improvements: f.improvements,
+      recommendations: f.recommendations,
+      date: f.createdAt,
+    }));
+
+    // Upcoming Examinations
+    let upcomingExams: any[] = [];
+    if (batchId) {
+      const exams = await prisma.examination.findMany({
+        where: {
+          batchId,
+          examDate: { gte: new Date() },
+        },
+        include: {
+          subject: { select: { name: true } },
+        },
+        orderBy: { examDate: 'asc' },
+        take: 10,
+      });
+
+      upcomingExams = exams.map((e) => ({
+        id: e.id,
+        title: e.title,
+        examType: e.examType,
+        subject: e.subject.name,
+        examDate: e.examDate,
+        totalMarks: Number(e.totalMarks),
+        passingMarks: Number(e.passingMarks),
+      }));
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          admissionNumber: student.admissionNumber,
+          batchName: activeBatch?.name || 'Class',
+          batchSchedule: activeBatch?.schedule || null,
+        },
+        subjects,
+        homework,
+        feedbacks: formattedFeedbacks,
+        upcomingExams,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Parent Student Academics Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch academic report' });
+  }
+}
+
+
 

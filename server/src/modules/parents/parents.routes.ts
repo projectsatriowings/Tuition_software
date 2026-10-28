@@ -8,6 +8,10 @@ import {
   resetParentPassword,
   updateParentLoginIdentifier,
   updateParentAccountStatus,
+  getParentDashboardSummary,
+  getParentStudentAttendance,
+  getParentStudentTeachers,
+  getParentStudentAcademics,
 } from './parents.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 
@@ -15,8 +19,12 @@ const router = Router();
 
 router.use(authenticateToken);
 
-// Parent's own linked children endpoint
+// Parent's own linked children & portal endpoints
 router.get('/my/children', getMyChildren);
+router.get('/my/dashboard-summary', getParentDashboardSummary);
+router.get('/students/:studentId/attendance', getParentStudentAttendance);
+router.get('/students/:studentId/teachers', getParentStudentTeachers);
+router.get('/students/:studentId/academics', getParentStudentAcademics);
 
 // Institute-scoped parent management
 router.use(requireInstituteContext);

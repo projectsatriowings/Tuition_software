@@ -1,0 +1,251 @@
+import React, { useEffect, useState } from 'react';
+import { apiFetch } from '../../services/api';
+import {
+  Award,
+  TrendingUp,
+  Filter,
+  CheckCircle2,
+  XCircle,
+  Calendar,
+  BookOpen,
+  Sparkles,
+} from 'lucide-react';
+
+interface ParentTestResultsViewProps {
+  student: any;
+}
+
+export const ParentTestResultsView: React.FC<ParentTestResultsViewProps> = ({ student }) => {
+  const [reportCard, setReportCard] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
+
+  useEffect(() => {
+    async function loadReportCard() {
+      if (!student?.id) return;
+      try {
+        setLoading(true);
+        const res = await apiFetch(`/exams/students/${student.id}/report-card`);
+        if (res.success && res.data) {
+          setReportCard(res.data);
+        }
+      } catch (err) {
+        console.error('[Load Report Card Error]', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReportCard();
+  }, [student?.id]);
+
+  const allMarks = reportCard?.marks || [];
+  const summary = reportCard?.summary || {
+    totalExams: 0,
+    totalPassed: 0,
+    totalMaxMarks: 0,
+    totalMarksObtained: 0,
+    cumulativePercentage: 0,
+    status: 'NEEDS_IMPROVEMENT',
+  };
+
+  // Distinct subjects for filter
+  const subjects = ['ALL', ...Array.from(new Set(allMarks.map((m: any) => m.subject)))];
+
+  const filteredMarks = selectedSubject === 'ALL'
+    ? allMarks
+    : allMarks.filter((m: any) => m.subject === selectedSubject);
+
+  return (
+    <div className="space-y-6">
+      {/* Header and Filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
+            <Award className="w-5 h-5 text-[#6D4C41]" /> Test Results & Performance Tracking
+          </h2>
+          <p className="text-xs text-[#6D4C41] mt-0.5">
+            Verified marks and examination analytics for{' '}
+            <strong className="text-[#2D1E18]">{student?.firstName} {student?.lastName}</strong>
+          </p>
+        </div>
+
+        {subjects.length > 1 && (
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-[#D7CCC8] shadow-sm">
+            <Filter className="w-3.5 h-3.5 text-[#6D4C41]" />
+            <span className="text-xs text-[#6D4C41] font-bold">Subject:</span>
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="text-xs font-semibold text-[#2D1E18] bg-transparent focus:outline-none cursor-pointer"
+            >
+              {subjects.map((sub: any) => (
+                <option key={sub} value={sub}>
+                  {sub === 'ALL' ? 'All Curriculum Subjects' : sub}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="p-16 text-center text-xs text-[#8D6E63]">
+          Loading examination results...
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Cumulative Performance Analytics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm text-center">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#8D6E63] block">
+                Exams Completed
+              </span>
+              <span className="text-2xl font-black text-[#2D1E18] block mt-1">
+                {summary.totalExams}
+              </span>
+            </div>
+
+            <div className="p-5 rounded-3xl bg-emerald-50 border border-emerald-200 shadow-sm text-center">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
+                Tests Cleared
+              </span>
+              <span className="text-2xl font-black text-emerald-900 block mt-1">
+                {summary.totalPassed}
+              </span>
+            </div>
+
+            <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm text-center">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#8D6E63] block">
+                Total Marks
+              </span>
+              <span className="text-2xl font-black text-[#2D1E18] block mt-1">
+                {summary.totalMarksObtained} / {summary.totalMaxMarks}
+              </span>
+            </div>
+
+            <div className="p-5 rounded-3xl bg-[#4E342E] text-white shadow-sm text-center">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#D7CCC8] block">
+                Overall Percentage
+              </span>
+              <span className="text-2xl font-black text-white block mt-1">
+                {summary.cumulativePercentage}%
+              </span>
+            </div>
+          </div>
+
+          {/* Performance Trend Progress Chart */}
+          {allMarks.length > 0 && (
+            <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-[#2D1E18] flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-[#6D4C41]" /> Performance Progression Over Time
+              </h3>
+
+              <div className="space-y-3 pt-2">
+                {allMarks.slice(0, 6).map((mark: any) => (
+                  <div key={mark.id} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-[#2D1E18]">
+                        {mark.subject} &bull; {mark.examTitle}
+                      </span>
+                      <span className="font-mono font-bold text-[#4E342E]">
+                        {mark.marksObtained}/{mark.totalMarks} ({mark.percentage}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-[#EFEBE9] rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          mark.isAbsent
+                            ? 'bg-rose-400'
+                            : mark.percentage >= 75
+                            ? 'bg-emerald-600'
+                            : mark.percentage >= 40
+                            ? 'bg-amber-500'
+                            : 'bg-rose-500'
+                        }`}
+                        style={{ width: `${mark.isAbsent ? 100 : Math.min(100, mark.percentage)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Examination Results Detailed Table */}
+          <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-[#6D4C41] uppercase tracking-wider">
+              Examination Score Records ({filteredMarks.length})
+            </h3>
+
+            {filteredMarks.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-[#EFEBE9] text-[#8D6E63] font-bold uppercase tracking-wider">
+                      <th className="pb-3">Date</th>
+                      <th className="pb-3">Subject</th>
+                      <th className="pb-3">Exam Details</th>
+                      <th className="pb-3 text-right">Score</th>
+                      <th className="pb-3 text-right">Percentage</th>
+                      <th className="pb-3 text-center">Result</th>
+                      <th className="pb-3">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EFEBE9]">
+                    {filteredMarks.map((m: any) => (
+                      <tr key={m.id} className="hover:bg-[#F7F2EF]/60 transition-colors">
+                        <td className="py-3 text-[#6D4C41]">
+                          {new Date(m.examDate).toLocaleDateString('en-IN', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td className="py-3 font-bold text-[#2D1E18]">
+                          {m.subject}
+                        </td>
+                        <td className="py-3">
+                          <span className="font-semibold text-[#2D1E18] block">{m.examTitle}</span>
+                          <span className="text-[10px] text-[#8D6E63]">{m.examType}</span>
+                        </td>
+                        <td className="py-3 text-right font-mono font-bold text-[#2D1E18]">
+                          {m.isAbsent ? 'ABSENT' : `${m.marksObtained} / ${m.totalMarks}`}
+                        </td>
+                        <td className="py-3 text-right font-mono font-bold text-[#4E342E]">
+                          {m.isAbsent ? '0%' : `${m.percentage}%`}
+                        </td>
+                        <td className="py-3 text-center">
+                          {m.isAbsent ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              Absent
+                            </span>
+                          ) : m.isPass ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              Pass
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              Fail
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 text-[#6D4C41] italic">
+                          {m.remarks || 'Satisfactory'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-12 text-center text-xs text-[#8D6E63]">
+                No examination records found for the selected filter.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
