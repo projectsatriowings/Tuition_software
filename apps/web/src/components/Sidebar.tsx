@@ -233,13 +233,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
             >
               <Sparkles className="w-4 h-4" /> Academic Progress
             </button>
-
-            <button
-              onClick={() => onSelectTab('student_portal')}
-              className={navItemClass('student_fees')}
-            >
-              <CreditCard className="w-4 h-4" /> My Fees & Receipts
-            </button>
           </>
         )}
       </div>

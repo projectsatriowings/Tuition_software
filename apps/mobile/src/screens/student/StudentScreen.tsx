@@ -25,7 +25,7 @@ import { themeTokens } from '@tuition/shared';
 export const StudentScreen: React.FC = () => {
   const { user } = useMobileAuth();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'fees'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance'>('overview');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -295,14 +295,6 @@ export const StudentScreen: React.FC = () => {
             Academics
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('fees')}
-          style={[styles.tabItem, activeTab === 'fees' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'fees' && styles.activeTabText]}>
-            Fees & Receipts
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -515,113 +507,6 @@ export const StudentScreen: React.FC = () => {
                       <Text style={styles.examDateText}>
                         Conducted: {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Scheduled'}
                       </Text>
-                    </View>
-                  </Card>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* TAB 3: FEES & RECEIPTS */}
-          {activeTab === 'fees' && (
-            <View>
-              {/* Financial Balance Summary */}
-              <Card highlighted>
-                <Text style={styles.feeCardTitle}>FEE SUMMARY</Text>
-                <View style={styles.feeGrid}>
-                  <View style={styles.feeGridItem}>
-                    <Text style={styles.feeGridLabel}>Total Assigned</Text>
-                    <Text style={styles.feeGridVal}>
-                      {formatRupee(feeStatement?.summary?.totalAssigned || 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.feeGridItem}>
-                    <Text style={styles.feeGridLabel}>Total Paid</Text>
-                    <Text style={[styles.feeGridVal, { color: '#34d399' }]}>
-                      {formatRupee(feeStatement?.summary?.totalPaid || 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.feeGridItem}>
-                    <Text style={styles.feeGridLabel}>Outstanding</Text>
-                    <Text style={[styles.feeGridVal, { color: '#f87171' }]}>
-                      {formatRupee(feeStatement?.summary?.outstandingBalance || 0)}
-                    </Text>
-                  </View>
-                </View>
-              </Card>
-
-              {/* Fee Assignments Breakdown */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>📋 Fee Assignments</Text>
-              </View>
-
-              {feeStatement?.assignments?.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No fee structures assigned currently.</Text>
-                </Card>
-              ) : (
-                feeStatement?.assignments?.map((item: any) => (
-                  <Card key={item.id}>
-                    <View style={styles.feeItemHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.feeItemTitle}>
-                          {item.feeStructure?.title || 'Term Fee'}
-                        </Text>
-                        <Text style={styles.feeItemFreq}>
-                          {item.feeStructure?.frequency || 'MONTHLY'} &bull; Net: {formatRupee(item.finalAmount)}
-                        </Text>
-                      </View>
-                      <Badge
-                        label={item.status}
-                        variant={
-                          item.status === 'PAID'
-                            ? 'success'
-                            : item.status === 'PARTIALLY_PAID'
-                            ? 'warning'
-                            : 'danger'
-                        }
-                      />
-                    </View>
-                    <View style={styles.feeItemBalanceRow}>
-                      <Text style={styles.feeItemBalanceText}>
-                        Paid: {formatRupee(item.paidAmount)} / Balance: {formatRupee(item.balanceAmount)}
-                      </Text>
-                    </View>
-                  </Card>
-                ))
-              )}
-
-              {/* Payment History & Receipts */}
-              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
-                <Text style={styles.sectionTitle}>🧾 Payment History & Receipts</Text>
-              </View>
-
-              {feeStatement?.payments?.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No payments recorded yet.</Text>
-                </Card>
-              ) : (
-                feeStatement?.payments?.map((payment: any) => (
-                  <Card key={payment.id} onPress={() => handleOpenReceipt(payment.id)}>
-                    <View style={styles.paymentRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.paymentAmt}>{formatRupee(payment.amount)}</Text>
-                        <Text style={styles.paymentMeta}>
-                          {payment.paymentMethod} &bull;{' '}
-                          {new Date(payment.paidAt || payment.createdAt).toLocaleDateString('en-IN')}
-                        </Text>
-                        {payment.receiptNumber && (
-                          <Text style={styles.receiptNumberText}>
-                            Receipt #{payment.receiptNumber}
-                          </Text>
-                        )}
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => handleOpenReceipt(payment.id)}
-                        style={styles.viewReceiptBtn}
-                      >
-                        <Text style={styles.viewReceiptBtnText}>Receipt 📄</Text>
-                      </TouchableOpacity>
                     </View>
                   </Card>
                 ))

@@ -8,9 +8,6 @@ import {
   Building, 
   Users, 
   Sparkles,
-  CreditCard,
-  Receipt,
-  Printer,
   X,
 } from 'lucide-react';
 
@@ -30,9 +27,6 @@ export const StudentPortal: React.FC = () => {
     }).format(d);
   };
   const [student, setStudent] = useState<any>(null);
-  const [feeStatement, setFeeStatement] = useState<any>(null);
-  const [activeReceipt, setActiveReceipt] = useState<any>(null);
-  const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('ALL');
@@ -45,16 +39,6 @@ export const StudentPortal: React.FC = () => {
         if (res.success && res.data?.student) {
           const s = res.data.student;
           setStudent(s);
-
-          // Fetch Student Fee Statement
-          try {
-            const feeRes = await apiFetch(`/fees/students/${s.id}/statement`);
-            if (feeRes.success && feeRes.data) {
-              setFeeStatement(feeRes.data);
-            }
-          } catch (feeErr) {
-            console.error('Failed to load fee statement', feeErr);
-          }
         } else {
           setError(res.error || 'Student record not found');
         }
@@ -313,170 +297,8 @@ export const StudentPortal: React.FC = () => {
               )}
             </div>
 
-            {/* Fees & Balance Statement */}
-            <div className="space-y-3 pt-4 border-t border-[#EFEBE9]">
-              <div className="flex items-center justify-between text-[#2D1E18] font-semibold text-sm">
-                <span className="flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-[#6D4C41]" />
-                  <span>My Tuition Fees & Receipts</span>
-                </span>
-                {feeStatement?.summary && (
-                  <span className="text-xs text-[#6D4C41]">
-                    Outstanding Due: <strong className="text-amber-800 font-black">₹{feeStatement.summary.netOutstanding}</strong>
-                  </span>
-                )}
-              </div>
-
-              {feeStatement?.summary && (
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="p-3 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8]">
-                    <span className="text-[10px] uppercase font-bold text-[#8D6E63] block">Total Payable</span>
-                    <span className="font-bold text-[#2D1E18] text-sm">₹{feeStatement.summary.totalPayable}</span>
-                  </div>
-                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
-                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">Total Paid</span>
-                    <span className="font-bold text-emerald-800 text-sm">₹{feeStatement.summary.totalPaid}</span>
-                  </div>
-                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200">
-                    <span className="text-[10px] uppercase font-bold text-amber-800 block">Balance Due</span>
-                    <span className="font-bold text-amber-800 text-sm">₹{feeStatement.summary.netOutstanding}</span>
-                  </div>
-                </div>
-              )}
-
-              {feeStatement?.statementItems?.length > 0 ? (
-                <div className="space-y-2">
-                  {feeStatement.statementItems.map((item: any) => (
-                    <div key={item.id} className="p-3.5 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-2 text-xs">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="font-bold text-[#2D1E18]">{item.feeStructure?.name}</span>
-                          <span className="text-[11px] text-[#6D4C41] block">{item.termLabel} &bull; Due: {new Date(item.dueDate).toLocaleDateString()}</span>
-                        </div>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          item.calculatedStatus === 'PAID'
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : item.calculatedStatus === 'PARTIALLY_PAID'
-                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                            : 'bg-rose-100 text-rose-800 border border-rose-300'
-                        }`}>
-                          {item.calculatedStatus}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-[#D7CCC8]/60 text-[11px]">
-                        <span className="text-[#6D4C41]">Paid: <strong className="text-emerald-800">₹{item.netPaid}</strong> / ₹{item.finalAmount}</span>
-                        <span className="text-amber-800 font-semibold">Remaining: ₹{item.remainingBalance}</span>
-                      </div>
-
-                      {item.payments?.length > 0 && (
-                        <div className="pt-1 flex items-center gap-1.5 flex-wrap">
-                          {item.payments.map((p: any) => (
-                            <button
-                              key={p.id}
-                              onClick={async () => {
-                                try {
-                                  const rRes = await apiFetch(`/fees/payments/${p.id}/receipt`);
-                                  if (rRes.success && rRes.data?.receipt) {
-                                    setActiveReceipt(rRes.data.receipt);
-                                    setShowReceiptModal(true);
-                                  }
-                                } catch (e) {
-                                  console.error(e);
-                                }
-                              }}
-                              className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] flex items-center gap-1 transition-all"
-                            >
-                              <Receipt className="w-3 h-3" /> {p.receiptNumber} (₹{p.amountPaid})
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-[#8D6E63] italic p-3 bg-[#F7F2EF] rounded-xl border border-[#EFEBE9]">
-                  No fee terms assigned to your account.
-                </p>
-              )}
-            </div>
           </div>
         </div>
-
-      {/* Receipt Modal */}
-      {showReceiptModal && activeReceipt && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-2xl relative my-8">
-            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-              <span className="text-xs font-bold text-[#6D4C41] uppercase tracking-wider flex items-center gap-1.5">
-                <Receipt className="w-4 h-4 text-[#6D4C41]" /> Fee Receipt
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm"
-                >
-                  <Printer className="w-4 h-4" /> Print
-                </button>
-                <button
-                  onClick={() => setShowReceiptModal(false)}
-                  className="text-[#8D6E63] hover:text-[#2D1E18] p-1"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-[#2D1E18] space-y-4 text-xs">
-              <div className="flex justify-between border-b border-[#D7CCC8] pb-3">
-                <div>
-                  <h3 className="font-bold text-[#2D1E18] text-base">{activeReceipt.institute?.name}</h3>
-                  <p className="text-[#6D4C41] text-[11px]">{activeReceipt.institute?.phone} &bull; {activeReceipt.institute?.email}</p>
-                </div>
-                <div className="text-right">
-                  <span className="font-mono font-bold text-[#4E342E] block">{activeReceipt.receiptNumber}</span>
-                  <span className="text-[#8D6E63] text-[11px] block">{new Date(activeReceipt.receiptDate).toLocaleDateString()}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-[#D7CCC8]">
-                <div>
-                  <span className="text-[#8D6E63] text-[10px] uppercase block font-semibold">Student</span>
-                  <span className="font-bold text-[#2D1E18]">{activeReceipt.student?.fullName}</span>
-                </div>
-                <div>
-                  <span className="text-[#8D6E63] text-[10px] uppercase block font-semibold">Admission No</span>
-                  <span className="font-mono text-[#2D1E18]">{activeReceipt.student?.admissionNumber}</span>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-[#6D4C41]">Fee Description:</span>
-                  <span className="font-semibold text-[#2D1E18]">{activeReceipt.feeDetails?.feeName} ({activeReceipt.feeDetails?.termLabel})</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6D4C41]">Total Payable:</span>
-                  <span className="text-[#2D1E18]">₹{activeReceipt.feeDetails?.totalPayable}</span>
-                </div>
-                <div className="flex justify-between font-bold text-emerald-800 text-sm">
-                  <span>Amount Paid:</span>
-                  <span>₹{activeReceipt.feeDetails?.amountPaid}</span>
-                </div>
-                <div className="flex justify-between font-semibold text-amber-800">
-                  <span>Remaining Balance:</span>
-                  <span>₹{activeReceipt.feeDetails?.remainingBalanceAfter}</span>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-[#D7CCC8] text-[10px] text-[#8D6E63] text-center">
-                {activeReceipt.disclaimer}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
