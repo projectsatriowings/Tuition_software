@@ -41,6 +41,7 @@ export const StaffManagement: React.FC = () => {
     fullName: string;
     email: string;
     permanentPassword: string;
+    employeeCode?: string;
     instituteCode?: string;
   } | null>(null);
   const [showCreatedPassword, setShowCreatedPassword] = useState(true);
@@ -208,13 +209,15 @@ export const StaffManagement: React.FC = () => {
     email: string,
     pass: string,
     instCode?: string,
+    empCode?: string,
     key = 'all'
   ) => {
     const code = instCode || activeInstitute?.code || 'INST';
+    const empLine = empCode ? `Employee Code: ${empCode}\n` : '';
     const text = `TuitionOS Staff Login & Password
 --------------------------------------
 Staff Member: ${fullName}
-Role: Staff / Faculty
+${empLine}Role: Staff / Faculty
 Institute Code: ${code}
 Login Email: ${email}
 Permanent Password: ${pass}
@@ -228,12 +231,16 @@ Please keep this login and password safe. This is your permanent account passwor
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [staffRes, batchesRes] = await Promise.all([
+      const [staffRes, batchesRes] = await Promise.allSettled([
         apiFetch(`/staff?search=${encodeURIComponent(search)}`),
         apiFetch('/academics/batches'),
       ]);
-      setStaff(staffRes.data?.staff || []);
-      setBatches(batchesRes.data?.batches || []);
+      if (staffRes.status === 'fulfilled') {
+        setStaff(staffRes.value.data?.staff || []);
+      }
+      if (batchesRes.status === 'fulfilled') {
+        setBatches(batchesRes.value.data?.batches || []);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -245,14 +252,31 @@ Please keep this login and password safe. This is your permanent account passwor
     fetchData();
   }, [search]);
 
-  const handleOpenAddModal = () => {
+  const fetchNextEmployeeCode = async (): Promise<string> => {
+    try {
+      const res = await apiFetch('/staff/next-code');
+      if (res.data?.employeeCode) {
+        return res.data.employeeCode;
+      }
+    } catch (err) {
+      console.error('Failed to fetch next employee code:', err);
+    }
+    const prefix = activeInstitute?.code ? activeInstitute.code.replace(/[^A-Z0-9]/g, '').slice(0, 6) : 'INST';
+    return `${prefix}-EMP-001`;
+  };
+
+  const handleOpenAddModal = async () => {
     setCreatedCredential(null);
     setAddError(null);
+    
+    // Auto-generate employee code with academy name
+    const autoCode = await fetchNextEmployeeCode();
+
     setFormData({
       fullName: '',
       email: '',
       phone: '',
-      employeeCode: '',
+      employeeCode: autoCode,
       designation: '',
       qualification: '',
       password: '',
@@ -261,6 +285,11 @@ Please keep this login and password safe. This is your permanent account passwor
     setShowFormPassword(true);
     setShowCreatedPassword(true);
     setShowAddModal(true);
+  };
+
+  const handleRegenerateEmployeeCode = async () => {
+    const code = await fetchNextEmployeeCode();
+    setFormData((prev) => ({ ...prev, employeeCode: code }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -287,6 +316,7 @@ Please keep this login and password safe. This is your permanent account passwor
         setCreatedCredential({
           fullName: res.data.user.fullName,
           email: res.data.user.email,
+          employeeCode: res.data.employeeCode || formData.employeeCode,
           permanentPassword: res.data.permanentPassword || formData.password,
           instituteCode: res.data.institute?.code || activeInstitute?.code,
         });
@@ -575,6 +605,14 @@ Please keep this login and password safe. This is your permanent account passwor
                       Staff / Faculty
                     </span>
                   </div>
+                  {createdCredential.employeeCode && (
+                    <div className="flex justify-between items-center py-1 border-b border-emerald-100">
+                      <span className="text-[#6D4C41]">Employee Code:</span>
+                      <span className="font-mono font-bold text-[#4E342E] bg-white border border-[#D7CCC8] px-2 py-0.5 rounded text-xs">
+                        {createdCredential.employeeCode}
+                      </span>
+                    </div>
+                  )}
                   {createdCredential.instituteCode && (
                     <div className="flex justify-between items-center py-1 border-b border-emerald-100">
                       <span className="text-[#6D4C41]">Institute Code:</span>
@@ -642,6 +680,7 @@ Please keep this login and password safe. This is your permanent account passwor
                         createdCredential.email,
                         createdCredential.permanentPassword,
                         createdCredential.instituteCode,
+                        createdCredential.employeeCode,
                         'created_all'
                       )
                     }
@@ -705,14 +744,28 @@ Please keep this login and password safe. This is your permanent account passwor
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Employee Code</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-[#4E342E]">Employee Code*</label>
+                      <button
+                        type="button"
+                        onClick={handleRegenerateEmployeeCode}
+                        className="text-[10px] text-[#4E342E] hover:text-[#2D1E18] font-bold flex items-center gap-1 bg-white border border-[#D7CCC8] px-1.5 py-0.5 rounded hover:bg-[#EFEBE9] transition"
+                        title="Auto-generate next employee code with academy name"
+                      >
+                        <Sparkles className="w-2.5 h-2.5 text-[#8D6E63]" /> Auto-generate
+                      </button>
+                    </div>
                     <input
                       type="text"
+                      required
                       value={formData.employeeCode}
-                      onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value })}
-                      placeholder="e.g. EMP-101"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value.toUpperCase() })}
+                      placeholder="e.g. APEX-EMP-001"
+                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono font-medium text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />
+                    <p className="text-[10px] text-[#8D6E63] mt-1">
+                      Auto-generated with academy name. You can customize if needed.
+                    </p>
                   </div>
                 </div>
 
@@ -960,6 +1013,7 @@ Please keep this login and password safe. This is your permanent account passwor
                       viewingStaffCreds.user.email || '',
                       viewingStaffCreds.permissionsJson?.permanentPassword || '',
                       activeInstitute?.code,
+                      viewingStaffCreds.employeeCode || undefined,
                       'view_all'
                     )
                   }

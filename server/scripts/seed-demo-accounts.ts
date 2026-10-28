@@ -173,22 +173,29 @@ async function main() {
     },
   });
 
-  await prisma.staffProfile.upsert({
-    where: {
-      instituteId_employeeCode: {
-        instituteId: institute.id,
-        employeeCode: 'EMP-101',
-      },
-    },
-    update: { qualification: 'M.Sc Physics' },
-    create: {
-      instituteId: institute.id,
-      userId: staffUser.id,
-      employeeCode: 'EMP-101',
-      designation: 'Senior Physics Lecturer',
-      qualification: 'M.Sc Physics',
-    },
+  const existingStaffProfile = await prisma.staffProfile.findFirst({
+    where: { userId: staffUser.id, instituteId: institute.id },
   });
+  if (existingStaffProfile) {
+    await prisma.staffProfile.update({
+      where: { id: existingStaffProfile.id },
+      data: {
+        employeeCode: existingStaffProfile.employeeCode || 'APEX-EMP-001',
+        designation: 'Senior Physics Lecturer',
+        qualification: 'M.Sc Physics',
+      },
+    });
+  } else {
+    await prisma.staffProfile.create({
+      data: {
+        instituteId: institute.id,
+        userId: staffUser.id,
+        employeeCode: 'APEX-EMP-001',
+        designation: 'Senior Physics Lecturer',
+        qualification: 'M.Sc Physics',
+      },
+    });
+  }
   console.log('3. Staff / Teacher Ready:', staffUser.email);
 
   // 6. Parent
