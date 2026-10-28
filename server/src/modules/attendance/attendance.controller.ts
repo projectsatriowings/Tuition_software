@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { config } from '../../config/index.js';
 import { NotificationService } from '../notifications/notification.service.js';
+import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
 import {
   getAuthorizedStudentScope,
   isStudentAuthorized,
@@ -268,7 +269,7 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     // (Preserves successful attendance record even if telephony provider or template fails)
     let smsNotifications: any[] = [];
     try {
-      smsNotifications = await NotificationService.queueAttendanceNotification({
+      await InAppNotificationService.createAttendanceNotifications({
         attendanceEventId: event.id,
         studentId,
         instituteId,
@@ -303,7 +304,8 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
         smsNotification:
           smsNotifications.length > 0
             ? {
-                queued: true,
+                queued: false,
+          reason: 'In-app notification sent',
                 count: smsNotifications.length,
                 status: smsNotifications[0].status,
                 recipient: smsNotifications[0].phoneNumber.replace(/(\d{2})\d+(\d{2})/, '$1******$2'),
@@ -706,7 +708,7 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
         });
 
         // Queue SMS notification for guardians
-        await NotificationService.queueAttendanceNotification({
+        await InAppNotificationService.createAttendanceNotifications({
           attendanceEventId: createdEvent.id,
           studentId,
           instituteId,
@@ -741,7 +743,8 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
           checkOutTimeFormatted,
         },
         smsNotification: {
-          queued: true,
+          queued: false,
+          reason: 'In-app notification sent',
           eventType: 'CHECK_OUT',
         },
       },

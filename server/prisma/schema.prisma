@@ -494,6 +494,7 @@ model Notification {
   readAt             DateTime?
   pushStatus         PushDeliveryStatus @default(PENDING)
   pushError          String?
+  link               String?
   idempotencyKey     String?            @unique
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt

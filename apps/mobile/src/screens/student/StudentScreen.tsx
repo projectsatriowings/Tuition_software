@@ -18,6 +18,8 @@ import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
+import { NotificationModal } from '../../components/NotificationModal';
+import { PushNotificationService } from '../../services/pushNotification.service';
 import { themeTokens } from '@tuition/shared';
 
 export const StudentScreen: React.FC = () => {
@@ -43,6 +45,8 @@ export const StudentScreen: React.FC = () => {
   const [submittingHw, setSubmittingHw] = useState<any>(null);
   const [submissionContent, setSubmissionContent] = useState('');
   const [submissionLoading, setSubmissionLoading] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   const formatKolkataTime = (isoString?: string | null) => {
     if (!isoString) return 'Not available';
@@ -107,11 +111,27 @@ export const StudentScreen: React.FC = () => {
 
   useEffect(() => {
     fetchStudentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
   }, [fetchStudentData]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchStudentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
   };
 
   const handleOpenReceipt = async (paymentId: string) => {
@@ -185,6 +205,14 @@ export const StudentScreen: React.FC = () => {
               if (res.success) {
                 Alert.alert('Success', 'Assignment marked as completed!');
                 fetchStudentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
               } else {
                 Alert.alert('Error', res.error || 'Could not complete assignment.');
               }
@@ -217,6 +245,14 @@ export const StudentScreen: React.FC = () => {
         setSubmittingHw(null);
         setSubmissionContent('');
         fetchStudentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
       } else {
         Alert.alert('Submission Error', res.error || 'Could not submit homework.');
       }
@@ -237,6 +273,8 @@ export const StudentScreen: React.FC = () => {
         title="Student Portal"
         subtitle={studentProfile?.batch?.name ? `Class: ${studentProfile.batch.name}` : 'Welcome back'}
         onRefresh={onRefresh}
+        onOpenNotifications={() => setShowNotificationModal(true)}
+        unreadNotificationsCount={unreadNotifCount}
       />
 
       {/* Tabs */}
@@ -636,6 +674,12 @@ export const StudentScreen: React.FC = () => {
         visible={showReceiptModal}
         onClose={() => setShowReceiptModal(false)}
         receipt={selectedReceipt}
+      />
+
+      <NotificationModal
+        visible={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        onUnreadCountChange={setUnreadNotifCount}
       />
     </View>
   );

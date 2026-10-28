@@ -246,11 +246,11 @@ export const StaffScreen: React.FC = () => {
       });
 
       if (res.success) {
-        const smsNote = (res as any).data?.smsNotification?.queued
-          ? ` SMS queued to parent (${(res as any).data.smsNotification.recipient || 'verified'}).`
-          : '';
+        const notifNote = (res as any).data?.notification?.sent ? ' In-app notification sent to parent.' : '';
+
+
         showToast(
-          `Voice ${actionLabel} confirmed for ${student.user?.fullName || student.firstName}.${smsNote}`,
+          `Voice ${actionLabel} confirmed for ${student.user?.fullName || student.firstName}.${notifNote}`,
           'success'
         );
         setPendingVoiceCandidate(null);

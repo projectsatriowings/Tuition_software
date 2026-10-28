@@ -227,11 +227,12 @@ export const AttendanceManagement: React.FC = () => {
           return;
         }
 
+        const notifInfo = res.data?.notification;
         const smsInfo = res.data?.smsNotification;
         let notificationNote = '';
         if (smsInfo?.queued) {
           const rec = smsInfo.recipient ? ` to ${smsInfo.recipient}` : '';
-          notificationNote = `SMS queued${rec} (${smsInfo.status || 'QUEUED'})`;
+          notificationNote = 'In-app notification sent to linked parents';
         } else if (smsInfo?.reason) {
           notificationNote = smsInfo.reason;
         }
@@ -530,7 +531,7 @@ export const AttendanceManagement: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-[#2D1E18] tracking-tight">Attendance Management</h1>
           <p className="text-sm text-[#6D4C41] mt-1">
-            Voice-based attendance, rapid speech recognition, daily roster, and guardian SMS alerts
+            Voice-based attendance, rapid speech recognition, daily roster, and guardian in-app alerts
           </p>
         </div>
 
@@ -575,7 +576,7 @@ export const AttendanceManagement: React.FC = () => {
                 : 'text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#F7F2EF]'
             }`}
           >
-            SMS Alerts
+            Notification Logs
           </button>
         </div>
       </div>
@@ -890,8 +891,8 @@ export const AttendanceManagement: React.FC = () => {
                     <Send className="w-3.5 h-3.5 text-emerald-700" />
                     <span>
                       {recentAutoCheckIn.smsNotification?.queued
-                        ? `Parent SMS Notification Queued for ${recentAutoCheckIn.smsNotification.recipient} (${recentAutoCheckIn.smsNotification.status})`
-                        : `Parent SMS: ${recentAutoCheckIn.smsNotification?.reason || 'No SMS-enabled primary contact'}`}
+                        ? `Parent In-App Notification Sent`
+                        : `Parent Notification: ${recentAutoCheckIn.smsNotification?.reason || 'Dispatched'}`}
                     </span>
                   </div>
                   <button
@@ -929,7 +930,7 @@ export const AttendanceManagement: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-xs text-amber-900 mt-0.5">
-                        Student is already checked in for today at <strong className="font-bold">{alreadyCheckedInNotice.checkInTimeFormatted}</strong>. Duplicate attendance record prevented; no additional SMS was sent.
+                        Student is already checked in for today at <strong className="font-bold">{alreadyCheckedInNotice.checkInTimeFormatted}</strong>. Duplicate attendance record prevented; no duplicate notification created.
                       </p>
                     </div>
                   </div>
