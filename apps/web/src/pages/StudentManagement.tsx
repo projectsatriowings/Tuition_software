@@ -179,6 +179,30 @@ export const StudentManagement: React.FC = () => {
   const [showParentCreatedPassword, setShowParentCreatedPassword] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Enroll Existing Student Modal State
+  const [showEnrollExistingModal, setShowEnrollExistingModal] = useState(false);
+  const [enrollSearchQuery, setEnrollSearchQuery] = useState('');
+  const [enrollSearchResults, setEnrollSearchResults] = useState<any[]>([]);
+  const [enrollSearching, setEnrollSearching] = useState(false);
+  const [selectedEnrollStudent, setSelectedEnrollStudent] = useState<any | null>(null);
+  const [selectedEnrollBatchId, setSelectedEnrollBatchId] = useState<string>('');
+  const [selectedEnrollSubjectIds, setSelectedEnrollSubjectIds] = useState<string[]>([]);
+  const [enrollLoading, setEnrollLoading] = useState(false);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+
+  // Real-time collision detection during new student creation
+  const [detectedCollision, setDetectedCollision] = useState<{
+    id: string;
+    admissionNumber: string;
+    firstName: string;
+    lastName: string;
+    fullName?: string;
+    phone?: string;
+    email?: string;
+    activeEnrollments?: any[];
+  } | null>(null);
+  const [checkingCollision, setCheckingCollision] = useState(false);
+
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -726,6 +750,116 @@ Please keep this login and password safe. Use your registered mobile number and 
     return () => clearTimeout(timer);
   }, [formData.parentPhone, formData.parentEmail, showAdmitModal]);
 
+  // Debounced student lookup for collision detection during new student admission
+  useEffect(() => {
+    if (!showAdmitModal) {
+      setDetectedCollision(null);
+      setCheckingCollision(false);
+      return;
+    }
+
+    const phone = formData.studentPhone.trim();
+    const email = formData.studentEmail.trim();
+
+    if (phone.length < 10 && (!email || !email.includes('@'))) {
+      setDetectedCollision(null);
+      setCheckingCollision(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setCheckingCollision(true);
+        const query = phone.length >= 10 ? phone : email;
+        const res = await apiFetch(`/students/lookup?search=${encodeURIComponent(query)}`);
+        if (res.success && res.data?.students?.length > 0) {
+          const match = res.data.students[0];
+          setDetectedCollision(match);
+        } else {
+          setDetectedCollision(null);
+        }
+      } catch (err) {
+        setDetectedCollision(null);
+      } finally {
+        setCheckingCollision(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [formData.studentPhone, formData.studentEmail, showAdmitModal]);
+
+  const availableEnrollSubjects = useMemo(() => {
+    if (!selectedEnrollBatchId) return [];
+    const b = batches.find((x) => x.id === selectedEnrollBatchId);
+    return b?.batchSubjects || [];
+  }, [batches, selectedEnrollBatchId]);
+
+  const handleEnrollSearch = async (queryText: string) => {
+    setEnrollSearchQuery(queryText);
+    const q = queryText.trim();
+    if (q.length < 2) {
+      setEnrollSearchResults([]);
+      return;
+    }
+    try {
+      setEnrollSearching(true);
+      const res = await apiFetch(`/students/lookup?search=${encodeURIComponent(q)}`);
+      if (res.success && res.data?.students) {
+        setEnrollSearchResults(res.data.students);
+      } else {
+        setEnrollSearchResults([]);
+      }
+    } catch (err) {
+      console.warn('Failed to lookup students', err);
+      setEnrollSearchResults([]);
+    } finally {
+      setEnrollSearching(false);
+    }
+  };
+
+  const handleEnrollSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEnrollStudent) {
+      setEnrollError('Please search and select a student to enroll.');
+      return;
+    }
+    if (!selectedEnrollBatchId) {
+      setEnrollError('Please select a batch.');
+      return;
+    }
+
+    setEnrollLoading(true);
+    setEnrollError(null);
+    try {
+      const res = await apiFetch(`/students/${selectedEnrollStudent.id}/enroll`, {
+        method: 'POST',
+        body: JSON.stringify({
+          batchId: selectedEnrollBatchId,
+          subjectIds: selectedEnrollSubjectIds,
+        }),
+      });
+
+      if (res.duplicate) {
+        showToast(res.message, 'info');
+      } else {
+        showToast(res.message || 'Student enrolled successfully!', 'success');
+      }
+
+      setShowEnrollExistingModal(false);
+      setSelectedEnrollStudent(null);
+      setSelectedEnrollBatchId('');
+      setSelectedEnrollSubjectIds([]);
+      setEnrollSearchQuery('');
+      setEnrollSearchResults([]);
+      fetchData();
+    } catch (err: any) {
+      setEnrollError(err.message || 'Failed to enroll student');
+      showToast(err.message || 'Failed to enroll student', 'error');
+    } finally {
+      setEnrollLoading(false);
+    }
+  };
+
   const handleAdmitSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdmitError(null);
@@ -822,6 +956,9 @@ Please keep this login and password safe. Use your registered mobile number and 
         fetchData();
       }
     } catch (err: any) {
+      if (err.data?.isExistingStudent && err.data?.existingStudent) {
+        setDetectedCollision(err.data.existingStudent);
+      }
       setAdmitError(err.message || 'Failed to admit student');
       showToast(err.message || 'Could not complete student admission.', 'error');
     } finally {
@@ -882,12 +1019,33 @@ Please keep this login and password safe. Use your registered mobile number and 
           <h1 className="text-2xl font-extrabold text-[#2D1E18]">Student Admissions & Management</h1>
           <p className="text-sm text-[#6D4C41] mt-1">Enrollment, student lifecycle, and academic batch tracking</p>
         </div>
-        <button
-          onClick={() => setShowAdmitModal(true)}
-          className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all self-start"
-        >
-          <Plus className="w-4 h-4" /> Admit New Student
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setEnrollSearchQuery('');
+              setEnrollSearchResults([]);
+              setSelectedEnrollStudent(null);
+              setSelectedEnrollBatchId('');
+              setSelectedEnrollSubjectIds([]);
+              setEnrollError(null);
+              setShowEnrollExistingModal(true);
+            }}
+            className="inline-flex items-center gap-2 bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all"
+          >
+            <UserCheck className="w-4 h-4 text-[#6D4C41]" /> Enroll Existing Student
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDetectedCollision(null);
+              setShowAdmitModal(true);
+            }}
+            className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+          >
+            <Plus className="w-4 h-4" /> Create New Student
+          </button>
+        </div>
       </div>
 
       {/* Filters and Search Bar */}
@@ -1221,6 +1379,52 @@ Please keep this login and password safe. Use your registered mobile number and 
             {admitError && (
               <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs">
                 {admitError}
+              </div>
+            )}
+
+            {detectedCollision && (
+              <div className="mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2.5 shadow-sm">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="text-xs space-y-1">
+                    <span className="font-bold text-sm text-amber-900 block">Existing Student Profile Found</span>
+                    <p className="text-amber-800 leading-relaxed">
+                      A student named <strong>{detectedCollision.fullName || `${detectedCollision.firstName} ${detectedCollision.lastName}`}</strong> (Admission No: <span className="font-mono font-bold">{detectedCollision.admissionNumber}</span>) is already registered in this institute.
+                    </p>
+                    {detectedCollision.activeEnrollments && detectedCollision.activeEnrollments.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <span className="text-[10px] font-semibold text-amber-900">Enrolled In:</span>
+                        {detectedCollision.activeEnrollments.map((enr: any, idx: number) => (
+                          <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-white text-[#4E342E] border border-amber-200">
+                            {enr.batchName}{enr.subjectName ? ` - ${enr.subjectName}` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-1 border-t border-amber-200/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdmitModal(false);
+                      setSelectedEnrollStudent(detectedCollision);
+                      setSelectedEnrollBatchId('');
+                      setSelectedEnrollSubjectIds([]);
+                      setShowEnrollExistingModal(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-semibold text-xs shadow-sm transition inline-flex items-center gap-1.5"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" /> Enroll This Existing Student Instead
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetectedCollision(null)}
+                    className="text-xs text-amber-800 hover:underline px-2 font-medium"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1671,6 +1875,245 @@ Please keep this login and password safe. Use your registered mobile number and 
                   className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50"
                 >
                   {admitLoading ? 'Admitting & Enrolling...' : 'Complete Admission'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Enroll Existing Student Modal */}
+      {showEnrollExistingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-xl p-6 max-h-[92vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
+              <div>
+                <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-[#4E342E]" /> Enroll Existing Student
+                </h2>
+                <p className="text-xs text-[#6D4C41]">
+                  Allocate an existing student to an authorized batch and subject(s) without duplicating accounts
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEnrollExistingModal(false);
+                  setSelectedEnrollStudent(null);
+                  setEnrollError(null);
+                }}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {enrollError && (
+              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs">
+                {enrollError}
+              </div>
+            )}
+
+            <form onSubmit={handleEnrollSubmit} className="space-y-4 mt-4">
+              {/* Step 1: Search & Select Student */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-[#4E342E]">
+                  1. Find Existing Student
+                </label>
+                {!selectedEnrollStudent ? (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-[#8D6E63] absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={enrollSearchQuery}
+                        onChange={(e) => handleEnrollSearch(e.target.value)}
+                        placeholder="Search by name, admission no, or phone..."
+                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-9 pr-4 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                      {enrollSearching && (
+                        <Loader2 className="w-4 h-4 text-[#8D6E63] animate-spin absolute right-3 top-2.5" />
+                      )}
+                    </div>
+
+                    {enrollSearchResults.length > 0 && (
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 border border-[#EFEBE9] p-2 rounded-2xl bg-[#FDFBF7]">
+                        {enrollSearchResults.map((stud) => (
+                          <div
+                            key={stud.id}
+                            onClick={() => {
+                              setSelectedEnrollStudent(stud);
+                              setEnrollError(null);
+                            }}
+                            className="p-2.5 rounded-xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] hover:shadow-xs cursor-pointer transition flex items-center justify-between text-xs"
+                          >
+                            <div>
+                              <div className="font-bold text-[#2D1E18] flex items-center gap-2">
+                                <span>{stud.fullName}</span>
+                                <span className="font-mono text-[10px] bg-[#F7F2EF] px-1.5 py-0.5 rounded border border-[#D7CCC8]">
+                                  {stud.admissionNumber}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-[#6D4C41] mt-0.5">
+                                {stud.phone && <span>Phone: {stud.phone}</span>}
+                                {stud.email && <span className="ml-2">Email: {stud.email}</span>}
+                              </div>
+                              {stud.activeEnrollments && stud.activeEnrollments.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {stud.activeEnrollments.map((enr: any, idx: number) => (
+                                    <span
+                                      key={idx}
+                                      className="px-1.5 py-0.5 rounded text-[10px] bg-[#EFEBE9] text-[#4E342E]"
+                                    >
+                                      {enr.batchName}{enr.subjectName ? ` - ${enr.subjectName}` : ''}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className="px-2.5 py-1 rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white text-[11px] font-semibold shrink-0"
+                            >
+                              Select
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {enrollSearchQuery.trim().length >= 2 && !enrollSearching && enrollSearchResults.length === 0 && (
+                      <p className="text-xs text-[#8D6E63] italic p-2">
+                        No students found matching "{enrollSearchQuery}".
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-emerald-950 flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-emerald-600" />
+                        <span>{selectedEnrollStudent.fullName || `${selectedEnrollStudent.firstName} ${selectedEnrollStudent.lastName}`}</span>
+                        <span className="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-emerald-300">
+                          {selectedEnrollStudent.admissionNumber}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 mt-1">
+                        {selectedEnrollStudent.phone ? `Phone: ${selectedEnrollStudent.phone}` : ''}
+                      </p>
+                      {selectedEnrollStudent.activeEnrollments && selectedEnrollStudent.activeEnrollments.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          <span className="text-[10px] font-semibold text-emerald-900 mr-1">Current Enrollments:</span>
+                          {selectedEnrollStudent.activeEnrollments.map((enr: any, idx: number) => (
+                            <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-white text-[#4E342E] border border-emerald-200">
+                              {enr.batchName}{enr.subjectName ? ` • ${enr.subjectName}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEnrollStudent(null)}
+                      className="text-xs text-emerald-800 hover:text-emerald-950 underline font-semibold shrink-0 ml-3"
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: Select Batch & Subjects */}
+              <div className="space-y-3 pt-2 border-t border-[#EFEBE9]">
+                <label className="block text-xs font-semibold text-[#4E342E]">
+                  2. Select Authorized Batch & Subjects
+                </label>
+                <div>
+                  <label className="block text-[11px] font-medium text-[#6D4C41] mb-1">
+                    Select Batch <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    value={selectedEnrollBatchId}
+                    onChange={(e) => {
+                      setSelectedEnrollBatchId(e.target.value);
+                      setSelectedEnrollSubjectIds([]);
+                    }}
+                    required
+                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="">-- Choose an authorized batch --</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} {b.academicYear ? `(${b.academicYear})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedEnrollBatchId && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#6D4C41] mb-1.5">
+                      Select Subject(s) to Enroll:
+                    </label>
+                    {availableEnrollSubjects.length === 0 ? (
+                      <p className="text-xs text-[#8D6E63] italic p-2 bg-[#FDFBF7] rounded-xl border border-[#EFEBE9]">
+                        Standard batch curriculum.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-[#FDFBF7] border border-[#D7CCC8] rounded-2xl">
+                        {availableEnrollSubjects.map((bs: any) => {
+                          const sid = bs.subject.id;
+                          const isChecked = selectedEnrollSubjectIds.includes(sid);
+                          return (
+                            <label
+                              key={sid}
+                              className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                isChecked
+                                  ? 'bg-white border-[#4E342E] shadow-2xs font-semibold'
+                                  : 'bg-white/60 border-[#EFEBE9] text-[#6D4C41]'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedEnrollSubjectIds([...selectedEnrollSubjectIds, sid]);
+                                  } else {
+                                    setSelectedEnrollSubjectIds(selectedEnrollSubjectIds.filter((x) => x !== sid));
+                                  }
+                                }}
+                                className="rounded text-[#4E342E] focus:ring-[#8D6E63]"
+                              />
+                              <span className="truncate">{bs.subject.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEnrollExistingModal(false);
+                    setSelectedEnrollStudent(null);
+                    setEnrollError(null);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={enrollLoading || !selectedEnrollStudent || !selectedEnrollBatchId}
+                  className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {enrollLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {enrollLoading ? 'Enrolling...' : 'Enroll Student'}
                 </button>
               </div>
             </form>

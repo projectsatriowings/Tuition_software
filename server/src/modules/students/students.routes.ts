@@ -15,6 +15,8 @@ import {
   getRawPhoto,
   lookupParent,
   assignStudentBatch,
+  lookupExistingStudent,
+  enrollExistingStudent,
 } from './students.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 import { fileUpload, photoUpload } from '../../utils/storage.js';
@@ -43,10 +45,12 @@ router.use(requireInstituteContext);
 
 // Student management routes
 router.get('/admission-prefix', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getAdmissionPrefixInfo);
+router.get('/lookup', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), lookupExistingStudent);
 router.get('/lookup-parent', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), lookupParent);
 router.get('/my/profile', requireRole('STUDENT'), getMyStudentProfile);
 router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listStudents);
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), admitStudent);
+router.post('/:id/enroll', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), enrollExistingStudent);
 
 // Photograph upload routes
 router.post('/upload-photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), handlePhotoUpload, uploadStudentPhoto);

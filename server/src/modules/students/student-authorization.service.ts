@@ -294,7 +294,7 @@ export async function getAuthorizedStudentScope(
       };
     }
 
-    // C. No specific batch or subject: student must be in staff's assigned batch and subject OR created by this staff
+    // C. No specific batch or subject: student must be in staff's assigned batch and subject
     const batchSubjectConditions: Prisma.StudentEnrollmentWhereInput[] = [];
 
     for (const bId of authorizedBatchIds) {
@@ -303,10 +303,7 @@ export async function getAuthorizedStudentScope(
         batchSubjectConditions.push({
           isActive: true,
           batchId: bId,
-          OR: [
-            { subjectId: null },
-            { subjectId: { in: sids } },
-          ],
+          subjectId: { in: sids },
         });
       } else {
         batchSubjectConditions.push({
@@ -316,6 +313,15 @@ export async function getAuthorizedStudentScope(
       }
     }
 
+    if (batchSubjectConditions.length === 0) {
+      return {
+        instituteId: instituteId!,
+        isStaff: true,
+        assignedBatchIds: authorizedBatchIds,
+        whereClause: { id: '__DENIED_NO_VALID_CONDITIONS__' },
+      };
+    }
+
     return {
       instituteId: instituteId!,
       isStaff: true,
@@ -323,12 +329,18 @@ export async function getAuthorizedStudentScope(
       whereClause: {
         instituteId: instituteId!,
         OR: [
-          { createdByUserId: userId },
           {
             enrollments: {
               some: {
                 OR: batchSubjectConditions,
               },
+            },
+          },
+          // Allow staff to view freshly created unassigned students that have no active enrollments yet
+          {
+            createdByUserId: userId,
+            enrollments: {
+              none: { isActive: true },
             },
           },
         ],
@@ -426,11 +438,6 @@ export async function isStudentAuthorized(
     }
 
     // For general profile / credential management without batch/subject filter:
-    // Authorized if staff created the student OR student is enrolled in staff's assigned batch/subjects
-    if (student.createdByUserId === req.user.userId) {
-      return true;
-    }
-
     const scope = await getAuthorizedStudentScope(req, prismaClient);
     const scopedStudent = await prismaClient.student.findFirst({
       where: {

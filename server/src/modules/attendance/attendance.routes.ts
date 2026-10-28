@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   recordCheckIn,
+  voiceMatchStudents,
   recordCheckOut,
   getAttendanceSummary,
   getAttendanceReports,
@@ -18,6 +19,11 @@ router.use(requireInstituteContext);
 // Summary & Reporting
 router.get('/summary', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getAttendanceSummary);
 router.get('/reports', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getAttendanceReports);
+
+// Check-in & Check-out actions (Staff & Admins)
+// Voice Matching & Smart Search
+router.post('/voice-match', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), voiceMatchStudents);
+router.get('/voice-match', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), voiceMatchStudents);
 
 // Check-in & Check-out actions (Staff & Admins)
 router.post('/check-in', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), recordCheckIn);

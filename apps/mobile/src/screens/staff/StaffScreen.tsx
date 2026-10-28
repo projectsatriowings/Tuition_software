@@ -224,14 +224,22 @@ export const StaffScreen: React.FC = () => {
       });
 
       if (res.success) {
+        const smsNote = (res as any).data?.smsNotification?.queued
+          ? ` SMS queued to parent (${(res as any).data.smsNotification.recipient}).`
+          : '';
         showToast(
-          `Voice Check-In confirmed for ${student.user?.fullName || student.firstName}. Notification queued.`,
+          `Voice Check-In confirmed for ${student.user?.fullName || student.firstName}.${smsNote}`,
           'success'
         );
         setPendingVoiceCandidate(null);
         setVoiceDisambiguation([]);
         setVoiceQuery('');
         setIsVoiceListening(false);
+      } else if ((res as any).alreadyCheckedIn) {
+        showToast(res.error || `${student.user?.fullName || student.firstName} is already checked in today.`, 'info');
+        setPendingVoiceCandidate(null);
+        setVoiceDisambiguation([]);
+        setVoiceQuery('');
       } else {
         showToast(res.error || 'Failed to record attendance', 'error');
       }

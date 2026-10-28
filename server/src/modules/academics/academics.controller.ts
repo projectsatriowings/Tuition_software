@@ -222,9 +222,34 @@ export async function getBatchDetails(req: AuthenticatedRequest, res: Response) 
       return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
     }
 
+    let filteredEnrollments = batch.enrollments;
+    let filteredBatchSubjects = batch.batchSubjects;
+
+    if (req.user?.role === 'STAFF') {
+      const staffSubjects = await prisma.batchSubject.findMany({
+        where: {
+          batchId: id,
+          staffProfile: { userId: req.user.userId },
+        },
+        select: { subjectId: true },
+      });
+      const staffSubjectIds = new Set(staffSubjects.map((s) => s.subjectId));
+
+      if (staffSubjectIds.size > 0) {
+        // Staff only sees students enrolled in their assigned subjects
+        filteredBatchSubjects = batch.batchSubjects.filter((bs) => staffSubjectIds.has(bs.subjectId));
+        const authorizedStudentIds = new Set(
+          batch.enrollments
+            .filter((e) => e.subjectId && staffSubjectIds.has(e.subjectId))
+            .map((e) => e.student.id)
+        );
+        filteredEnrollments = batch.enrollments.filter((e) => authorizedStudentIds.has(e.student.id));
+      }
+    }
+
     // Build consolidated enrolled students map with their allocated subjects
     const enrolledStudentsMap = new Map<string, any>();
-    for (const enr of batch.enrollments) {
+    for (const enr of filteredEnrollments) {
       if (!enrolledStudentsMap.has(enr.student.id)) {
         enrolledStudentsMap.set(enr.student.id, {
           ...enr.student,
@@ -244,6 +269,7 @@ export async function getBatchDetails(req: AuthenticatedRequest, res: Response) 
       data: {
         batch: {
           ...batch,
+          batchSubjects: filteredBatchSubjects,
           enrolledStudents,
           studentAllocations: enrolledStudents,
         },
@@ -833,13 +859,34 @@ export async function allocateStudentSubjects(req: AuthenticatedRequest, res: Re
       }
 
       // Remove subject enrollments for this batch that are not in subjectIds
-      await tx.studentEnrollment.deleteMany({
-        where: {
-          studentId,
-          batchId,
-          subjectId: { not: null, notIn: subjectIds },
-        },
-      });
+      // If caller is STAFF, only remove subjects that this staff member is assigned to teach!
+      if (req.user?.role === 'STAFF') {
+        const staffSubjects = await tx.batchSubject.findMany({
+          where: {
+            batchId,
+            staffProfile: { userId: req.user.userId },
+          },
+          select: { subjectId: true },
+        });
+        const staffSubjectIds = staffSubjects.map((s) => s.subjectId);
+        if (staffSubjectIds.length > 0) {
+          await tx.studentEnrollment.deleteMany({
+            where: {
+              studentId,
+              batchId,
+              subjectId: { in: staffSubjectIds, notIn: subjectIds },
+            },
+          });
+        }
+      } else {
+        await tx.studentEnrollment.deleteMany({
+          where: {
+            studentId,
+            batchId,
+            subjectId: { not: null, notIn: subjectIds },
+          },
+        });
+      }
 
       // Upsert/create each allocated subject enrollment
       for (const sid of subjectIds) {

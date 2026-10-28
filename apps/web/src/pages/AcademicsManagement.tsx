@@ -4,6 +4,7 @@ import { Batch, Subject } from '../types';
 import { useToast } from '../context/ToastContext';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { StudentAvatar } from '../components/StudentAvatar';
+import { SchedulePicker } from '../components/SchedulePicker';
 import {
   Layers,
   BookOpen,
@@ -1101,7 +1102,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
         {/* Add/Edit Subject inside Batch Modal */}
         {showAddSubjectModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl max-w-lg w-full border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
+            <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
               <div className="flex items-center justify-between border-b border-[#F5F0EB] pb-3">
                 <h3 className="text-base font-black text-[#2D1E18]">
                   {editingBatchSubject ? 'Edit Subject in Batch' : `Add Subject to ${selectedBatchDetails.name}`}
@@ -1155,16 +1156,12 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                   </div>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Schedule & Timing</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Mon & Wed • 4:00 PM - 5:30 PM"
-                    value={subjectForm.schedule}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, schedule: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
+                <SchedulePicker
+                  value={subjectForm.schedule}
+                  onChange={(val) => setSubjectForm({ ...subjectForm, schedule: val })}
+                  label="Schedule & Timing"
+                  helperText="Select days and class timings for this subject."
+                />
 
                 <div>
                   <label className="block font-bold text-[#4E342E] mb-1">Description (Optional)</label>
@@ -1671,7 +1668,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
       {/* Create / Edit Batch Modal */}
       {showBatchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-[#F5F0EB] pb-3">
               <h3 className="text-base font-black text-[#2D1E18]">
                 {editingBatch ? 'Edit Academic Batch' : 'Create New Academic Batch'}
@@ -1712,29 +1709,24 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Academic Year *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 2026-2027"
-                    value={batchForm.academicYear}
-                    onChange={(e) => setBatchForm({ ...batchForm, academicYear: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Schedule & Timings</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Mon, Wed, Fri • 4:00 PM"
-                    value={batchForm.schedule}
-                    onChange={(e) => setBatchForm({ ...batchForm, schedule: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
+              <div>
+                <label className="block font-bold text-[#4E342E] mb-1">Academic Year *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 2026-2027"
+                  value={batchForm.academicYear}
+                  onChange={(e) => setBatchForm({ ...batchForm, academicYear: e.target.value })}
+                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
+                />
               </div>
+
+              <SchedulePicker
+                value={batchForm.schedule}
+                onChange={(val) => setBatchForm({ ...batchForm, schedule: val })}
+                label="Schedule & Timings"
+                helperText="Select default days and class timings for this batch."
+              />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>

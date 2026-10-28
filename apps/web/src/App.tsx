@@ -30,7 +30,7 @@ const AppContent: React.FC = () => {
       if (user.role === 'SUPER_ADMIN') {
         setCurrentTab('super_admin_dashboard');
       } else if (user.role === 'ACADEMIC_ADMIN') {
-        setCurrentTab('academic_dashboard');
+        setCurrentTab((prev) => (prev === 'materials' || prev === 'homework' ? 'academic_dashboard' : prev));
       } else if (user.role === 'STAFF') {
         setCurrentTab('attendance');
       } else if (user.role === 'PARENT') {
@@ -42,6 +42,9 @@ const AppContent: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
+    if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework')) {
+      setCurrentTab('academic_dashboard');
+    }
     if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff')) {
       setCurrentTab('attendance');
     }
@@ -109,9 +112,9 @@ const AppContent: React.FC = () => {
 
                 {currentTab === 'student_portal' && <StudentPortal />}
 
-                {currentTab === 'materials' && <MaterialsManagement />}
+                {currentTab === 'materials' && user?.role !== 'ACADEMIC_ADMIN' && <MaterialsManagement />}
 
-                {currentTab === 'homework' && <HomeworkManagement />}
+                {currentTab === 'homework' && user?.role !== 'ACADEMIC_ADMIN' && <HomeworkManagement />}
 
                 {currentTab === 'exams' && <ExaminationsManagement />}
 
@@ -139,4 +142,3 @@ export default function App() {
     </ToastProvider>
   );
 }
-

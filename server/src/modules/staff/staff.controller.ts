@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
+import { generateNextEmployeeCode } from './staff-code.service.js';
 
 const prisma = new PrismaClient();
 
@@ -93,6 +94,12 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
             },
           },
         },
+        batchSubjects: {
+          include: {
+            batch: { select: { id: true, name: true, code: true } },
+            subject: { select: { id: true, name: true, code: true } },
+          },
+        },
       },
     });
 
@@ -102,6 +109,26 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to list staff profiles' });
+  }
+}
+
+/**
+ * Get next auto-generated employee code with academy name
+ */
+export async function getNextEmployeeCodeHandler(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(400).json({ success: false, error: 'Institute context required' });
+    }
+
+    const employeeCode = await generateNextEmployeeCode(prisma, instituteId);
+    return res.json({
+      success: true,
+      data: { employeeCode },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to generate next employee code' });
   }
 }
 
@@ -135,20 +162,24 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       });
     }
 
-    // Check employee code uniqueness within institute
-    if (data.employeeCode) {
+    // Auto-generate employee code with academy name if not supplied
+    let employeeCode = data.employeeCode?.trim() || '';
+    if (!employeeCode) {
+      employeeCode = await generateNextEmployeeCode(prisma, instituteId);
+    } else {
+      // Check employee code uniqueness within institute
       const existingCode = await prisma.staffProfile.findUnique({
         where: {
           instituteId_employeeCode: {
             instituteId,
-            employeeCode: data.employeeCode.trim(),
+            employeeCode,
           },
         },
       });
       if (existingCode) {
         return res.status(409).json({
           success: false,
-          error: `Employee code '${data.employeeCode}' already exists in this institute`,
+          error: `Employee code '${employeeCode}' already exists in this institute`,
         });
       }
     }
@@ -190,7 +221,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         data: {
           instituteId,
           userId: user.id,
-          employeeCode: data.employeeCode?.trim() || null,
+          employeeCode,
           designation: data.designation.trim(),
           qualification: data.qualification?.trim() || null,
           permissionsJson: staffPermissions,
@@ -236,6 +267,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       message: 'Permanent staff login created successfully',
       data: {
         staffId: result.staffProfile.id,
+        employeeCode: result.staffProfile.employeeCode,
         user: {
           id: result.user.id,
           fullName: result.user.fullName,
@@ -282,6 +314,12 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
         assignments: {
           include: {
             batch: true,
+          },
+        },
+        batchSubjects: {
+          include: {
+            batch: { select: { id: true, name: true, code: true } },
+            subject: { select: { id: true, name: true, code: true } },
           },
         },
       },
@@ -437,17 +475,13 @@ export async function updateStaffStatus(req: AuthenticatedRequest, res: Response
 }
 
 /**
- * Assign batches to staff
+ * Assign batches and subjects to staff (Academic Admin & Super Admin)
  */
 export async function assignStaffBatches(req: AuthenticatedRequest, res: Response) {
   try {
     const instituteId = req.instituteId;
     const { id } = req.params;
-    const { batchIds } = req.body;
-
-    if (!Array.isArray(batchIds)) {
-      return res.status(400).json({ success: false, error: 'batchIds must be an array of IDs' });
-    }
+    const { batchIds = [], assignments } = req.body;
 
     const staff = await prisma.staffProfile.findFirst({
       where: { id, instituteId },
@@ -456,29 +490,84 @@ export async function assignStaffBatches(req: AuthenticatedRequest, res: Respons
       return res.status(404).json({ success: false, error: 'Staff member not found' });
     }
 
-    // Verify all batches belong to this institute
-    const batches = await prisma.batch.findMany({
-      where: { id: { in: batchIds }, instituteId },
-    });
+    // Determine all batch IDs involved
+    let allBatchIds = Array.isArray(batchIds) ? [...batchIds] : [];
+    if (Array.isArray(assignments)) {
+      for (const a of assignments) {
+        if (a.batchId && !allBatchIds.includes(a.batchId)) {
+          allBatchIds.push(a.batchId);
+        }
+      }
+    }
 
-    if (batches.length !== batchIds.length) {
-      return res.status(400).json({ success: false, error: 'One or more invalid batch IDs provided' });
+    // Verify all batches belong to this institute
+    if (allBatchIds.length > 0) {
+      const batches = await prisma.batch.findMany({
+        where: { id: { in: allBatchIds }, instituteId },
+        include: { batchSubjects: true },
+      });
+
+      if (batches.length !== allBatchIds.length) {
+        return res.status(400).json({ success: false, error: 'One or more invalid batch IDs provided' });
+      }
+
+      // If assignments provided, validate that each subject belongs to the selected batch
+      if (Array.isArray(assignments)) {
+        for (const a of assignments) {
+          const batch = batches.find((b) => b.id === a.batchId);
+          if (!batch) {
+            return res.status(400).json({ success: false, error: `Batch '${a.batchId}' not found` });
+          }
+          const validSubjectIds = batch.batchSubjects.map((bs) => bs.subjectId);
+          if (Array.isArray(a.subjectIds)) {
+            for (const sid of a.subjectIds) {
+              if (!validSubjectIds.includes(sid)) {
+                return res.status(400).json({
+                  success: false,
+                  error: `Subject '${sid}' does not belong to batch '${batch.name}'`,
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
     await prisma.$transaction(async (tx) => {
-      // Clear existing assignments
+      // 1. Update StaffBatchAssignment
       await tx.staffBatchAssignment.deleteMany({
         where: { staffProfileId: id },
       });
 
-      // Add new assignments
-      if (batchIds.length > 0) {
+      if (allBatchIds.length > 0) {
         await tx.staffBatchAssignment.createMany({
-          data: batchIds.map((batchId) => ({
+          data: allBatchIds.map((batchId) => ({
             staffProfileId: id,
             batchId,
           })),
         });
+      }
+
+      // 2. Update BatchSubject assignments if assignments array is provided
+      if (Array.isArray(assignments)) {
+        // Clear previous subject assignments for this staff
+        await tx.batchSubject.updateMany({
+          where: { staffProfileId: id },
+          data: { staffProfileId: null },
+        });
+
+        // Assign staff to specified subjects in each batch
+        for (const a of assignments) {
+          if (Array.isArray(a.subjectIds) && a.subjectIds.length > 0) {
+            await tx.batchSubject.updateMany({
+              where: {
+                batchId: a.batchId,
+                subjectId: { in: a.subjectIds },
+              },
+              data: { staffProfileId: id },
+            });
+          }
+        }
       }
 
       await tx.auditLog.create({
@@ -488,17 +577,18 @@ export async function assignStaffBatches(req: AuthenticatedRequest, res: Respons
           action: 'STAFF_BATCHES_ASSIGNED',
           entityType: 'StaffProfile',
           entityId: id,
-          newValues: { batchIds },
+          newValues: { batchIds: allBatchIds, assignments },
         },
       });
     });
 
     return res.json({
       success: true,
-      message: 'Staff batch assignments updated successfully',
+      message: 'Staff batch and subject assignments updated successfully',
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: 'Failed to assign batches to staff' });
+    console.error('[assignStaffBatches error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to assign batches and subjects to staff' });
   }
 }
 
