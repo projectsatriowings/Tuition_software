@@ -1430,7 +1430,7 @@ export async function getParentStudentAcademics(req: AuthenticatedRequest, res: 
           title: m.title,
           description: m.description,
           type: m.type,
-          subject: m.subject.name,
+          subject: m.subject?.name || 'General',
           teacher: m.uploader.fullName,
           dueDate: m.dueDate,
           createdAt: m.createdAt,
