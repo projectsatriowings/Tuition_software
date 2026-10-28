@@ -39,6 +39,7 @@ export const StudentPortal: React.FC = () => {
   const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('ALL');
 
   useEffect(() => {
     async function loadStudentData() {
@@ -98,8 +99,36 @@ export const StudentPortal: React.FC = () => {
     );
   }
 
-  const enrollment = student.enrollments?.[0];
-  const attendanceEvents = student.attendanceEvents || [];
+  // Group active enrollments by batch
+  const batchMap = new Map<string, { batch: any; subjects: Array<{ id: string; name: string; code?: string; teacherName?: string }> }>();
+  for (const enr of (student.enrollments || [])) {
+    if (enr.batch) {
+      if (!batchMap.has(enr.batch.id)) {
+        batchMap.set(enr.batch.id, {
+          batch: enr.batch,
+          subjects: [],
+        });
+      }
+      if (enr.subject) {
+        const bs = (enr.batch.batchSubjects || []).find((x: any) => x.subjectId === enr.subject.id);
+        const teacherName = bs?.staffProfile?.user?.fullName || null;
+        const exists = batchMap.get(enr.batch.id)!.subjects.some((s) => s.id === enr.subject.id);
+        if (!exists) {
+          batchMap.get(enr.batch.id)!.subjects.push({
+            id: enr.subject.id,
+            name: enr.subject.name,
+            code: enr.subject.code,
+            teacherName,
+          });
+        }
+      }
+    }
+  }
+  const enrolledBatches = Array.from(batchMap.values());
+  const attendanceEvents = student?.attendanceEvents || [];
+  const filteredAttendanceEvents = selectedBatchFilter === 'ALL'
+    ? attendanceEvents
+    : attendanceEvents.filter((evt: any) => evt.batchId === selectedBatchFilter);
 
   return (
     <div className="space-y-6">
@@ -133,9 +162,11 @@ export const StudentPortal: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
-            <span className="text-xs text-[#D7CCC8] block">Class / Batch</span>
+            <span className="text-xs text-[#D7CCC8] block">Active Enrollments</span>
             <span className="text-base font-bold text-white block mt-0.5">
-              {enrollment?.batch?.name || 'Assigned Batch'}
+              {enrolledBatches.length > 0
+                ? `${enrolledBatches.length} Active Batch${enrolledBatches.length > 1 ? 'es' : ''}`
+                : 'No active batch'}
             </span>
           </div>
           <div className="w-14 h-14 rounded-2xl bg-[#6D4C41] border border-[#BCAAA4] text-white flex items-center justify-center font-bold text-xl shadow-md">
@@ -180,24 +211,74 @@ export const StudentPortal: React.FC = () => {
         {/* Academic & Attendance & Fees Overview */}
         <div className="lg:col-span-2 space-y-6">
           <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-[#2D1E18] font-bold text-base">
-              <GraduationCap className="w-5 h-5 text-[#6D4C41]" />
-              <span>Academic & Enrollment Overview</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#2D1E18] font-bold text-base">
+                <GraduationCap className="w-5 h-5 text-[#6D4C41]" />
+                <span>My Active Batches & Subjects</span>
+              </div>
+              <span className="text-xs text-[#8D6E63] font-medium">
+                {enrolledBatches.length} Enrolled Batch{enrolledBatches.length > 1 ? 'es' : ''}
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#EFEBE9] space-y-1">
-                <span className="text-[11px] text-[#8D6E63] uppercase font-semibold">Institute Information</span>
-                <p className="text-sm font-semibold text-[#2D1E18]">{student.institute?.name}</p>
-                <p className="text-xs text-[#6D4C41]">{student.institute?.address || 'Main Campus'}</p>
+            {enrolledBatches.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#EFEBE9] text-xs text-[#8D6E63] text-center">
+                No active batch allocations found for this student.
               </div>
+            ) : (
+              <div className="space-y-3">
+                {enrolledBatches.map(({ batch, subjects }) => (
+                  <div key={batch.id} className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#EFEBE9] space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-[#2D1E18] text-sm">{batch.name}</h4>
+                          {batch.code && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white border border-[#D7CCC8] text-[#4E342E]">
+                              {batch.code}
+                            </span>
+                          )}
+                        </div>
+                        {batch.academicYear && (
+                          <span className="text-[11px] text-[#8D6E63]">Academic Year: {batch.academicYear}</span>
+                        )}
+                      </div>
+                      {batch.schedule && (
+                        <div className="text-xs text-[#6D4C41] flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-[#8D6E63]" />
+                          <span>{batch.schedule}</span>
+                        </div>
+                      )}
+                    </div>
 
-              <div className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#EFEBE9] space-y-1">
-                <span className="text-[11px] text-[#8D6E63] uppercase font-semibold">Batch & Subject</span>
-                <p className="text-sm font-semibold text-[#2D1E18]">{enrollment?.batch?.name || 'Class 10'}</p>
-                <p className="text-xs text-[#6D4C41]">{enrollment?.subject?.name || 'Standard Curriculum'}</p>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#8D6E63] block mb-1.5">
+                        Allocated Subjects & Teachers:
+                      </span>
+                      {subjects.length === 0 ? (
+                        <span className="text-xs text-[#6D4C41] italic">Standard batch curriculum</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {subjects.map((sub) => (
+                            <div
+                              key={sub.id}
+                              className="px-3 py-1.5 rounded-xl bg-white border border-[#D7CCC8] shadow-2xs flex items-center gap-2 text-xs"
+                            >
+                              <span className="font-bold text-[#2D1E18]">{sub.name}</span>
+                              {sub.teacherName && (
+                                <span className="text-[11px] text-[#8D6E63] bg-[#F7F2EF] px-1.5 py-0.5 rounded border border-[#EFEBE9]">
+                                  Teacher: <strong className="text-[#4E342E]">{sub.teacherName}</strong>
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
 
             {/* Linked Guardians */}
             <div className="space-y-3 pt-2">
@@ -227,18 +308,39 @@ export const StudentPortal: React.FC = () => {
 
             {/* Attendance History */}
             <div className="space-y-3 pt-2">
-              <div className="flex items-center gap-2 text-[#2D1E18] font-semibold text-sm">
-                <Clock className="w-4 h-4 text-[#6D4C41]" />
-                <span>Recent Attendance Activity</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-[#2D1E18] font-semibold text-sm">
+                  <Clock className="w-4 h-4 text-[#6D4C41]" />
+                  <span>Recent Attendance Activity</span>
+                </div>
+                {enrolledBatches.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[#8D6E63] font-medium">Batch Filter:</span>
+                    <select
+                      value={selectedBatchFilter}
+                      onChange={(e) => setSelectedBatchFilter(e.target.value)}
+                      className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1 text-xs text-[#2D1E18] focus:outline-none focus:ring-1 focus:ring-[#8D6E63]"
+                    >
+                      <option value="ALL">All Enrolled Batches</option>
+                      {enrolledBatches.map(({ batch }) => (
+                        <option key={batch.id} value={batch.id}>
+                          {batch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
-              {attendanceEvents.length === 0 ? (
+              {filteredAttendanceEvents.length === 0 ? (
                 <p className="text-xs text-[#8D6E63] italic p-3 bg-[#F7F2EF] rounded-xl border border-[#EFEBE9]">
-                  No attendance scans recorded for this term yet.
+                  {selectedBatchFilter === 'ALL'
+                    ? 'No attendance scans recorded for this term yet.'
+                    : 'No attendance scans recorded for the selected batch.'}
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {attendanceEvents.slice(0, 5).map((evt: any, i: number) => (
+                  {filteredAttendanceEvents.slice(0, 5).map((evt: any, i: number) => (
                     <div key={evt.id || i} className="p-3 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2.5">
                         <span className={`w-2 h-2 rounded-full ${evt.eventType === 'CHECK_IN' ? 'bg-emerald-600' : 'bg-amber-600'}`}></span>

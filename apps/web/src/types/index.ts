@@ -52,6 +52,21 @@ export interface StaffMember {
       academicYear: string;
     };
   }>;
+  batchSubjects?: Array<{
+    id: string;
+    batchId: string;
+    subjectId: string;
+    batch: {
+      id: string;
+      name: string;
+      code?: string | null;
+    };
+    subject: {
+      id: string;
+      name: string;
+      code?: string | null;
+    };
+  }>;
 }
 
 export interface Student {

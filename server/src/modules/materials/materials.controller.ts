@@ -5,6 +5,10 @@ import fs from 'fs';
 import path from 'path';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { resolveAbsolutePath, getRelativeStorageKey } from '../../utils/storage.js';
+import {
+  isStaffAssignedToBatch,
+  isStaffAssignedToBatchSubject,
+} from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
@@ -43,6 +47,18 @@ export async function createMaterial(req: AuthenticatedRequest, res: Response) {
     }
 
     const data = parse.data;
+
+    // Verify staff authorization
+    if (req.user?.role === 'STAFF') {
+      const isAssigned = await isStaffAssignedToBatch(req, data.batchId, prisma);
+      if (!isAssigned) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+      }
+      const isAssignedSub = await isStaffAssignedToBatchSubject(req, data.batchId, data.subjectId, prisma);
+      if (!isAssignedSub) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to upload materials for this subject' });
+      }
+    }
 
     // Verify batch belongs to institute
     const batch = await prisma.batch.findFirst({
@@ -156,19 +172,62 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
     }
 
     // Role-based scope isolation
-    if (req.user?.role === 'STUDENT') {
-      // Find student's enrolled batches
+    if (req.user?.role === 'STAFF') {
+      const staffProfile = await prisma.staffProfile.findFirst({
+        where: { userId: req.user.userId, instituteId },
+      });
+      if (!staffProfile) {
+        return res.json({ success: true, data: { materials: [] } });
+      }
+      const batchSubjects = await prisma.batchSubject.findMany({
+        where: { staffProfileId: staffProfile.id },
+        select: { batchId: true, subjectId: true },
+      });
+      const staffAssignments = await prisma.staffBatchAssignment.findMany({
+        where: { staffProfileId: staffProfile.id },
+        select: { batchId: true },
+      });
+      const allowedBatchIds = Array.from(new Set([
+        ...staffAssignments.map((a) => a.batchId),
+        ...batchSubjects.map((bs) => bs.batchId),
+      ]));
+      if (allowedBatchIds.length === 0) {
+        return res.json({ success: true, data: { materials: [] } });
+      }
+      if (where.batchId) {
+        if (!allowedBatchIds.includes(where.batchId)) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+        }
+      } else {
+        where.batchId = { in: allowedBatchIds };
+      }
+      if (batchSubjects.length > 0) {
+        const allowedSubjectIds = batchSubjects.map((bs) => bs.subjectId);
+        if (where.subjectId) {
+          if (!allowedSubjectIds.includes(where.subjectId)) {
+            return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this subject' });
+          }
+        } else {
+          where.subjectId = { in: allowedSubjectIds };
+        }
+      }
+    } else if (req.user?.role === 'STUDENT') {
+      // Find student's enrolled batches and allocated subjects
       const enrollments = await prisma.studentEnrollment.findMany({
         where: {
           student: { userId: req.user.userId },
           isActive: true,
         },
-        select: { batchId: true },
+        select: { batchId: true, subjectId: true },
       });
-      const allowedBatchIds = enrollments.map((e) => e.batchId);
+      const allowedBatchIds = Array.from(new Set(enrollments.map((e) => e.batchId)));
+      const allowedSubjectIds = Array.from(new Set(enrollments.map((e) => e.subjectId).filter(Boolean) as string[]));
       where.batchId = { in: allowedBatchIds };
+      if (allowedSubjectIds.length > 0) {
+        where.subjectId = { in: allowedSubjectIds };
+      }
     } else if (req.user?.role === 'PARENT') {
-      // Find parent's linked children enrolled batches
+      // Find parent's linked children enrolled batches and subjects
       const enrollments = await prisma.studentEnrollment.findMany({
         where: {
           student: {
@@ -178,10 +237,14 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
           },
           isActive: true,
         },
-        select: { batchId: true },
+        select: { batchId: true, subjectId: true },
       });
-      const allowedBatchIds = enrollments.map((e) => e.batchId);
+      const allowedBatchIds = Array.from(new Set(enrollments.map((e) => e.batchId)));
+      const allowedSubjectIds = Array.from(new Set(enrollments.map((e) => e.subjectId).filter(Boolean) as string[]));
       where.batchId = { in: allowedBatchIds };
+      if (allowedSubjectIds.length > 0) {
+        where.subjectId = { in: allowedSubjectIds };
+      }
     }
 
     const materials = await prisma.learningMaterial.findMany({

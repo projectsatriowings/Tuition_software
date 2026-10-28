@@ -48,7 +48,23 @@ export const AttendanceManagement: React.FC = () => {
   // Active view tab: 'voice' (primary) | 'daily' | 'reports' | 'sms_logs'
   const [viewTab, setViewTab] = useState<'voice' | 'daily' | 'reports' | 'sms_logs'>('voice');
 
-  // Confirmation state for voice attendance
+  // Confirmation & Smart Voice Attendance State
+  const [voiceSearching, setVoiceSearching] = useState<boolean>(false);
+  const [voiceResult, setVoiceResult] = useState<any>(null);
+  const [recentAutoCheckIn, setRecentAutoCheckIn] = useState<{
+    student: any;
+    smsNotification?: {
+      queued: boolean;
+      recipient?: string;
+      status?: string;
+      reason?: string;
+      count?: number;
+    };
+  } | null>(null);
+  const [alreadyCheckedInNotice, setAlreadyCheckedInNotice] = useState<{
+    student: any;
+    checkInTimeFormatted: string;
+  } | null>(null);
   const [pendingVoiceCandidate, setPendingVoiceCandidate] = useState<EnrolledStudentCandidate | null>(null);
   const [candidateOptions, setCandidateOptions] = useState<EnrolledStudentCandidate[]>([]);
   const [manualVoiceInput, setManualVoiceInput] = useState<string>('');
@@ -170,34 +186,169 @@ export const AttendanceManagement: React.FC = () => {
     }));
   }, [attendanceData]);
 
+  // Unified Check-In executor (supports Automatic Voice Check-In, Disambiguation Selection, & Manual Confirmation)
+  const executeStudentCheckIn = useCallback(
+    async (
+      candidate: EnrolledStudentCandidate,
+      method: AttendanceMethod | 'MANUAL' | 'QR_SCAN' | 'VOICE_CONFIRMED' = AttendanceMethod.VOICE_CONFIRMED,
+      isAuto = false
+    ) => {
+      setActionLoading(candidate.id);
+      setFeedback(null);
+      setAlreadyCheckedInNotice(null);
+      if (!isAuto) {
+        setRecentAutoCheckIn(null);
+      }
+
+      try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const idempotencyKey = `ATT_${candidate.id}_${todayStr}_CHECKIN_1`;
+        const res = await apiFetch('/attendance/check-in', {
+          method: 'POST',
+          body: JSON.stringify({
+            studentId: candidate.id,
+            batchId: selectedBatchId || candidate.batchId || undefined,
+            subjectId: selectedSubjectId || candidate.subjectId || undefined,
+            method,
+            idempotencyKey,
+          }),
+        });
+
+        if (res.data?.alreadyProcessed) {
+          setAlreadyCheckedInNotice({
+            student: res.data.student,
+            checkInTimeFormatted: res.data.student.checkInTimeFormatted || 'earlier today',
+          });
+          setPendingVoiceCandidate(null);
+          setCandidateOptions([]);
+          setVoiceResult(null);
+          return;
+        }
+
+        if (isAuto) {
+          setRecentAutoCheckIn({
+            student: res.data?.student || candidate,
+            smsNotification: res.data?.smsNotification,
+          });
+          setPendingVoiceCandidate(null);
+          setCandidateOptions([]);
+          setVoiceResult(null);
+        } else {
+          setFeedback({
+            type: 'success',
+            message: `${candidate.firstName} ${candidate.lastName} checked in successfully (${method}).`,
+            notificationNote: res.data?.smsNotification?.queued
+              ? `SMS queued to parent (${res.data.smsNotification.recipient})`
+              : res.data?.smsNotification?.reason || 'No SMS permission configured for linked guardians',
+          });
+          setPendingVoiceCandidate(null);
+          setCandidateOptions([]);
+          setVoiceResult(null);
+        }
+
+        fetchSummary();
+      } catch (err: any) {
+        console.warn('[CheckIn Action Error]', err);
+        if (err.data?.alreadyCheckedIn) {
+          setAlreadyCheckedInNotice({
+            student: err.data.data?.student || candidate,
+            checkInTimeFormatted: err.data.data?.existingEvent?.eventTimeFormatted || 'earlier today',
+          });
+          setPendingVoiceCandidate(null);
+          setCandidateOptions([]);
+          setVoiceResult(null);
+        } else {
+          setFeedback({
+            type: 'error',
+            message: err.message || 'Failed to record check-in',
+          });
+        }
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [selectedBatchId, selectedSubjectId, fetchSummary]
+  );
+
+  // Perform Voice Match with Backend and Auto-Check-In
+  const performVoiceMatch = useCallback(
+    async (spokenText: string) => {
+      const trimmed = spokenText.trim();
+      if (!trimmed) return;
+
+      setVoiceSearching(true);
+      setNoMatchPhrase(null);
+      setFeedback(null);
+      setPendingVoiceCandidate(null);
+      setCandidateOptions([]);
+      setAlreadyCheckedInNotice(null);
+      setRecentAutoCheckIn(null);
+
+      try {
+        const res = await apiFetch('/attendance/voice-match', {
+          method: 'POST',
+          body: JSON.stringify({
+            transcript: trimmed,
+            batchId: selectedBatchId || undefined,
+            subjectId: selectedSubjectId || undefined,
+          }),
+        });
+
+        if (res.success) {
+          setVoiceResult(res);
+
+          // Case A: Exactly one eligible student matches AND not already checked in -> Auto Check-In!
+          if (res.status === 'EXACT_SINGLE' && res.autoCheckInEligible && res.bestMatch) {
+            await executeStudentCheckIn(res.bestMatch, 'VOICE_CONFIRMED', true);
+          } else if (res.alreadyCheckedIn && res.bestMatch) {
+            // Already checked in today
+            setAlreadyCheckedInNotice({
+              student: res.bestMatch,
+              checkInTimeFormatted: res.checkInTimeFormatted || 'earlier today',
+            });
+            setVoiceResult(null);
+          } else if (res.status === 'EXACT_MULTIPLE' || res.status === 'FUZZY_MULTIPLE') {
+            // Case B: Multiple students match -> Show disambiguation list at top with Check In buttons
+            setCandidateOptions(res.matches || []);
+          } else if (res.status === 'FUZZY_SINGLE' && res.requiresConfirmation && res.bestMatch) {
+            // Low confidence match -> Staff confirmation required
+            setPendingVoiceCandidate(res.bestMatch);
+          } else if (res.status === 'NO_MATCH') {
+            // Case C: No student matches
+            setNoMatchPhrase(trimmed);
+          }
+        }
+      } catch (err: any) {
+        console.error('[Voice Match Backend Error]', err);
+        // Fallback: If backend search fails or offline, use shared client voice matcher
+        const localRes = matchStudentVoice(trimmed, enrolledCandidates);
+        if (localRes.status === 'EXACT_SINGLE' && localRes.bestMatch) {
+          setPendingVoiceCandidate(localRes.bestMatch);
+        } else if (localRes.status === 'EXACT_MULTIPLE' || localRes.status === 'FUZZY_MULTIPLE') {
+          const cands =
+            localRes.exactMatches.length > 0
+              ? localRes.exactMatches
+              : localRes.fuzzyMatches.map((f) => f.student);
+          setCandidateOptions(cands);
+        } else {
+          setNoMatchPhrase(trimmed);
+        }
+      } finally {
+        setVoiceSearching(false);
+      }
+    },
+    [selectedBatchId, selectedSubjectId, enrolledCandidates, executeStudentCheckIn]
+  );
+
   // Web Speech Recognition Hook
   const handleSpeechResult = useCallback(
     (spokenText: string, isFinal: boolean) => {
-      if (!spokenText.trim() || enrolledCandidates.length === 0) return;
-
-      const matchResult = matchStudentVoice(spokenText, enrolledCandidates);
-
-      if (matchResult.status === 'EXACT_SINGLE' || matchResult.status === 'FUZZY_SINGLE') {
-        if (matchResult.bestMatch) {
-          setPendingVoiceCandidate(matchResult.bestMatch);
-          setCandidateOptions([]);
-          setNoMatchPhrase(null);
-        }
-      } else if (matchResult.status === 'EXACT_MULTIPLE' || matchResult.status === 'FUZZY_MULTIPLE') {
-        setPendingVoiceCandidate(null);
-        const candidates =
-          matchResult.exactMatches.length > 0
-            ? matchResult.exactMatches
-            : matchResult.fuzzyMatches.map((f) => f.student);
-        setCandidateOptions(candidates);
-        setNoMatchPhrase(null);
-      } else {
-        setPendingVoiceCandidate(null);
-        setCandidateOptions([]);
-        setNoMatchPhrase(spokenText);
+      if (!spokenText.trim()) return;
+      if (isFinal) {
+        performVoiceMatch(spokenText);
       }
     },
-    [enrolledCandidates]
+    [performVoiceMatch]
   );
 
   const {
@@ -219,68 +370,20 @@ export const AttendanceManagement: React.FC = () => {
   // Handle manual transcription query if staff types or pastes voice text
   const handleManualVoiceMatch = (text: string) => {
     setManualVoiceInput(text);
-    if (!text.trim() || enrolledCandidates.length === 0) {
-      setPendingVoiceCandidate(null);
-      setCandidateOptions([]);
-      setNoMatchPhrase(null);
-      return;
-    }
-    const res = matchStudentVoice(text, enrolledCandidates);
-    if (res.status === 'EXACT_SINGLE' || res.status === 'FUZZY_SINGLE') {
-      setPendingVoiceCandidate(res.bestMatch);
-      setCandidateOptions([]);
-      setNoMatchPhrase(null);
-    } else if (res.status === 'EXACT_MULTIPLE' || res.status === 'FUZZY_MULTIPLE') {
-      setPendingVoiceCandidate(null);
-      const candidates =
-        res.exactMatches.length > 0 ? res.exactMatches : res.fuzzyMatches.map((f) => f.student);
-      setCandidateOptions(candidates);
-      setNoMatchPhrase(null);
-    } else {
-      setPendingVoiceCandidate(null);
-      setCandidateOptions([]);
-      setNoMatchPhrase(text);
+  };
+
+  const handleManualVoiceSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (manualVoiceInput.trim()) {
+      performVoiceMatch(manualVoiceInput.trim());
     }
   };
 
-  // Perform Voice-Confirmed Attendance Check-In
+  // Perform Voice-Confirmed Attendance Check-In (Manual confirm)
   const handleConfirmVoiceAttendance = async (student: EnrolledStudentCandidate) => {
-    setActionLoading(student.id);
-    setFeedback(null);
-    try {
-      const idempotencyKey = `VOICE_${student.id}_${selectedBatchId}_${Date.now()}`;
-      const res = await apiFetch('/attendance/check-in', {
-        method: 'POST',
-        body: JSON.stringify({
-          studentId: student.id,
-          batchId: selectedBatchId || undefined,
-          subjectId: selectedSubjectId || undefined,
-          method: 'VOICE_CONFIRMED',
-          idempotencyKey,
-        }),
-      });
-
-      // Clear voice match state
-      setPendingVoiceCandidate(null);
-      setCandidateOptions([]);
-      resetTranscript();
-      setManualVoiceInput('');
-
-      setFeedback({
-        type: 'success',
-        message: `${student.firstName} ${student.lastName} attendance confirmed (VOICE).`,
-        notificationNote: 'Mock notification queued for SMS-eligible guardian (Simulated SMS - Dev Mode)',
-      });
-
-      fetchSummary();
-    } catch (err: any) {
-      setFeedback({
-        type: 'error',
-        message: err.message || 'Failed to record voice attendance check-in',
-      });
-    } finally {
-      setActionLoading(null);
-    }
+    await executeStudentCheckIn(student, 'VOICE_CONFIRMED', false);
+    resetTranscript();
+    setManualVoiceInput('');
   };
 
   // Handle Manual Check-In
@@ -642,25 +745,148 @@ export const AttendanceManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Manual Name Search / Voice Typing Fallback */}
-            <div className="space-y-1.5">
+            {/* Manual Name Search / Voice Typing Fallback Form */}
+            <form onSubmit={handleManualVoiceSubmit} className="space-y-1.5">
               <label className="block text-xs font-bold text-[#4E342E]">
                 Manual Speech Fallback / Type Student Name:
               </label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-2.5" />
-                <input
-                  type="text"
-                  value={manualVoiceInput}
-                  onChange={(e) => handleManualVoiceMatch(e.target.value)}
-                  placeholder="Type student name to simulate voice recognition..."
-                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-10 pr-4 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={manualVoiceInput}
+                    onChange={(e) => handleManualVoiceMatch(e.target.value)}
+                    placeholder="Type student name to search authorized batch/subject roster..."
+                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-10 pr-4 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={voiceSearching || !manualVoiceInput.trim()}
+                  className="px-4 py-2 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-bold disabled:opacity-50 transition flex items-center gap-1.5 shrink-0"
+                >
+                  {voiceSearching ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                  )}
+                  <span>Match & Check In</span>
+                </button>
               </div>
-            </div>
+            </form>
 
-            {/* 0. No Match Feedback Card */}
-            {noMatchPhrase && !pendingVoiceCandidate && candidateOptions.length === 0 && (
+            {/* Voice Searching Progress Indicator */}
+            {voiceSearching && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5 animate-pulse">
+                <RefreshCw className="w-4 h-4 text-[#8D6E63] animate-spin shrink-0" />
+                <span className="font-semibold">
+                  Searching authorized batch and subject roster for spoken name...
+                </span>
+              </div>
+            )}
+
+            {/* Case A: Automatic Check-in Success Banner */}
+            {recentAutoCheckIn && (
+              <div className="p-5 rounded-2xl bg-emerald-50 border-2 border-emerald-500 shadow-md animate-in fade-in space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <StudentAvatar
+                      studentId={recentAutoCheckIn.student.id}
+                      photoUrl={recentAutoCheckIn.student.photoUrl}
+                      name={`${recentAutoCheckIn.student.firstName} ${recentAutoCheckIn.student.lastName}`}
+                      size="lg"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-extrabold text-emerald-950">
+                          {recentAutoCheckIn.student.firstName} {recentAutoCheckIn.student.lastName}
+                        </h3>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 border border-emerald-400">
+                          Automatic Voice Check-In
+                        </span>
+                      </div>
+                      <div className="text-xs text-emerald-800 mt-0.5 font-mono">
+                        Admission No: {recentAutoCheckIn.student.admissionNumber}
+                        {recentAutoCheckIn.student.batchName && ` • Batch: ${recentAutoCheckIn.student.batchName}`}
+                      </div>
+                      <div className="text-xs text-emerald-900 font-semibold mt-1 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Checked in at {recentAutoCheckIn.student.checkInTimeFormatted || 'Just now'} (VOICE_CONFIRMED)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setRecentAutoCheckIn(null)}
+                    className="text-emerald-700 hover:text-emerald-950 p-1"
+                    title="Dismiss"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="pt-2.5 border-t border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-900">
+                  <div className="flex items-center gap-1.5">
+                    <Send className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>
+                      {recentAutoCheckIn.smsNotification?.queued
+                        ? `Parent SMS Notification Queued for ${recentAutoCheckIn.smsNotification.recipient} (${recentAutoCheckIn.smsNotification.status})`
+                        : `Parent SMS: ${recentAutoCheckIn.smsNotification?.reason || 'No SMS-enabled primary contact'}`}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setRecentAutoCheckIn(null);
+                      resetTranscript();
+                      setManualVoiceInput('');
+                    }}
+                    className="text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-100 px-3 py-1 rounded-lg border border-emerald-300 self-end sm:self-auto"
+                  >
+                    Next Student ➔
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Duplicate Check-in Prevention Notice */}
+            {alreadyCheckedInNotice && (
+              <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-400 text-amber-950 shadow-sm animate-in fade-in space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <StudentAvatar
+                      studentId={alreadyCheckedInNotice.student.id}
+                      photoUrl={alreadyCheckedInNotice.student.photoUrl}
+                      name={`${alreadyCheckedInNotice.student.firstName} ${alreadyCheckedInNotice.student.lastName}`}
+                      size="md"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-[#2D1E18]">
+                          {alreadyCheckedInNotice.student.firstName} {alreadyCheckedInNotice.student.lastName}
+                        </h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
+                          Already Checked In
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-900 mt-0.5">
+                        Student is already checked in for today at <strong className="font-bold">{alreadyCheckedInNotice.checkInTimeFormatted}</strong>. Duplicate attendance record prevented; no additional SMS was sent.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setAlreadyCheckedInNotice(null)}
+                    className="text-amber-800 hover:text-amber-950 p-1"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Case C: No Match Feedback Card */}
+            {noMatchPhrase && !pendingVoiceCandidate && candidateOptions.length === 0 && !recentAutoCheckIn && (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between animate-in fade-in">
                 <div className="flex items-center gap-2.5">
                   <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
@@ -682,19 +908,24 @@ export const AttendanceManagement: React.FC = () => {
               </div>
             )}
 
-            {/* 1. Exactly One Matched Candidate -> Prompt Confirmation */}
+            {/* Low-Confidence Match (Requires Staff Confirmation) */}
             {pendingVoiceCandidate && (
               <div className="p-5 rounded-2xl bg-[#FAF7F2] border-2 border-[#4E342E] shadow-md animate-in fade-in space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <StudentAvatar studentId={pendingVoiceCandidate.id} photoUrl={pendingVoiceCandidate.photoUrl} name={`${pendingVoiceCandidate.firstName} ${pendingVoiceCandidate.lastName}`} size="lg" />
+                    <StudentAvatar
+                      studentId={pendingVoiceCandidate.id}
+                      photoUrl={pendingVoiceCandidate.photoUrl}
+                      name={`${pendingVoiceCandidate.firstName} ${pendingVoiceCandidate.lastName}`}
+                      size="lg"
+                    />
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-extrabold text-[#2D1E18]">
                           {pendingVoiceCandidate.firstName} {pendingVoiceCandidate.lastName}
                         </h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          Matched Candidate
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                          Low-Confidence Voice Match
                         </span>
                       </div>
                       <div className="text-xs text-[#6D4C41] mt-0.5 font-mono">
@@ -737,42 +968,71 @@ export const AttendanceManagement: React.FC = () => {
               </div>
             )}
 
-            {/* 2. Multiple Matched Candidates -> Disambiguation List */}
+            {/* Case B: Multiple Matched Candidates -> Disambiguation List with Individual Check-In Buttons */}
             {candidateOptions.length > 0 && !pendingVoiceCandidate && (
               <div className="p-5 rounded-2xl bg-amber-50 border border-amber-300 space-y-3 animate-in fade-in">
-                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                  <HelpCircle className="w-4 h-4 text-amber-700" />
-                  <span>
-                    Multiple students matched speech '{transcript || manualVoiceInput}'. Please tap the intended student:
-                  </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-amber-950 font-bold text-xs">
+                    <HelpCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>
+                      Multiple students match '{transcript || manualVoiceInput}'. Please click Check In for the intended student:
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setCandidateOptions([]);
+                      resetTranscript();
+                      setManualVoiceInput('');
+                    }}
+                    className="text-xs text-amber-800 hover:text-amber-950"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   {candidateOptions.map((candidate) => (
-                    <button
+                    <div
                       key={candidate.id}
-                      onClick={() => {
-                        setPendingVoiceCandidate(candidate);
-                        setCandidateOptions([]);
-                        setNoMatchPhrase(null);
-                      }}
-                      className="p-3 rounded-xl bg-white border border-amber-200 hover:border-[#4E342E] text-left transition flex items-center justify-between group shadow-sm"
+                      className="p-3.5 rounded-xl bg-white border border-amber-200 hover:border-[#4E342E] shadow-sm flex items-center justify-between gap-3"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <StudentAvatar studentId={candidate.id} photoUrl={candidate.photoUrl} name={`${candidate.firstName} ${candidate.lastName}`} size="sm" />
-                        <div>
-                          <div className="font-bold text-xs text-[#2D1E18]">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <StudentAvatar
+                          studentId={candidate.id}
+                          photoUrl={candidate.photoUrl}
+                          name={`${candidate.firstName} ${candidate.lastName}`}
+                          size="md"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-[#2D1E18] truncate">
                             {candidate.firstName} {candidate.lastName}
                           </div>
-                          <div className="text-[11px] font-mono text-[#6D4C41] mt-0.5">
-                            {candidate.admissionNumber}
+                          <div className="text-[11px] font-mono text-[#6D4C41]">
+                            Adm: {candidate.admissionNumber}
                           </div>
+                          {candidate.batchName && (
+                            <div className="text-[10px] text-[#8D6E63] truncate">
+                              {candidate.batchName} {candidate.subjectName ? `• ${candidate.subjectName}` : ''}
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <span className="text-[11px] font-bold text-[#4E342E] group-hover:underline">
-                        Select →
-                      </span>
-                    </button>
+
+                      {candidate.alreadyCheckedIn ? (
+                        <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
+                          Checked In {candidate.checkInTimeFormatted ? `(${candidate.checkInTimeFormatted})` : ''}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => executeStudentCheckIn(candidate, 'VOICE_CONFIRMED', false)}
+                          disabled={actionLoading === candidate.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition disabled:opacity-50 shrink-0"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{actionLoading === candidate.id ? 'Checking In...' : 'Check In'}</span>
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>

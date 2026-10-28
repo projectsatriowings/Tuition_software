@@ -107,7 +107,10 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
   if (!response.ok) {
     console.error(`[apiFetch] Request rejected (HTTP ${response.status}) on ${endpoint}:`, data);
     const errMessage = data?.error || `HTTP ${response.status}: Request failed`;
-    throw new Error(errMessage);
+    const customErr = new Error(errMessage);
+    (customErr as any).status = response.status;
+    (customErr as any).data = data;
+    throw customErr;
   }
 
   return data;
