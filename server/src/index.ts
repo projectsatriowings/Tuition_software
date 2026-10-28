@@ -41,10 +41,18 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Skip high-frequency background polling from cluttering server logs
+const SILENT_POLL_PATHS = new Set([
+  '/api/notifications/unread-count',
+  '/api/health',
+]);
+
 // Request logging (sanitized, non-sensitive)
 app.use((req: Request, _res: Response, next: NextFunction) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  if (!SILENT_POLL_PATHS.has(req.path)) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  }
   next();
 });
 
