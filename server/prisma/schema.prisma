@@ -131,6 +131,7 @@ model Institute {
   paymentAdjustments PaymentAdjustment[]
   auditLogs         AuditLog[]
   smsNotifications  SmsNotification[]
+  staffDocuments    StaffDocument[]
 
   @@index([status])
   @@index([name])
@@ -200,15 +201,111 @@ model StaffProfile {
   designation     String?  // e.g., Senior Mathematics Teacher
   qualification   String?
   permissionsJson Json?    // Fine-grained permission flags
+
+  // Personal Details
+  dob                      DateTime?
+  gender                   String?   // "Male", "Female", "Other", "Prefer not to say"
+  altPhone                 String?
+  personalEmail            String?
+  emergencyContactName     String?
+  emergencyContactRelation String?
+  emergencyContactPhone    String?
+  avatarUrl                String?
+
+  // Current Address
+  currentAddressLine1      String?
+  currentAddressLine2      String?
+  currentCity              String?
+  currentState             String?
+  currentPostalCode        String?
+  currentCountry           String?   @default("India")
+
+  // Permanent Address
+  permanentAddressLine1    String?
+  permanentAddressLine2    String?
+  permanentCity            String?
+  permanentState           String?
+  permanentPostalCode      String?
+  permanentCountry         String?   @default("India")
+  sameAsCurrentAddress     Boolean   @default(false)
+
+  // Employment Details
+  department               String?   // e.g., "Science", "Mathematics", "Humanities"
+  employmentType           String?   @default("FULL_TIME") // "FULL_TIME", "PART_TIME", "CONTRACT", "VISITING"
+  joiningDate              DateTime? @default(now())
+  probationEndDate         DateTime?
+  workLocation             String?   // Branch/Campus
+  employmentNotes          String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  institute   Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignments StaffBatchAssignment[]
-  batchSubjects BatchSubject[]
+  institute       Institute               @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments     StaffBatchAssignment[]
+  batchSubjects   BatchSubject[]
+  qualifications  StaffQualification[]
+  experiences     StaffExperience[]
+  documents       StaffDocument[]
 
   @@unique([instituteId, employeeCode])
+  @@index([instituteId])
+}
+
+model StaffQualification {
+  id             String       @id @default(uuid())
+  staffProfileId String
+  degree         String       // Degree / Certification name
+  fieldOfStudy   String?      // Specialization / Major
+  institution    String       // College / University
+  yearOfPassing  Int?
+  gradeOrScore   String?
+  certificateUrl String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId])
+}
+
+model StaffExperience {
+  id              String       @id @default(uuid())
+  staffProfileId  String
+  institutionName String       // Previous employer
+  designation     String       // Previous role
+  startYear       Int?
+  endYear         Int?
+  subjectsTaught  String?
+  totalYears      Float?
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  staffProfile    StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId])
+}
+
+model StaffDocument {
+  id             String       @id @default(uuid())
+  staffProfileId String
+  instituteId    String
+  documentType   String       // "QUALIFICATION_CERTIFICATE", "EMPLOYMENT_AGREEMENT", "IDENTITY_PROOF", "EXPERIENCE_CERTIFICATE", "OTHER"
+  displayName    String
+  fileUrl        String
+  fileName       String
+  fileSize       Int?
+  mimeType       String?
+  expiryDate     DateTime?
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  institute      Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId])
   @@index([instituteId])
 }
 
@@ -233,6 +330,7 @@ model Student {
   instituteId     String
   userId          String?       @unique // Optional student login account
   admissionNumber String
+  rollNumber      String?
   firstName       String
   lastName        String
   dob             DateTime?

@@ -1,32 +1,101 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
 import { generateNextEmployeeCode } from './staff-code.service.js';
+import { resolveAbsolutePath, getRelativeStorageKey } from '../../utils/storage.js';
 
 const prisma = new PrismaClient();
 
 export const createStaffSchema = z.object({
   fullName: z.string().min(2, 'Staff full name is required'),
   email: z.string().email('Valid email is required'),
-  phone: z.string().optional(),
-  employeeCode: z.string().optional(),
+  phone: z.string().optional().nullable(),
+  employeeCode: z.string().optional().nullable(),
   designation: z.string().min(2, 'Designation is required'), // e.g., "Senior Mathematics Faculty"
-  qualification: z.string().optional(),
+  qualification: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   initialPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
-  permissionsJson: z.record(z.any()).optional(),
+  permissionsJson: z.record(z.any()).optional().nullable(),
   batchIds: z.array(z.string().uuid()).optional(),
+
+  // Personal Details
+  dob: z.string().optional().nullable(),
+  gender: z.string().optional().nullable(),
+  altPhone: z.string().optional().nullable(),
+  personalEmail: z.string().optional().nullable(),
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyContactRelation: z.string().optional().nullable(),
+  emergencyContactPhone: z.string().optional().nullable(),
+
+  // Addresses
+  currentAddressLine1: z.string().optional().nullable(),
+  currentAddressLine2: z.string().optional().nullable(),
+  currentCity: z.string().optional().nullable(),
+  currentState: z.string().optional().nullable(),
+  currentPostalCode: z.string().optional().nullable(),
+  currentCountry: z.string().optional().nullable(),
+
+  permanentAddressLine1: z.string().optional().nullable(),
+  permanentAddressLine2: z.string().optional().nullable(),
+  permanentCity: z.string().optional().nullable(),
+  permanentState: z.string().optional().nullable(),
+  permanentPostalCode: z.string().optional().nullable(),
+  permanentCountry: z.string().optional().nullable(),
+  sameAsCurrentAddress: z.boolean().optional(),
+
+  // Employment Details
+  department: z.string().optional().nullable(),
+  employmentType: z.string().optional().nullable(),
+  joiningDate: z.string().optional().nullable(),
+  probationEndDate: z.string().optional().nullable(),
+  workLocation: z.string().optional().nullable(),
+  employmentNotes: z.string().optional().nullable(),
 });
 
 export const updateStaffSchema = z.object({
   fullName: z.string().min(2).optional(),
-  phone: z.string().optional(),
+  phone: z.string().optional().nullable(),
   employeeCode: z.string().optional(),
   designation: z.string().min(2).optional(),
-  qualification: z.string().optional(),
-  permissionsJson: z.record(z.any()).optional(),
+  qualification: z.string().optional().nullable(),
+  permissionsJson: z.record(z.any()).optional().nullable(),
+
+  // Personal Details
+  dob: z.string().optional().nullable(),
+  gender: z.string().optional().nullable(),
+  altPhone: z.string().optional().nullable(),
+  personalEmail: z.string().optional().nullable(),
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyContactRelation: z.string().optional().nullable(),
+  emergencyContactPhone: z.string().optional().nullable(),
+
+  // Addresses
+  currentAddressLine1: z.string().optional().nullable(),
+  currentAddressLine2: z.string().optional().nullable(),
+  currentCity: z.string().optional().nullable(),
+  currentState: z.string().optional().nullable(),
+  currentPostalCode: z.string().optional().nullable(),
+  currentCountry: z.string().optional().nullable(),
+
+  permanentAddressLine1: z.string().optional().nullable(),
+  permanentAddressLine2: z.string().optional().nullable(),
+  permanentCity: z.string().optional().nullable(),
+  permanentState: z.string().optional().nullable(),
+  permanentPostalCode: z.string().optional().nullable(),
+  permanentCountry: z.string().optional().nullable(),
+  sameAsCurrentAddress: z.boolean().optional(),
+
+  // Employment Details
+  department: z.string().optional().nullable(),
+  employmentType: z.string().optional().nullable(),
+  joiningDate: z.string().optional().nullable(),
+  probationEndDate: z.string().optional().nullable(),
+  workLocation: z.string().optional().nullable(),
+  employmentNotes: z.string().optional().nullable(),
 });
 
 export const updateStaffStatusSchema = z.object({
@@ -36,6 +105,25 @@ export const updateStaffStatusSchema = z.object({
 
 export const resetStaffPasswordSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+});
+
+export const qualificationSchema = z.object({
+  degree: z.string().min(1, 'Degree or certification name is required'),
+  fieldOfStudy: z.string().optional().nullable(),
+  institution: z.string().min(1, 'Institution or university is required'),
+  yearOfPassing: z.coerce.number().int().min(1950).max(2100).optional().nullable(),
+  gradeOrScore: z.string().optional().nullable(),
+  certificateUrl: z.string().optional().nullable(),
+});
+
+export const experienceSchema = z.object({
+  institutionName: z.string().min(1, 'Institution / Employer name is required'),
+  designation: z.string().min(1, 'Designation / Role is required'),
+  startYear: z.coerce.number().int().min(1950).max(2100).optional().nullable(),
+  endYear: z.coerce.number().int().min(1950).max(2100).optional().nullable(),
+  subjectsTaught: z.string().optional().nullable(),
+  totalYears: z.coerce.number().optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 /**
@@ -63,6 +151,7 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
       where.OR = [
         { employeeCode: { contains: search, mode: 'insensitive' } },
         { designation: { contains: search, mode: 'insensitive' } },
+        { department: { contains: search, mode: 'insensitive' } },
         { user: { fullName: { contains: search, mode: 'insensitive' } } },
         { user: { email: { contains: search, mode: 'insensitive' } } },
       ];
@@ -100,6 +189,10 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
             subject: { select: { id: true, name: true, code: true } },
           },
         },
+        qualifications: {
+          orderBy: { yearOfPassing: 'desc' },
+          take: 3,
+        },
       },
     });
 
@@ -108,6 +201,7 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
       data: { staff: staffList },
     });
   } catch (err: any) {
+    console.error('[listStaff Error]', err);
     return res.status(500).json({ success: false, error: 'Failed to list staff profiles' });
   }
 }
@@ -187,6 +281,15 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
     const permanentPassword = data.password?.trim() || data.initialPassword?.trim() || `Staff@${generateSecureRandomToken(4)}2026`;
     const passwordHash = await hashPassword(permanentPassword);
 
+    // Address sync logic
+    const sameAsCurrent = data.sameAsCurrentAddress ?? false;
+    const permLine1 = sameAsCurrent ? data.currentAddressLine1 : data.permanentAddressLine1;
+    const permLine2 = sameAsCurrent ? data.currentAddressLine2 : data.permanentAddressLine2;
+    const permCity = sameAsCurrent ? data.currentCity : data.permanentCity;
+    const permState = sameAsCurrent ? data.currentState : data.permanentState;
+    const permPostal = sameAsCurrent ? data.currentPostalCode : data.permanentPostalCode;
+    const permCountry = sameAsCurrent ? (data.currentCountry || 'India') : (data.permanentCountry || 'India');
+
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create User
       const user = await tx.user.create({
@@ -197,7 +300,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           passwordHash,
           role: 'STAFF',
           isActive: true,
-          mustChangePassword: false, // Permanent staff login created by admin - no forced temporary password change
+          mustChangePassword: false,
         },
       });
 
@@ -211,10 +314,10 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         },
       });
 
-      // 3. Create Staff Profile with permanent credentials saved in permissionsJson for admin review
+      // 3. Create Staff Profile
       const staffPermissions = {
         ...(data.permissionsJson || {}),
-        permanentPassword, // Preserved so academic admin can view and hand over permanent login at any time
+        permanentPassword,
       };
 
       const staffProfile = await tx.staffProfile.create({
@@ -225,6 +328,40 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           designation: data.designation.trim(),
           qualification: data.qualification?.trim() || null,
           permissionsJson: staffPermissions,
+
+          // Personal Details
+          dob: data.dob ? new Date(data.dob) : null,
+          gender: data.gender || null,
+          altPhone: data.altPhone?.trim() || null,
+          personalEmail: data.personalEmail?.trim() || null,
+          emergencyContactName: data.emergencyContactName?.trim() || null,
+          emergencyContactRelation: data.emergencyContactRelation?.trim() || null,
+          emergencyContactPhone: data.emergencyContactPhone?.trim() || null,
+
+          // Current Address
+          currentAddressLine1: data.currentAddressLine1?.trim() || null,
+          currentAddressLine2: data.currentAddressLine2?.trim() || null,
+          currentCity: data.currentCity?.trim() || null,
+          currentState: data.currentState?.trim() || null,
+          currentPostalCode: data.currentPostalCode?.trim() || null,
+          currentCountry: data.currentCountry?.trim() || 'India',
+
+          // Permanent Address
+          permanentAddressLine1: permLine1?.trim() || null,
+          permanentAddressLine2: permLine2?.trim() || null,
+          permanentCity: permCity?.trim() || null,
+          permanentState: permState?.trim() || null,
+          permanentPostalCode: permPostal?.trim() || null,
+          permanentCountry: permCountry?.trim() || 'India',
+          sameAsCurrentAddress: sameAsCurrent,
+
+          // Employment Details
+          department: data.department?.trim() || null,
+          employmentType: data.employmentType || 'FULL_TIME',
+          joiningDate: data.joiningDate ? new Date(data.joiningDate) : new Date(),
+          probationEndDate: data.probationEndDate ? new Date(data.probationEndDate) : null,
+          workLocation: data.workLocation?.trim() || null,
+          employmentNotes: data.employmentNotes?.trim() || null,
         },
       });
 
@@ -238,7 +375,19 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         });
       }
 
-      // 5. Audit Log
+      // 5. Initial qualification if supplied
+      if (data.qualification?.trim()) {
+        await tx.staffQualification.create({
+          data: {
+            staffProfileId: staffProfile.id,
+            degree: data.qualification.trim(),
+            institution: 'Registered on Profile Provisioning',
+            fieldOfStudy: data.department?.trim() || null,
+          },
+        });
+      }
+
+      // 6. Audit Log
       await tx.auditLog.create({
         data: {
           instituteId,
@@ -276,8 +425,8 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           mustChangePassword: false,
         },
         institute: institute || null,
-        permanentPassword, // Explicit permanent password returned for admin to view and hand over
-        temporaryPassword: permanentPassword, // backward compatibility
+        permanentPassword,
+        temporaryPassword: permanentPassword,
       },
     });
   } catch (err: any) {
@@ -287,7 +436,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
 }
 
 /**
- * Get staff profile by ID
+ * Get staff profile by ID with all relations
  */
 export async function getStaffById(req: AuthenticatedRequest, res: Response) {
   try {
@@ -322,6 +471,15 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
             subject: { select: { id: true, name: true, code: true } },
           },
         },
+        qualifications: {
+          orderBy: { yearOfPassing: 'desc' },
+        },
+        experiences: {
+          orderBy: { startYear: 'desc' },
+        },
+        documents: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -334,6 +492,7 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
       data: { staff },
     });
   } catch (err: any) {
+    console.error('[getStaffById Error]', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch staff profile' });
   }
 }
@@ -344,13 +503,16 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
 export async function updateStaff(req: AuthenticatedRequest, res: Response) {
   try {
     const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(403).json({ success: false, error: 'Institute context required' });
+    }
     const { id } = req.params;
 
     const parse = updateStaffSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({
         success: false,
-        error: parse.error.errors[0]?.message,
+        error: parse.error.errors[0]?.message || 'Validation failed',
       });
     }
 
@@ -364,6 +526,42 @@ export async function updateStaff(req: AuthenticatedRequest, res: Response) {
     }
 
     const data = parse.data;
+
+    // Check employee code uniqueness if changed
+    if (data.employeeCode && data.employeeCode.trim() !== existing.employeeCode) {
+      const codeTaken = await prisma.staffProfile.findUnique({
+        where: {
+          instituteId_employeeCode: {
+            instituteId,
+            employeeCode: data.employeeCode.trim(),
+          },
+        },
+      });
+      if (codeTaken) {
+        return res.status(409).json({
+          success: false,
+          error: `Employee code '${data.employeeCode.trim()}' is already used by another staff member`,
+        });
+      }
+    }
+
+    // Address sync logic
+    const sameAsCurrent = data.sameAsCurrentAddress !== undefined ? data.sameAsCurrentAddress : existing.sameAsCurrentAddress;
+    let permLine1 = data.permanentAddressLine1;
+    let permLine2 = data.permanentAddressLine2;
+    let permCity = data.permanentCity;
+    let permState = data.permanentState;
+    let permPostal = data.permanentPostalCode;
+    let permCountry = data.permanentCountry;
+
+    if (sameAsCurrent) {
+      permLine1 = data.currentAddressLine1 !== undefined ? data.currentAddressLine1 : existing.currentAddressLine1;
+      permLine2 = data.currentAddressLine2 !== undefined ? data.currentAddressLine2 : existing.currentAddressLine2;
+      permCity = data.currentCity !== undefined ? data.currentCity : existing.currentCity;
+      permState = data.currentState !== undefined ? data.currentState : existing.currentState;
+      permPostal = data.currentPostalCode !== undefined ? data.currentPostalCode : existing.currentPostalCode;
+      permCountry = data.currentCountry !== undefined ? data.currentCountry : existing.currentCountry;
+    }
 
     await prisma.$transaction(async (tx) => {
       if (data.fullName || data.phone !== undefined) {
@@ -383,6 +581,40 @@ export async function updateStaff(req: AuthenticatedRequest, res: Response) {
           ...(data.designation && { designation: data.designation.trim() }),
           ...(data.qualification !== undefined && { qualification: data.qualification?.trim() || null }),
           ...(data.permissionsJson && { permissionsJson: data.permissionsJson }),
+
+          // Personal Details
+          ...(data.dob !== undefined && { dob: data.dob ? new Date(data.dob) : null }),
+          ...(data.gender !== undefined && { gender: data.gender || null }),
+          ...(data.altPhone !== undefined && { altPhone: data.altPhone?.trim() || null }),
+          ...(data.personalEmail !== undefined && { personalEmail: data.personalEmail?.trim() || null }),
+          ...(data.emergencyContactName !== undefined && { emergencyContactName: data.emergencyContactName?.trim() || null }),
+          ...(data.emergencyContactRelation !== undefined && { emergencyContactRelation: data.emergencyContactRelation?.trim() || null }),
+          ...(data.emergencyContactPhone !== undefined && { emergencyContactPhone: data.emergencyContactPhone?.trim() || null }),
+
+          // Current Address
+          ...(data.currentAddressLine1 !== undefined && { currentAddressLine1: data.currentAddressLine1?.trim() || null }),
+          ...(data.currentAddressLine2 !== undefined && { currentAddressLine2: data.currentAddressLine2?.trim() || null }),
+          ...(data.currentCity !== undefined && { currentCity: data.currentCity?.trim() || null }),
+          ...(data.currentState !== undefined && { currentState: data.currentState?.trim() || null }),
+          ...(data.currentPostalCode !== undefined && { currentPostalCode: data.currentPostalCode?.trim() || null }),
+          ...(data.currentCountry !== undefined && { currentCountry: data.currentCountry?.trim() || 'India' }),
+
+          // Permanent Address
+          ...(data.permanentAddressLine1 !== undefined || sameAsCurrent ? { permanentAddressLine1: permLine1?.trim() || null } : {}),
+          ...(data.permanentAddressLine2 !== undefined || sameAsCurrent ? { permanentAddressLine2: permLine2?.trim() || null } : {}),
+          ...(data.permanentCity !== undefined || sameAsCurrent ? { permanentCity: permCity?.trim() || null } : {}),
+          ...(data.permanentState !== undefined || sameAsCurrent ? { permanentState: permState?.trim() || null } : {}),
+          ...(data.permanentPostalCode !== undefined || sameAsCurrent ? { permanentPostalCode: permPostal?.trim() || null } : {}),
+          ...(data.permanentCountry !== undefined || sameAsCurrent ? { permanentCountry: permCountry?.trim() || 'India' } : {}),
+          ...(data.sameAsCurrentAddress !== undefined && { sameAsCurrentAddress: data.sameAsCurrentAddress }),
+
+          // Employment Details
+          ...(data.department !== undefined && { department: data.department?.trim() || null }),
+          ...(data.employmentType !== undefined && { employmentType: data.employmentType }),
+          ...(data.joiningDate !== undefined && { joiningDate: data.joiningDate ? new Date(data.joiningDate) : null }),
+          ...(data.probationEndDate !== undefined && { probationEndDate: data.probationEndDate ? new Date(data.probationEndDate) : null }),
+          ...(data.workLocation !== undefined && { workLocation: data.workLocation?.trim() || null }),
+          ...(data.employmentNotes !== undefined && { employmentNotes: data.employmentNotes?.trim() || null }),
         },
       });
 
@@ -405,6 +637,7 @@ export async function updateStaff(req: AuthenticatedRequest, res: Response) {
       message: 'Staff profile updated successfully',
     });
   } catch (err: any) {
+    console.error('[updateStaff Error]', err);
     return res.status(500).json({ success: false, error: 'Failed to update staff profile' });
   }
 }
@@ -550,13 +783,11 @@ export async function assignStaffBatches(req: AuthenticatedRequest, res: Respons
 
       // 2. Update BatchSubject assignments if assignments array is provided
       if (Array.isArray(assignments)) {
-        // Clear previous subject assignments for this staff
         await tx.batchSubject.updateMany({
           where: { staffProfileId: id },
           data: { staffProfileId: null },
         });
 
-        // Assign staff to specified subjects in each batch
         for (const a of assignments) {
           if (Array.isArray(a.subjectIds) && a.subjectIds.length > 0) {
             await tx.batchSubject.updateMany({
@@ -673,3 +904,412 @@ export async function resetStaffPassword(req: AuthenticatedRequest, res: Respons
   }
 }
 
+/**
+ * Upload Staff Photograph
+ */
+export async function uploadStaffPhoto(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(403).json({ success: false, error: 'Institute context required' });
+    }
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file uploaded' });
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { id, instituteId },
+    });
+
+    if (!staff) {
+      return res.status(404).json({ success: false, error: 'Staff member not found' });
+    }
+
+    const relativeKey = getRelativeStorageKey(instituteId, req.file.filename);
+    const photoUrl = `/api/staff/${id}/photo`;
+
+    await prisma.staffProfile.update({
+      where: { id },
+      data: { avatarUrl: relativeKey },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Staff photograph uploaded successfully',
+      data: { photoUrl, key: relativeKey },
+    });
+  } catch (err: any) {
+    console.error('[uploadStaffPhoto Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to upload staff photo' });
+  }
+}
+
+/**
+ * Stream Staff Photograph
+ */
+export async function getStaffPhoto(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const staff = await prisma.staffProfile.findUnique({
+      where: { id },
+      select: { avatarUrl: true },
+    });
+
+    if (!staff || !staff.avatarUrl) {
+      return res.status(404).send('Photograph not found');
+    }
+
+    const absPath = resolveAbsolutePath(staff.avatarUrl);
+    if (!absPath || !fs.existsSync(absPath)) {
+      return res.status(404).send('Photograph file not found on disk');
+    }
+
+    const ext = path.extname(absPath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+    };
+
+    res.setHeader('Content-Type', mimeMap[ext] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return fs.createReadStream(absPath).pipe(res);
+  } catch (err: any) {
+    console.error('[getStaffPhoto Error]', err);
+    return res.status(500).send('Error streaming photograph');
+  }
+}
+
+/**
+ * Add Qualification
+ */
+export async function addStaffQualification(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id } = req.params;
+
+    const parse = qualificationSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Validation failed',
+      });
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { id, instituteId },
+    });
+    if (!staff) {
+      return res.status(404).json({ success: false, error: 'Staff member not found' });
+    }
+
+    const qual = await prisma.staffQualification.create({
+      data: {
+        staffProfileId: id,
+        ...parse.data,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Qualification added successfully',
+      data: { qualification: qual },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to add qualification' });
+  }
+}
+
+/**
+ * Update Qualification
+ */
+export async function updateStaffQualification(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id, qid } = req.params;
+
+    const parse = qualificationSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Validation failed',
+      });
+    }
+
+    const qual = await prisma.staffQualification.findFirst({
+      where: { id: qid, staffProfileId: id, staffProfile: { instituteId } },
+    });
+    if (!qual) {
+      return res.status(404).json({ success: false, error: 'Qualification record not found' });
+    }
+
+    const updated = await prisma.staffQualification.update({
+      where: { id: qid },
+      data: parse.data,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Qualification updated successfully',
+      data: { qualification: updated },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to update qualification' });
+  }
+}
+
+/**
+ * Delete Qualification
+ */
+export async function deleteStaffQualification(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id, qid } = req.params;
+
+    const qual = await prisma.staffQualification.findFirst({
+      where: { id: qid, staffProfileId: id, staffProfile: { instituteId } },
+    });
+    if (!qual) {
+      return res.status(404).json({ success: false, error: 'Qualification record not found' });
+    }
+
+    await prisma.staffQualification.delete({ where: { id: qid } });
+
+    return res.json({
+      success: true,
+      message: 'Qualification deleted successfully',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to delete qualification' });
+  }
+}
+
+/**
+ * Add Experience
+ */
+export async function addStaffExperience(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id } = req.params;
+
+    const parse = experienceSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Validation failed',
+      });
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { id, instituteId },
+    });
+    if (!staff) {
+      return res.status(404).json({ success: false, error: 'Staff member not found' });
+    }
+
+    const exp = await prisma.staffExperience.create({
+      data: {
+        staffProfileId: id,
+        ...parse.data,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Experience entry added successfully',
+      data: { experience: exp },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to add experience' });
+  }
+}
+
+/**
+ * Update Experience
+ */
+export async function updateStaffExperience(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id, eid } = req.params;
+
+    const parse = experienceSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({
+        success: false,
+        error: parse.error.errors[0]?.message || 'Validation failed',
+      });
+    }
+
+    const exp = await prisma.staffExperience.findFirst({
+      where: { id: eid, staffProfileId: id, staffProfile: { instituteId } },
+    });
+    if (!exp) {
+      return res.status(404).json({ success: false, error: 'Experience record not found' });
+    }
+
+    const updated = await prisma.staffExperience.update({
+      where: { id: eid },
+      data: parse.data,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Experience entry updated successfully',
+      data: { experience: updated },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to update experience' });
+  }
+}
+
+/**
+ * Delete Experience
+ */
+export async function deleteStaffExperience(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id, eid } = req.params;
+
+    const exp = await prisma.staffExperience.findFirst({
+      where: { id: eid, staffProfileId: id, staffProfile: { instituteId } },
+    });
+    if (!exp) {
+      return res.status(404).json({ success: false, error: 'Experience record not found' });
+    }
+
+    await prisma.staffExperience.delete({ where: { id: eid } });
+
+    return res.json({
+      success: true,
+      message: 'Experience entry deleted successfully',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to delete experience' });
+  }
+}
+
+/**
+ * Upload Staff Document
+ */
+export async function uploadStaffDocument(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      return res.status(403).json({ success: false, error: 'Institute context required' });
+    }
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No document file uploaded' });
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { id, instituteId },
+    });
+    if (!staff) {
+      return res.status(404).json({ success: false, error: 'Staff member not found' });
+    }
+
+    const documentType = req.body.documentType?.trim() || 'OTHER';
+    const displayName = req.body.displayName?.trim() || req.file.originalname;
+    const notes = req.body.notes?.trim() || null;
+    const expiryDate = req.body.expiryDate ? new Date(req.body.expiryDate) : null;
+
+    const relativeKey = getRelativeStorageKey(instituteId, req.file.filename);
+
+    const doc = await prisma.staffDocument.create({
+      data: {
+        staffProfileId: id,
+        instituteId,
+        documentType,
+        displayName,
+        fileUrl: relativeKey,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        expiryDate,
+        notes,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Document uploaded successfully',
+      data: { document: doc },
+    });
+  } catch (err: any) {
+    console.error('[uploadStaffDocument Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to upload document' });
+  }
+}
+
+/**
+ * Download / Stream Staff Document
+ */
+export async function downloadStaffDocument(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id, docId } = req.params;
+
+    const doc = await prisma.staffDocument.findFirst({
+      where: { id: docId, staffProfileId: id, instituteId },
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    const absPath = resolveAbsolutePath(doc.fileUrl);
+    if (!absPath || !fs.existsSync(absPath)) {
+      return res.status(404).json({ success: false, error: 'Document file not found on disk' });
+    }
+
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.fileName)}"`);
+    return fs.createReadStream(absPath).pipe(res);
+  } catch (err: any) {
+    console.error('[downloadStaffDocument Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to download document' });
+  }
+}
+
+/**
+ * Delete Staff Document
+ */
+export async function deleteStaffDocument(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id, docId } = req.params;
+
+    const doc = await prisma.staffDocument.findFirst({
+      where: { id: docId, staffProfileId: id, instituteId },
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    // Attempt to remove file from disk safely
+    const absPath = resolveAbsolutePath(doc.fileUrl);
+    if (absPath && fs.existsSync(absPath)) {
+      try {
+        fs.unlinkSync(absPath);
+      } catch (e) {
+        console.warn('[deleteStaffDocument] File unlink failed:', e);
+      }
+    }
+
+    await prisma.staffDocument.delete({ where: { id: docId } });
+
+    return res.json({
+      success: true,
+      message: 'Document deleted successfully',
+    });
+  } catch (err: any) {
+    console.error('[deleteStaffDocument Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete document' });
+  }
+}
