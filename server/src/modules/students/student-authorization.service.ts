@@ -501,6 +501,13 @@ export async function isStaffAssignedToBatchSubject(
   }
 
   const assignments = await getAuthorizedStaffAssignments(req, prismaClient);
+  if (!assignments.authorizedBatchIds.includes(batchId)) {
+    return false;
+  }
   const assignedSubjects = assignments.subjectIdsByBatch[batchId] || [];
+  // If staff has no specific subject restrictions in this batch (assigned to whole batch), they are authorized for all subjects in it
+  if (assignedSubjects.length === 0) {
+    return true;
+  }
   return assignedSubjects.includes(subjectId);
 }

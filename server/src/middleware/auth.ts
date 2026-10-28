@@ -79,7 +79,24 @@ export async function requireInstituteContext(req: AuthenticatedRequest, res: Re
   }
 
   // For institute-bound roles, verify active membership
-  const instituteId = (req.headers['x-institute-id'] as string) || (req.query.instituteId as string) || req.user.instituteId;
+  let instituteId = (req.headers['x-institute-id'] as string) || (req.query.instituteId as string) || req.user.instituteId;
+  if (!instituteId) {
+    const fallbackMembership = await prisma.instituteMembership.findFirst({
+      where: { userId: req.user.userId, isActive: true },
+      select: { instituteId: true },
+    });
+    if (fallbackMembership) {
+      instituteId = fallbackMembership.instituteId;
+    } else {
+      const studentProfile = await prisma.student.findFirst({
+        where: { userId: req.user.userId, status: 'ACTIVE' },
+        select: { instituteId: true },
+      });
+      if (studentProfile) {
+        instituteId = studentProfile.instituteId;
+      }
+    }
+  }
   if (!instituteId) {
     return res.status(400).json({
       success: false,

@@ -444,10 +444,19 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                           <span className="text-[#8D6E63]">Institute:</span>
                           <span className="text-[#2D1E18]">{student.institute?.name} ({student.institute?.code})</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span className="text-[#8D6E63]">Current Batch:</span>
                           <span className="font-semibold text-[#4E342E]">
-                            {student.enrollments?.[0]?.batch?.name || 'Unassigned'}
+                            {(() => {
+                              const activeBatches = Array.from(
+                                new Set(
+                                  (student.enrollments || [])
+                                    .filter((e: any) => e.isActive !== false && e.batch?.name)
+                                    .map((e: any) => e.batch.name)
+                                )
+                              );
+                              return activeBatches.length > 0 ? activeBatches.join(', ') : 'Unassigned';
+                            })()}
                           </span>
                         </div>
                         <div className="pt-2 border-t border-[#EFEBE9] flex items-center justify-between">

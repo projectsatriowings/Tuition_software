@@ -180,7 +180,10 @@ async function main() {
     await prisma.staffProfile.update({
       where: { id: existingStaffProfile.id },
       data: {
-        employeeCode: existingStaffProfile.employeeCode || 'APEX-EMP-001',
+        employeeCode:
+          existingStaffProfile.employeeCode && existingStaffProfile.employeeCode !== 'EMP-101'
+            ? existingStaffProfile.employeeCode
+            : 'APEX-EMP-001',
         designation: 'Senior Physics Lecturer',
         qualification: 'M.Sc Physics',
       },

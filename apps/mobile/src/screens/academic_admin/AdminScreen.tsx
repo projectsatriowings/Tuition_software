@@ -372,11 +372,11 @@ export const AdminScreen: React.FC = () => {
               <Card style={{ marginTop: 14 }}>
                 <Text style={styles.cardSectionTitle}>📡 Campus Attendance & Notification Summary</Text>
                 <Text style={styles.opsNote}>
-                  Live voice-based attendance confirmation and SMS guardian notifications are operational for all registered batches.
+                  Live voice-based attendance confirmation and in-app guardian notifications are operational for all registered batches.
                 </Text>
                 <View style={styles.opsRow}>
                   <Badge label="VOICE ATTENDANCE READY" variant="info" size="sm" />
-                  <Badge label="SMS OUTBOX QUEUED" variant="success" size="sm" />
+                  <Badge label="IN-APP NOTIFICATIONS ACTIVE" variant="success" size="sm" />
                 </View>
               </Card>
             </View>

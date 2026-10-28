@@ -256,6 +256,18 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
       });
     }
 
+    // Check unique phone if provided
+    const phone = data.phone?.trim() || null;
+    if (phone) {
+      const existingPhone = await prisma.user.findUnique({ where: { phone } });
+      if (existingPhone) {
+        return res.status(409).json({
+          success: false,
+          error: `Phone number '${phone}' is already registered with another user (${existingPhone.fullName})`,
+        });
+      }
+    }
+
     // Auto-generate employee code with academy name if not supplied
     let employeeCode = data.employeeCode?.trim() || '';
     if (!employeeCode) {
@@ -431,7 +443,35 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
     });
   } catch (err: any) {
     console.error('[Create Staff Error]', err);
-    return res.status(500).json({ success: false, error: 'Failed to create staff account' });
+    if (err.code === 'P2002') {
+      const target = String(Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : err.meta?.target || '');
+      if (target.includes('phone')) {
+        const phone = req.body?.phone ? `'${req.body.phone}' ` : '';
+        return res.status(409).json({
+          success: false,
+          error: `Phone number ${phone}already exists in the system. Please use a different phone number.`,
+        });
+      }
+      if (target.includes('email')) {
+        const email = req.body?.email ? `'${req.body.email}' ` : '';
+        return res.status(409).json({
+          success: false,
+          error: `Email address ${email}is already registered with another user.`,
+        });
+      }
+      if (target.includes('employeeCode')) {
+        const code = req.body?.employeeCode ? `'${req.body.employeeCode}' ` : '';
+        return res.status(409).json({
+          success: false,
+          error: `Employee code ${code}already exists in this institute. Please auto-generate or use a different code.`,
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        error: `A user or staff member with this ${target || 'information'} already exists.`,
+      });
+    }
+    return res.status(500).json({ success: false, error: err.message || 'Failed to create staff account' });
   }
 }
 

@@ -26,7 +26,7 @@ export const StaffScreen: React.FC = () => {
   const { user } = useMobileAuth();
   const { showToast } = useMobileToast();
 
-  const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'messages'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'materials' | 'messages'>('attendance');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -36,6 +36,24 @@ export const StaffScreen: React.FC = () => {
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
+  const [materialsList, setMaterialsList] = useState<any[]>([]);
+
+  // Homework Review & Grading State
+  const [reviewHw, setReviewHw] = useState<any | null>(null);
+  const [reviewData, setReviewData] = useState<any | null>(null);
+  const [loadingReview, setLoadingReview] = useState(false);
+  const [gradingSubId, setGradingSubId] = useState<string | null>(null);
+  const [gradeText, setGradeText] = useState('');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [gradingSubmitting, setGradingSubmitting] = useState(false);
+
+  // New Material Creation State
+  const [showNewMaterialModal, setShowNewMaterialModal] = useState(false);
+  const [matTitle, setMatTitle] = useState('');
+  const [matType, setMatType] = useState('PDF');
+  const [matDesc, setMatDesc] = useState('');
+  const [matContent, setMatContent] = useState('');
+  const [matSubmitting, setMatSubmitting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
 
   // Modals & Student Management
@@ -211,8 +229,12 @@ export const StaffScreen: React.FC = () => {
   const handleConfirmVoiceAttendance = async (student: any) => {
     setVoiceSubmitting(true);
     try {
-      const idempotencyKey = generateIdempotencyKey('VOICE');
-      const res = await mobileApiFetch('/attendance/check-in', {
+      const isAlreadyCheckedIn = student.todayStatus === 'CHECKED_IN' || student.alreadyCheckedIn;
+      const endpoint = isAlreadyCheckedIn ? '/attendance/check-out' : '/attendance/check-in';
+      const actionLabel = isAlreadyCheckedIn ? 'Check-Out' : 'Check-In';
+      const idempotencyKey = generateIdempotencyKey(isAlreadyCheckedIn ? 'V_OUT' : 'VOICE');
+
+      const res = await mobileApiFetch(endpoint, {
         method: 'POST',
         idempotencyKey,
         body: {
@@ -224,19 +246,27 @@ export const StaffScreen: React.FC = () => {
       });
 
       if (res.success) {
-        const smsNote = (res as any).data?.smsNotification?.queued
-          ? ` SMS queued to parent (${(res as any).data.smsNotification.recipient}).`
-          : '';
+        const notifNote = (res as any).data?.notification?.sent ? ' In-app notification sent to parent.' : '';
+
+
         showToast(
-          `Voice Check-In confirmed for ${student.user?.fullName || student.firstName}.${smsNote}`,
+          `Voice ${actionLabel} confirmed for ${student.user?.fullName || student.firstName}.${notifNote}`,
           'success'
         );
         setPendingVoiceCandidate(null);
         setVoiceDisambiguation([]);
         setVoiceQuery('');
         setIsVoiceListening(false);
+        if (selectedBatch?.id) {
+          loadStudentsForBatch(selectedBatch.id, selectedSubject?.id);
+        }
       } else if ((res as any).alreadyCheckedIn) {
         showToast(res.error || `${student.user?.fullName || student.firstName} is already checked in today.`, 'info');
+        setPendingVoiceCandidate(null);
+        setVoiceDisambiguation([]);
+        setVoiceQuery('');
+      } else if ((res as any).alreadyCheckedOut) {
+        showToast(res.error || `${student.user?.fullName || student.firstName} has already checked out today.`, 'info');
         setPendingVoiceCandidate(null);
         setVoiceDisambiguation([]);
         setVoiceQuery('');
@@ -247,6 +277,91 @@ export const StaffScreen: React.FC = () => {
       showToast('Network connection issue', 'error');
     } finally {
       setVoiceSubmitting(false);
+    }
+  };
+
+
+  const openHomeworkReview = async (hw: any) => {
+    setReviewHw(hw);
+    setReviewData(null);
+    setLoadingReview(true);
+    try {
+      const res = await mobileApiFetch(`/homework/${hw.id}/submissions`);
+      if (res.success) {
+        setReviewData(res.data);
+      } else {
+        showToast(res.error || 'Failed to load submissions', 'error');
+      }
+    } catch {
+      showToast('Connection error', 'error');
+    } finally {
+      setLoadingReview(false);
+    }
+  };
+
+  const handleGradeStudent = async (subId: string) => {
+    if (!gradeText.trim()) {
+      showToast('Please enter a grade', 'warning');
+      return;
+    }
+    setGradingSubmitting(true);
+    try {
+      const res = await mobileApiFetch(`/homework/submissions/${subId}/grade`, {
+        method: 'PATCH',
+        body: { grade: gradeText.trim(), feedback: feedbackText.trim() || undefined },
+      });
+      if (res.success) {
+        showToast('Grade saved successfully', 'success');
+        setGradingSubId(null);
+        setGradeText('');
+        setFeedbackText('');
+        if (reviewHw) openHomeworkReview(reviewHw);
+        fetchStaffData();
+      } else {
+        showToast(res.error || 'Failed to grade submission', 'error');
+      }
+    } catch {
+      showToast('Grading error', 'error');
+    } finally {
+      setGradingSubmitting(false);
+    }
+  };
+
+  const handleCreateMaterial = async () => {
+    if (!matTitle.trim() || !selectedBatch) {
+      showToast('Please enter material title and select batch', 'warning');
+      return;
+    }
+
+    setMatSubmitting(true);
+    try {
+      const res = await mobileApiFetch('/materials', {
+        method: 'POST',
+        body: {
+          title: matTitle.trim(),
+          description: matDesc.trim() || undefined,
+          content: matContent.trim() || undefined,
+          type: matType,
+          batchId: selectedBatch.id,
+          subjectId: selectedSubject?.id || null,
+          isPublished: true,
+        },
+      });
+
+      if (res.success) {
+        showToast('Material published to batch students', 'success');
+        setShowNewMaterialModal(false);
+        setMatTitle('');
+        setMatDesc('');
+        setMatContent('');
+        fetchStaffData();
+      } else {
+        showToast(res.error || 'Could not publish material', 'error');
+      }
+    } catch {
+      showToast('Server connection error', 'error');
+    } finally {
+      setMatSubmitting(false);
     }
   };
 
@@ -264,7 +379,9 @@ export const StaffScreen: React.FC = () => {
           title: hwTitle.trim(),
           description: hwDesc.trim(),
           batchId: selectedBatch.id,
+          subjectId: selectedSubject?.id || null,
           dueDate: hwDueDate ? new Date(hwDueDate).toISOString() : new Date(Date.now() + 86400000 * 3).toISOString(),
+          isPublished: true,
         },
       });
 
@@ -415,6 +532,14 @@ export const StaffScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
+          onPress={() => setActiveTab('materials')}
+          style={[styles.tabItem, activeTab === 'materials' && styles.activeTabItem]}
+        >
+          <Text style={[styles.tabText, activeTab === 'materials' && styles.activeTabText]}>
+            Materials
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => setActiveTab('messages')}
           style={[styles.tabItem, activeTab === 'messages' && styles.activeTabItem]}
         >
@@ -438,6 +563,33 @@ export const StaffScreen: React.FC = () => {
           {/* TAB 1: VOICE-BASED ATTENDANCE & MANUAL FALLBACK */}
           {activeTab === 'attendance' && (
             <View>
+              {/* Read-Only Today's Date Banner */}
+              <View
+                style={{
+                  marginBottom: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: '#FDFBF7',
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#D7CCC8',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#4E342E' }}>
+                  📅 Today's Attendance (Asia/Kolkata)
+                </Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#6D4C41' }}>
+                  {new Date().toLocaleDateString('en-IN', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </Text>
+              </View>
+
               {/* Voice-Based Attendance Assistant Card */}
               <Card highlighted>
                 <View style={styles.voiceHeader}>
@@ -521,7 +673,9 @@ export const StaffScreen: React.FC = () => {
                           <ActivityIndicator color="#ffffff" size="small" />
                         ) : (
                           <Text style={styles.voiceConfirmBtnText}>
-                            Confirm Check-In ➔
+                            {pendingVoiceCandidate.todayStatus === 'CHECKED_IN' || pendingVoiceCandidate.alreadyCheckedIn
+                              ? 'Confirm Check-Out ➔'
+                              : 'Confirm Check-In ➔'}
                           </Text>
                         )}
                       </TouchableOpacity>
@@ -750,7 +904,7 @@ export const StaffScreen: React.FC = () => {
               </View>
 
               {homeworkList.map((hw) => (
-                <Card key={hw.id}>
+                <Card key={hw.id} onPress={() => openHomeworkReview(hw)}>
                   <View style={styles.hwStaffRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.hwTitle}>{hw.title}</Text>
@@ -765,8 +919,57 @@ export const StaffScreen: React.FC = () => {
                     />
                   </View>
                   <Text style={styles.hwDesc}>{hw.description}</Text>
+                  <View style={{ marginTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 11, color: themeTokens.colors.textMuted }}>
+                      Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString('en-IN') : 'Open'}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: themeTokens.colors.primary }}>
+                      Tap to Review & Grade &rarr;
+                    </Text>
+                  </View>
                 </Card>
               ))}
+            </View>
+          )}
+
+          {/* TAB: MATERIALS MANAGEMENT */}
+          {activeTab === 'materials' && (
+            <View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>📚 Learning Materials ({materialsList.length})</Text>
+                <TouchableOpacity
+                  onPress={() => setShowNewMaterialModal(true)}
+                  style={styles.addHwBtn}
+                >
+                  <Text style={styles.addHwBtnText}>+ New Material</Text>
+                </TouchableOpacity>
+              </View>
+
+              {materialsList.length === 0 ? (
+                <Card><Text style={styles.emptyText}>No learning materials created yet.</Text></Card>
+              ) : (
+                materialsList.map((mat) => (
+                  <Card key={mat.id}>
+                    <View style={styles.hwStaffRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.hwTitle}>{mat.title}</Text>
+                        <Text style={styles.hwBatchName}>
+                          Batch: {mat.batch?.name || 'Class'} &bull; Subject: {mat.subject?.name || 'All Subjects'}
+                        </Text>
+                      </View>
+                      <Badge label={mat.type} variant="info" size="sm" />
+                    </View>
+                    {mat.description ? <Text style={styles.hwDesc}>{mat.description}</Text> : null}
+                    {mat.content ? (
+                      <View style={{ marginTop: 6, padding: 8, backgroundColor: themeTokens.colors.surfaceMuted, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 11, color: themeTokens.colors.textSecondary }} numberOfLines={3}>
+                          {mat.content}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Card>
+                ))
+              )}
             </View>
           )}
 
@@ -792,6 +995,173 @@ export const StaffScreen: React.FC = () => {
         </ScrollView>
       )}
 
+
+
+      {/* Homework Review & Grading Modal */}
+      <Modal visible={Boolean(reviewHw)} transparent animationType="slide">
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>{reviewHw?.title}</Text>
+                <Text style={styles.modalSub}>Batch: {reviewHw?.batch?.name}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setReviewHw(null)}>
+                <Text style={{ fontSize: 20, color: '#64748b' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingReview ? (
+              <ActivityIndicator color={themeTokens.colors.primary} style={{ marginVertical: 20 }} />
+            ) : reviewData ? (
+              <ScrollView style={{ flexGrow: 0 }}>
+                {reviewData.summary && (
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+                    <View style={{ flex: 1, backgroundColor: '#f1f5f9', padding: 8, borderRadius: 8, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 10, color: '#64748b' }}>ELIGIBLE</Text>
+                      <Text style={{ fontSize: 14, fontWeight: 'bold' }}>{reviewData.summary.totalEligible}</Text>
+                    </View>
+                    <View style={{ flex: 1, backgroundColor: '#dcfce7', padding: 8, borderRadius: 8, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 10, color: '#166534' }}>DONE</Text>
+                      <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#166534' }}>
+                        {reviewData.summary.submittedCount + reviewData.summary.completedCount}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, backgroundColor: '#fee2e2', padding: 8, borderRadius: 8, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 10, color: '#991b1b' }}>OVERDUE</Text>
+                      <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#991b1b' }}>{reviewData.summary.overdueCount}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <Text style={{ fontSize: 12, fontWeight: 'bold', color: themeTokens.colors.textPrimary, marginBottom: 8 }}>
+                  Student Completion Roster
+                </Text>
+
+                {reviewData.roster?.map((r: any) => (
+                  <View key={r.student.id} style={{ padding: 10, backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View>
+                        <Text style={{ fontWeight: 'bold', fontSize: 13, color: '#1e293b' }}>
+                          {r.student.firstName} {r.student.lastName}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: '#64748b' }}>Adm: {r.student.admissionNumber}</Text>
+                      </View>
+                      <Badge
+                        label={r.status}
+                        variant={r.status === 'COMPLETED' || r.status === 'GRADED' ? 'success' : r.status === 'SUBMITTED' ? 'info' : r.isOverdue ? 'danger' : 'warning'}
+                        size="sm"
+                      />
+                    </View>
+
+                    {r.submission && (
+                      <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+                        {r.submission.studentNotes ? (
+                          <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#334155', marginBottom: 4 }}>
+                            "{r.submission.studentNotes}"
+                          </Text>
+                        ) : null}
+
+                        {gradingSubId === r.submission.id ? (
+                          <View style={{ marginTop: 6, gap: 6 }}>
+                            <TextInput
+                              style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 6, fontSize: 12 }}
+                              placeholder="Grade (e.g. A+ or 18/20)"
+                              value={gradeText}
+                              onChangeText={setGradeText}
+                            />
+                            <TextInput
+                              style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 6, fontSize: 12 }}
+                              placeholder="Feedback / Remarks"
+                              value={feedbackText}
+                              onChangeText={setFeedbackText}
+                            />
+                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6 }}>
+                              <TouchableOpacity onPress={() => setGradingSubId(null)} style={{ padding: 6 }}>
+                                <Text style={{ fontSize: 11, color: '#64748b' }}>Cancel</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => handleGradeStudent(r.submission.id)}
+                                style={{ backgroundColor: themeTokens.colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
+                              >
+                                <Text style={{ fontSize: 11, color: '#fff', fontWeight: 'bold' }}>Save</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 11, color: '#1e293b' }}>
+                              Grade: <Text style={{ fontWeight: 'bold' }}>{r.submission.grade || 'Not Graded'}</Text>
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setGradingSubId(r.submission.id);
+                                setGradeText(r.submission.grade || '');
+                                setFeedbackText(r.submission.feedback || '');
+                              }}
+                              style={{ backgroundColor: '#e2e8f0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}
+                            >
+                              <Text style={{ fontSize: 10, fontWeight: 'bold' }}>Grade</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      {/* New Material Modal */}
+      <Modal visible={showNewMaterialModal} transparent animationType="slide">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Publish Study Material</Text>
+            <Text style={styles.modalSub}>Batch: {selectedBatch?.name || 'Selected'}</Text>
+
+            <TextInput
+              style={styles.singleLineInput}
+              placeholder="Material Title (e.g. Chapter 4 Notes)"
+              placeholderTextColor="#64748b"
+              value={matTitle}
+              onChangeText={setMatTitle}
+            />
+
+            <TextInput
+              style={[styles.modalInput, { marginTop: 10 }]}
+              multiline
+              numberOfLines={3}
+              placeholder="Study Notes or Instructions..."
+              placeholderTextColor="#64748b"
+              value={matContent}
+              onChangeText={setMatContent}
+            />
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                onPress={() => setShowNewMaterialModal(false)}
+                style={styles.modalCancelBtn}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleCreateMaterial}
+                style={styles.modalSubmitBtn}
+                disabled={matSubmitting}
+              >
+                {matSubmitting ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.modalSubmitBtnText}>Publish</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* New Homework Modal */}
       <Modal visible={showNewHwModal} transparent animationType="slide">

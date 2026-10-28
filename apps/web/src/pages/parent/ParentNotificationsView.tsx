@@ -1,0 +1,188 @@
+import React, { useEffect, useState } from 'react';
+import { apiFetch } from '../../services/api';
+import {
+  Bell,
+  CheckCheck,
+  CheckCircle2,
+  Calendar,
+  CreditCard,
+  Award,
+  MessageSquare,
+  AlertCircle,
+  Clock,
+  Filter,
+} from 'lucide-react';
+
+interface ParentNotificationsViewProps {
+  onNavigateTab: (tab: string) => void;
+}
+
+export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = ({ onNavigateTab }) => {
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [filterUnreadOnly, setFilterUnreadOnly] = useState<boolean>(false);
+
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const res = await apiFetch(`/notifications/in-app?unreadOnly=${filterUnreadOnly}`);
+      if (res.success && res.data) {
+        setNotifications(res.data.notifications || []);
+        setUnreadCount(res.data.unreadCount || 0);
+      }
+    } catch (err) {
+      console.error('[Fetch Notifications Error]', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [filterUnreadOnly]);
+
+  const handleMarkAsRead = async (id: string, link?: string | null) => {
+    try {
+      await apiFetch(`/notifications/in-app/${id}/read`, { method: 'PATCH' });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+
+      if (link) {
+        if (link.includes('fees')) onNavigateTab('fees');
+        else if (link.includes('attendance')) onNavigateTab('attendance');
+        else if (link.includes('messaging')) onNavigateTab('communication');
+        else if (link.includes('exams')) onNavigateTab('results');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await apiFetch('/notifications/in-app/mark-all-read', { method: 'POST' });
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'ATTENDANCE':
+        return <CheckCircle2 className="w-5 h-5 text-emerald-600" />;
+      case 'ABSENCE':
+        return <AlertCircle className="w-5 h-5 text-rose-600" />;
+      case 'FEE_DUE':
+      case 'FEE_PAID':
+        return <CreditCard className="w-5 h-5 text-amber-600" />;
+      case 'TEST_RESULT':
+        return <Award className="w-5 h-5 text-emerald-600" />;
+      case 'NEW_MESSAGE':
+        return <MessageSquare className="w-5 h-5 text-blue-600" />;
+      default:
+        return <Bell className="w-5 h-5 text-[#6D4C41]" />;
+    }
+  };
+
+  const formatKolkataTime = (timeStr: string) => {
+    const d = new Date(timeStr);
+    return isNaN(d.getTime())
+      ? ''
+      : new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }).format(d);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header and Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
+            <Bell className="w-5 h-5 text-[#6D4C41]" /> In-App Notification Center
+          </h2>
+          <p className="text-xs text-[#6D4C41] mt-0.5">
+            Attendance alerts, fee reminders, teacher updates, and examination result notifications
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs font-semibold text-[#6D4C41] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterUnreadOnly}
+              onChange={(e) => setFilterUnreadOnly(e.target.checked)}
+              className="rounded text-[#4E342E] focus:ring-[#4E342E]"
+            />
+            <span>Unread only</span>
+          </label>
+
+          {unreadCount > 0 && (
+            <button
+              onClick={handleMarkAllRead}
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#4E342E] inline-flex items-center gap-1.5 transition-colors shadow-xs"
+            >
+              <CheckCheck className="w-4 h-4" /> Mark All as Read
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Notifications List */}
+      <div className="bg-white rounded-3xl border border-[#D7CCC8] shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-16 text-center text-xs text-[#8D6E63]">
+            Loading notifications...
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="p-16 text-center text-xs text-[#8D6E63] space-y-2">
+            <Bell className="w-10 h-10 mx-auto text-[#D7CCC8]" />
+            <p>You have no notifications at this time.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#EFEBE9]">
+            {notifications.map((n) => (
+              <div
+                key={n.id}
+                onClick={() => handleMarkAsRead(n.id, n.link)}
+                className={`p-4 sm:p-5 transition-colors cursor-pointer flex items-start gap-4 ${
+                  !n.isRead ? 'bg-[#FAF8F6] border-l-4 border-[#4E342E]' : 'hover:bg-[#F7F2EF]/60'
+                }`}
+              >
+                <div className="p-2.5 rounded-2xl bg-white border border-[#D7CCC8] shadow-xs shrink-0 mt-0.5">
+                  {getNotificationIcon(n.type)}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-[#2D1E18]">{n.title}</h4>
+                    <span className="text-[10px] text-[#8D6E63] shrink-0">
+                      {formatKolkataTime(n.createdAt)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">{n.message}</p>
+                  {!n.isRead && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[#4E342E]"></span>
+                      <span className="text-[10px] font-bold text-[#4E342E]">New &bull; Click to open</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

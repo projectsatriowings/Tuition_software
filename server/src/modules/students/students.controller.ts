@@ -85,21 +85,21 @@ export const studentAdmissionSchema = z.object({
 });
 
 export const updateStudentSchema = z.object({
-  firstName: z.string().min(1, 'First name is required').optional(),
-  lastName: z.string().min(1, 'Last name is required').optional(),
-  studentPhone: z.string().optional().or(z.literal('')),
-  studentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
-  dob: z.string().optional().or(z.literal('')),
+  firstName: z.string().trim().min(1, 'First name is required').optional(),
+  lastName: z.string().trim().min(1, 'Last name is required').optional(),
+  studentPhone: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
+  studentEmail: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().email('Invalid email').optional().nullable()),
+  dob: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(),
-  bloodGroup: z.string().optional().or(z.literal('')),
-  notes: z.string().optional().or(z.literal('')),
-  photoUrl: z.string().optional().or(z.literal('')),
-  batchId: z.string().uuid().optional().or(z.literal('')).nullable(),
-  subjectIds: z.array(z.string().uuid()).optional(),
-  parentFullName: z.string().optional().or(z.literal('')),
+  bloodGroup: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
+  notes: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
+  photoUrl: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
+  batchId: z.preprocess((val) => (typeof val === 'string' && (val.trim() === '' || val === 'null' || val === 'undefined') ? null : val), z.string().uuid('Invalid batch ID').optional().nullable()),
+  subjectIds: z.preprocess((val) => (Array.isArray(val) ? val.filter((x) => typeof x === 'string' && x.trim() !== '') : val), z.array(z.string().uuid('Invalid subject ID')).optional().nullable()),
+  parentFullName: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
   parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).optional(),
-  parentPhone: z.string().optional().or(z.literal('')),
-  parentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
+  parentPhone: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().optional().nullable()),
+  parentEmail: z.preprocess((val) => (typeof val === 'string' && val.trim() === '' ? null : val), z.string().trim().email('Invalid email').optional().nullable()),
 });
 
 export const updateStudentStatusSchema = z.object({
@@ -239,7 +239,18 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
       }),
     ]);
 
-    const formattedStudents = students.map(formatStudentResponse);
+    let formattedStudents = students.map(formatStudentResponse);
+
+    // If caller is STAFF, filter each student's enrollments to only those batches assigned to this staff member
+    if (req.user?.role === 'STAFF') {
+      const authorizedBatchIds = scope.assignedBatchIds || [];
+      formattedStudents = formattedStudents.map((s: any) => ({
+        ...s,
+        enrollments: (s.enrollments || []).filter(
+          (e: any) => !e.batchId || authorizedBatchIds.includes(e.batchId)
+        ),
+      }));
+    }
 
     return res.json({
       success: true,
@@ -334,10 +345,12 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       });
 
       if (existingStudent) {
+        const errorMsg = `A student profile already exists in this institute (${existingStudent.firstName} ${existingStudent.lastName}, Admission: ${existingStudent.admissionNumber}). Please use 'Enroll Existing Student' to enroll them into another batch or subject without duplicating the account.`;
         return res.status(409).json({
           success: false,
           isExistingStudent: true,
-          message: `A student profile already exists in this institute (${existingStudent.firstName} ${existingStudent.lastName}, Admission: ${existingStudent.admissionNumber}). Please use 'Enroll Existing Student' to enroll them into another batch or subject without duplicating the account.`,
+          error: errorMsg,
+          message: errorMsg,
           existingStudent: {
             id: existingStudent.id,
             admissionNumber: existingStudent.admissionNumber,
@@ -351,6 +364,46 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               subjectName: e.subject?.name,
             })),
           },
+        });
+      }
+    }
+
+    // Check globally unique student phone number
+    if (cleanPhone) {
+      const existingPhoneUser = await prisma.user.findUnique({
+        where: { phone: cleanPhone },
+      });
+      if (existingPhoneUser) {
+        return res.status(409).json({
+          success: false,
+          error: `Student phone number '${cleanPhone}' is already registered with another user (${existingPhoneUser.fullName}). Please use a different phone number.`,
+        });
+      }
+    }
+
+    // Check globally unique student email
+    if (cleanEmail) {
+      const existingEmailUser = await prisma.user.findUnique({
+        where: { email: cleanEmail },
+      });
+      if (existingEmailUser) {
+        return res.status(409).json({
+          success: false,
+          error: `Student email '${cleanEmail}' is already registered with another user (${existingEmailUser.fullName}). Please use a different email address.`,
+        });
+      }
+    }
+
+    // Check parent email if provided
+    const cleanParentEmail = data.parentEmail?.trim().toLowerCase() || null;
+    if (cleanParentEmail) {
+      const existingParentUser = await prisma.user.findUnique({
+        where: { email: cleanParentEmail },
+      });
+      if (existingParentUser && existingParentUser.role !== 'PARENT') {
+        return res.status(409).json({
+          success: false,
+          error: `Parent email '${cleanParentEmail}' is registered to a ${existingParentUser.role.toLowerCase()} account (${existingParentUser.fullName}) and cannot be used as a parent account.`,
         });
       }
     }
@@ -686,10 +739,42 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (err: any) {
-    if (err.message && err.message.includes('batch does not belong')) {
+    console.error('[Admit Student Error]', err);
+
+    if (err.code === 'P2002') {
+      const target = String(Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : err.meta?.target || '');
+      if (target.includes('phone')) {
+        return res.status(409).json({
+          success: false,
+          error: `Phone number already exists in the system. Please use a different phone number.`,
+        });
+      }
+      if (target.includes('email')) {
+        return res.status(409).json({
+          success: false,
+          error: `Email address already exists in the system. Please use a different email address.`,
+        });
+      }
+      if (target.includes('admissionNumber')) {
+        return res.status(409).json({
+          success: false,
+          error: `A student with this admission number already exists in this institute.`,
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        error: `A record with this ${target || 'information'} already exists.`,
+      });
+    }
+
+    if (err.message && (err.message.includes('already registered') || err.message.includes('already exists'))) {
+      return res.status(409).json({ success: false, error: err.message });
+    }
+
+    if (err.message && (err.message.includes('batch does not belong') || err.message.includes('cannot be linked') || err.message.includes('registered to a student account'))) {
       return res.status(400).json({ success: false, error: err.message });
     }
-    console.error('[Admit Student Error]', err);
+
     return res.status(500).json({ success: false, error: err.message || 'Failed to admit student' });
   }
 }
@@ -918,9 +1003,21 @@ export async function getStudentById(req: AuthenticatedRequest, res: Response) {
       return res.status(404).json({ success: false, error: 'Student not found in this institute' });
     }
 
+    let formattedStudent: any = formatStudentResponse(student);
+    if (req.user?.role === 'STAFF') {
+      const assignments = await getAuthorizedStaffAssignments(req, prisma);
+      const authorizedBatchIds = assignments.authorizedBatchIds || [];
+      formattedStudent = {
+        ...formattedStudent,
+        enrollments: (formattedStudent.enrollments || []).filter(
+          (e: any) => !e.batchId || authorizedBatchIds.includes(e.batchId)
+        ),
+      };
+    }
+
     return res.json({
       success: true,
-      data: { student: formatStudentResponse(student) },
+      data: { student: formattedStudent },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to fetch student details' });
@@ -970,6 +1067,18 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     }
 
     const data = parse.data;
+
+    // Staff cannot assign batches that are not assigned to them
+    if (req.user?.role === 'STAFF' && data.batchId) {
+      const isAssigned = await isStaffAssignedToBatch(req, data.batchId, prisma);
+      if (!isAssigned) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: You are not authorized to assign this batch.',
+        });
+      }
+    }
+
     const updateData: any = {};
 
     if (data.firstName) updateData.firstName = data.firstName.trim();
