@@ -2,6 +2,11 @@ import { Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
+import {
+  isStaffAssignedToBatch,
+  isStaffAssignedToBatchSubject,
+  isStudentAuthorized,
+} from '../students/student-authorization.service.js';
 
 const prisma = new PrismaClient();
 
@@ -46,6 +51,18 @@ export async function createExam(req: AuthenticatedRequest, res: Response) {
     }
 
     const data = parse.data;
+
+    // Verify staff authorization
+    if (req.user?.role === 'STAFF') {
+      const isAssigned = await isStaffAssignedToBatch(req, data.batchId, prisma);
+      if (!isAssigned) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+      }
+      const isAssignedSub = await isStaffAssignedToBatchSubject(req, data.batchId, data.subjectId, prisma);
+      if (!isAssignedSub) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to create exams for this subject' });
+      }
+    }
 
     // Verify batch and subject belong to institute
     const batch = await prisma.batch.findFirst({ where: { id: data.batchId, instituteId } });
@@ -110,14 +127,59 @@ export async function listExams(req: AuthenticatedRequest, res: Response) {
     if (subjectId) where.subjectId = subjectId;
 
     // Students and Parents only see published exams
-    if (req.user?.role === 'STUDENT') {
+    if (req.user?.role === 'STAFF') {
+      const staffProfile = await prisma.staffProfile.findFirst({
+        where: { userId: req.user.userId, instituteId },
+      });
+      if (!staffProfile) {
+        return res.json({ success: true, data: { exams: [] } });
+      }
+      const batchSubjects = await prisma.batchSubject.findMany({
+        where: { staffProfileId: staffProfile.id },
+        select: { batchId: true, subjectId: true },
+      });
+      const staffAssignments = await prisma.staffBatchAssignment.findMany({
+        where: { staffProfileId: staffProfile.id },
+        select: { batchId: true },
+      });
+      const allowedBatchIds = Array.from(new Set([
+        ...staffAssignments.map((a) => a.batchId),
+        ...batchSubjects.map((bs) => bs.batchId),
+      ]));
+      if (allowedBatchIds.length === 0) {
+        return res.json({ success: true, data: { exams: [] } });
+      }
+      if (where.batchId) {
+        if (!allowedBatchIds.includes(where.batchId)) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+        }
+      } else {
+        where.batchId = { in: allowedBatchIds };
+      }
+      if (batchSubjects.length > 0) {
+        const allowedSubjectIds = batchSubjects.map((bs) => bs.subjectId);
+        if (where.subjectId) {
+          if (!allowedSubjectIds.includes(where.subjectId)) {
+            return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this subject' });
+          }
+        } else {
+          where.subjectId = { in: allowedSubjectIds };
+        }
+      }
+    } else if (req.user?.role === 'STUDENT') {
       where.isPublished = true;
       const student = await prisma.student.findFirst({
         where: { userId: req.user.userId },
         include: { enrollments: { where: { isActive: true } } },
       });
-      if (student) {
-        where.batchId = { in: student.enrollments.map((e) => e.batchId) };
+      if (!student) {
+        return res.json({ success: true, data: { exams: [] } });
+      }
+      const batchIds = Array.from(new Set(student.enrollments.map((e) => e.batchId)));
+      const subjectIds = Array.from(new Set(student.enrollments.map((e) => e.subjectId).filter(Boolean) as string[]));
+      where.batchId = { in: batchIds };
+      if (subjectIds.length > 0) {
+        where.subjectId = { in: subjectIds };
       }
     } else if (req.user?.role === 'PARENT') {
       where.isPublished = true;
@@ -125,8 +187,12 @@ export async function listExams(req: AuthenticatedRequest, res: Response) {
         where: { parent: { userId: req.user.userId } },
         include: { student: { include: { enrollments: { where: { isActive: true } } } } },
       });
-      const batchIds = children.flatMap((c) => c.student.enrollments.map((e) => e.batchId));
+      const batchIds = Array.from(new Set(children.flatMap((c) => c.student.enrollments.map((e) => e.batchId))));
+      const subjectIds = Array.from(new Set(children.flatMap((c) => c.student.enrollments.map((e) => e.subjectId).filter(Boolean) as string[])));
       where.batchId = { in: batchIds };
+      if (subjectIds.length > 0) {
+        where.subjectId = { in: subjectIds };
+      }
     }
 
     const exams = await prisma.examination.findMany({
@@ -160,7 +226,7 @@ export async function getExamById(req: AuthenticatedRequest, res: Response) {
         subject: { select: { id: true, name: true, code: true } },
         marks: {
           include: {
-            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, rollNumber: true } },
+            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
           },
           orderBy: { marksObtained: 'desc' },
         },
@@ -208,9 +274,31 @@ export async function enterExamMarks(req: AuthenticatedRequest, res: Response) {
     });
     if (!exam) return res.status(404).json({ success: false, error: 'Exam not found' });
 
+    // Verify staff authorization for this exam's batch and subject
+    if (req.user?.role === 'STAFF') {
+      const isAssigned = await isStaffAssignedToBatch(req, exam.batchId, prisma);
+      if (!isAssigned) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+      }
+      const isAssignedSub = await isStaffAssignedToBatchSubject(req, exam.batchId, exam.subjectId, prisma);
+      if (!isAssignedSub) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to enter marks for this subject' });
+      }
+    }
+
     const parse = enterMarksSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ success: false, error: 'Validation failed', details: parse.error.errors });
+    }
+
+    // Verify student authorization for each mark entry
+    if (req.user?.role === 'STAFF') {
+      for (const item of parse.data.marks) {
+        const isAuth = await isStudentAuthorized(req, item.studentId, prisma, { batchId: exam.batchId, subjectId: exam.subjectId });
+        if (!isAuth) {
+          return res.status(403).json({ success: false, error: `Forbidden: You are not authorized to enter marks for student '${item.studentId}'` });
+        }
+      }
     }
 
     const maxMarks = Number(exam.totalMarks);
@@ -402,7 +490,6 @@ export async function getStudentReportCard(req: AuthenticatedRequest, res: Respo
           firstName: student.firstName,
           lastName: student.lastName,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           batchName: student.enrollments[0]?.batch?.name || 'Assigned Batch',
         },
         summary: {

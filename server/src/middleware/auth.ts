@@ -36,9 +36,9 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   }
 
   req.user = payload;
-  if (payload.instituteId) {
-    req.instituteId = payload.instituteId;
-  }
+  const headerInst = req.headers['x-institute-id'] as string;
+  const queryInst = (req.query.instituteId || req.query.inst) as string;
+  req.instituteId = payload.instituteId || headerInst || queryInst || undefined;
   next();
 }
 
@@ -79,7 +79,7 @@ export async function requireInstituteContext(req: AuthenticatedRequest, res: Re
   }
 
   // For institute-bound roles, verify active membership
-  const instituteId = req.user.instituteId || (req.headers['x-institute-id'] as string) || (req.query.instituteId as string);
+  const instituteId = (req.headers['x-institute-id'] as string) || (req.query.instituteId as string) || req.user.instituteId;
   if (!instituteId) {
     return res.status(400).json({
       success: false,

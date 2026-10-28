@@ -8,60 +8,36 @@ import {
   User,
   GraduationCap,
   Calendar,
-  Phone,
-  Mail,
-  Shield,
-  KeyRound,
-  Edit2,
   Users,
-  CheckCircle,
   Clock,
   Building,
   Award,
   BookOpen,
-  Copy,
-  Check,
+  AlertCircle,
+  RefreshCw,
+  Camera,
+  Pencil,
 } from 'lucide-react';
 
 interface StudentDetailsModalProps {
   studentId: string | null;
   onClose: () => void;
   onStudentUpdated?: () => void;
+  onEditStudent?: (student: any) => void;
 }
 
 export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
   studentId,
   onClose,
   onStudentUpdated,
+  onEditStudent,
 }) => {
   const { success, error } = useToast();
 
   const [student, setStudent] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'guardians' | 'academics'>('profile');
-
-  // Password Reset Modal State
-  const [resetTarget, setResetTarget] = useState<{
-    type: 'student' | 'parent';
-    id: string;
-    name: string;
-  } | null>(null);
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
-  const [temporaryPasswordResult, setTemporaryPasswordResult] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  // Identifier Update Modal State
-  const [identifierTarget, setIdentifierTarget] = useState<{
-    type: 'student' | 'parent';
-    id: string;
-    currentEmail?: string;
-    currentPhone?: string;
-    name: string;
-  } | null>(null);
-  const [editEmail, setEditEmail] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [identifierLoading, setIdentifierLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'profile' | 'academics'>('profile');
 
   // Status Change Confirmation
   const [statusConfirm, setStatusConfirm] = useState<{
@@ -70,21 +46,61 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
     message: string;
   } | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoChange = async (file: File) => {
+    if (!student?.id) return;
+    if (file.size > 5 * 1024 * 1024) {
+      error('Photograph file size must not exceed 5MB.');
+      return;
+    }
+    try {
+      setUploadingPhoto(true);
+      const fd = new FormData();
+      fd.append('photo', file);
+      const res = await apiFetch(`/students/${student.id}/photo`, {
+        method: 'POST',
+        body: fd,
+      });
+      if (res.success) {
+        success('Student photograph updated successfully');
+        const updatedPhotoUrl = `${res.data?.photoUrl || `/api/students/${student.id}/photo`}?t=${Date.now()}`;
+        setStudent((prev: any) => ({
+          ...prev,
+          photoUrl: updatedPhotoUrl,
+        }));
+        onStudentUpdated?.();
+      } else {
+        error(res.error || 'Failed to update student photo');
+      }
+    } catch (err: any) {
+      error(err.message || 'Error updating student photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const fetchDetails = async () => {
     if (!studentId) return;
     try {
       setLoading(true);
+      setErrorMessage(null);
+      console.log('[StudentDetailsModal] Fetching details for student ID:', studentId);
       const res = await apiFetch(`/students/${studentId}`);
       if (res.success && res.data?.student) {
         setStudent(res.data.student);
+        setErrorMessage(null);
       } else {
-        error(res.error || 'Failed to load student details');
-        onClose();
+        const msg = res.error || 'Failed to load student details';
+        console.error('[StudentDetailsModal] Server error loading student details:', msg);
+        setErrorMessage(msg);
+        error(msg);
       }
     } catch (err: any) {
-      error(err.message || 'Error loading student details');
-      onClose();
+      const msg = err.message || 'Error loading student details';
+      console.error('[StudentDetailsModal] Network or auth error loading student details:', err);
+      setErrorMessage(msg);
+      error(msg);
     } finally {
       setLoading(false);
     }
@@ -123,71 +139,7 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
     }).format(d);
   };
 
-  // Handle Password Reset Submission
-  const handleResetPassword = async () => {
-    if (!resetTarget) return;
-    setResetLoading(true);
-    try {
-      const endpoint =
-        resetTarget.type === 'student'
-          ? `/students/${student.id}/reset-password`
-          : `/parents/${resetTarget.id}/reset-password`;
-
-      const res = await apiFetch(endpoint, {
-        method: 'POST',
-        body: JSON.stringify({
-          password: newPasswordInput.trim() || undefined,
-        }),
-      });
-
-      if (res.success && res.data?.temporaryPassword) {
-        setTemporaryPasswordResult(res.data.temporaryPassword);
-        success(`${resetTarget.name}'s password reset successfully!`);
-        fetchDetails();
-      } else {
-        error(res.error || 'Failed to reset password');
-      }
-    } catch (err: any) {
-      error(err.message || 'Error resetting password');
-    } finally {
-      setResetLoading(false);
-    }
-  };
-
-  // Handle Login Identifier Update
-  const handleUpdateIdentifier = async () => {
-    if (!identifierTarget) return;
-    setIdentifierLoading(true);
-    try {
-      const endpoint =
-        identifierTarget.type === 'student'
-          ? `/students/${student.id}/account-identifier`
-          : `/parents/${identifierTarget.id}/account-identifier`;
-
-      const res = await apiFetch(endpoint, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          email: editEmail.trim() || undefined,
-          phone: editPhone.trim() || undefined,
-        }),
-      });
-
-      if (res.success) {
-        success('Login credentials updated successfully');
-        setIdentifierTarget(null);
-        fetchDetails();
-        if (onStudentUpdated) onStudentUpdated();
-      } else {
-        error(res.error || 'Failed to update credentials');
-      }
-    } catch (err: any) {
-      error(err.message || 'Error updating credentials');
-    } finally {
-      setIdentifierLoading(false);
-    }
-  };
-
-  // Handle Status Update (e.g. Mark as Passed)
+  // Handle Status Update (e.g. Mark as Passed / Discontinue / Reactivate)
   const handleConfirmStatusChange = async () => {
     if (!statusConfirm || !student) return;
     setStatusLoading(true);
@@ -215,45 +167,6 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
     }
   };
 
-  // Handle Student Account Active / Inactive Toggle
-  const handleToggleStudentAccountStatus = async (currentActive: boolean) => {
-    if (!student) return;
-    try {
-      const res = await apiFetch(`/students/${student.id}/account-status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ isActive: !currentActive }),
-      });
-      if (res.success) {
-        success(`Student account ${!currentActive ? 'activated' : 'deactivated'} successfully`);
-        fetchDetails();
-        if (onStudentUpdated) onStudentUpdated();
-      } else {
-        error(res.error || 'Failed to update student account status');
-      }
-    } catch (err: any) {
-      error(err.message || 'Error updating student account status');
-    }
-  };
-
-  // Handle Parent Account Active / Inactive Toggle
-  const handleToggleParentAccountStatus = async (parentId: string, currentActive: boolean) => {
-    try {
-      const res = await apiFetch(`/parents/${parentId}/account-status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ isActive: !currentActive }),
-      });
-      if (res.success) {
-        success(`Parent account ${!currentActive ? 'activated' : 'deactivated'} successfully`);
-        fetchDetails();
-        if (onStudentUpdated) onStudentUpdated();
-      } else {
-        error(res.error || 'Failed to update parent account status');
-      }
-    } catch (err: any) {
-      error(err.message || 'Error updating parent account status');
-    }
-  };
-
   if (!studentId) return null;
 
   return (
@@ -261,18 +174,35 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
       <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl text-[#2D1E18] overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-[#EFEBE9] bg-[#FDFBF7] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {student?.photoUrl ? (
-              <img
-                src={student.photoUrl.startsWith('http') ? student.photoUrl : `/api/students/${student.id}/photo`}
-                alt={student.firstName}
-                className="w-12 h-12 rounded-2xl object-cover border border-[#D7CCC8] shadow-sm"
+          <div className="flex items-center gap-3.5">
+            <div className="relative group">
+              <StudentAvatar
+                studentId={student?.id}
+                photoUrl={student?.photoUrl}
+                name={student ? `${student.firstName} ${student.lastName}` : 'Student'}
+                size="lg"
+                className="w-14 h-14 rounded-2xl border border-[#D7CCC8] shadow-sm"
               />
-            ) : (
-              <div className="w-12 h-12 rounded-2xl bg-[#EFEBE9] text-[#4E342E] flex items-center justify-center font-bold text-lg border border-[#D7CCC8]">
-                {student ? `${student.firstName[0]}${student.lastName[0]}` : 'ST'}
-              </div>
-            )}
+              <label
+                className={`absolute inset-0 bg-black/50 text-white rounded-2xl flex flex-col items-center justify-center cursor-pointer text-[10px] font-semibold transition-opacity ${
+                  uploadingPhoto ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}
+                title="Change student photograph"
+              >
+                <Camera className="w-4 h-4 mb-0.5 text-white" />
+                <span>{uploadingPhoto ? 'Saving...' : 'Change'}</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handlePhotoChange(f);
+                  }}
+                />
+              </label>
+            </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-[#2D1E18]">
@@ -292,27 +222,55 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-[#8D6E63] font-mono mt-0.5">
-                Admission No: <span className="font-semibold text-[#4E342E]">{student?.admissionNumber || '—'}</span>
-                {student?.rollNumber && <span className="ml-3 font-normal">Roll: {student.rollNumber}</span>}
-              </p>
+              <div className="flex items-center gap-3 mt-0.5">
+                <p className="text-xs text-[#8D6E63] font-mono">
+                  Admission No: <span className="font-semibold text-[#4E342E]">{student?.admissionNumber || '—'}</span>
+                </p>
+                <label className="text-[11px] text-[#4E342E] hover:underline cursor-pointer font-semibold inline-flex items-center gap-1">
+                  <Camera className="w-3 h-3 text-[#6D4C41]" />
+                  <span>{uploadingPhoto ? 'Uploading...' : 'Update Photo'}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={uploadingPhoto}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handlePhotoChange(f);
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-xl hover:bg-[#EFEBE9] transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onEditStudent && student && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditStudent(student);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm transition"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Edit Profile</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-xl hover:bg-[#EFEBE9] transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs - Pure Student Profile & Academics */}
         <div className="flex border-b border-[#EFEBE9] bg-[#FAF8F5] px-5 gap-4 overflow-x-auto text-xs">
           {[
             { id: 'profile', label: 'Student Profile', icon: <User className="w-3.5 h-3.5" /> },
-            { id: 'account', label: 'Login Account', icon: <Shield className="w-3.5 h-3.5" /> },
-            { id: 'guardians', label: 'Linked Guardians', icon: <Users className="w-3.5 h-3.5" /> },
-            { id: 'academics', label: 'Academic & Fees', icon: <Award className="w-3.5 h-3.5" /> },
+            { id: 'academics', label: 'Academic & Attendance', icon: <Award className="w-3.5 h-3.5" /> },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -335,6 +293,33 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-[#8D6E63]">
               <div className="w-6 h-6 border-2 border-[#4E342E] border-t-transparent rounded-full animate-spin"></div>
               <span className="text-xs font-semibold">Loading student record...</span>
+            </div>
+          ) : errorMessage ? (
+            <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-center space-y-4 my-8">
+              <div className="w-12 h-12 mx-auto rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-900">Failed to Load Student Profile</h3>
+                <p className="text-xs text-rose-700 mt-1 max-w-md mx-auto">{errorMessage}</p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={fetchDetails}
+                  className="inline-flex items-center gap-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry Loading
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="bg-white hover:bg-rose-100/50 text-[#4E342E] border border-[#D7CCC8] text-xs font-semibold px-4 py-2 rounded-xl transition"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           ) : !student ? (
             <div className="text-center py-12 text-[#8D6E63] text-xs">Student record not found.</div>
@@ -396,7 +381,7 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Personal & Academic Grid */}
+                  {/* Personal & Admission Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-[#FDFBF7] p-4 rounded-2xl border border-[#D7CCC8]/70 space-y-3">
                       <h4 className="text-xs font-bold text-[#4E342E] uppercase tracking-wider flex items-center gap-1.5 border-b border-[#EFEBE9] pb-2">
@@ -423,6 +408,12 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                           <span className="text-[#8D6E63]">Blood Group:</span>
                           <span className="font-mono text-[#2D1E18]">{student.bloodGroup || '—'}</span>
                         </div>
+                        {student.address && (
+                          <div className="flex justify-between pt-1 border-t border-[#EFEBE9]">
+                            <span className="text-[#8D6E63]">Address:</span>
+                            <span className="text-[#2D1E18] text-right max-w-xs">{student.address}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -439,24 +430,14 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                           <span className="text-[#8D6E63]">Joined Date:</span>
                           <span className="font-semibold text-[#2D1E18]">{formatKolkataDate(student.admissionDate)}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#8D6E63]">Record Created:</span>
-                          <span className="text-[#2D1E18]">{formatKolkataDateTime(student.createdAt)}</span>
+                        <div className="flex justify-between items-center py-0.5 bg-amber-50/60 -mx-1 px-1 rounded-lg border border-amber-200/50">
+                          <span className="text-[#4E342E] font-bold">Student Created Date & Time:</span>
+                          <span className="font-mono font-bold text-[#2D1E18]">{formatKolkataDateTime(student.createdAt)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#8D6E63]">Admitted By:</span>
                           <span className="font-semibold text-[#2D1E18]">
                             {student.createdByUser ? `${student.createdByUser.fullName} (${student.createdByUser.role})` : 'Academic Admin / System'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#8D6E63]">Student Account Created:</span>
-                          <span className="text-[#2D1E18]">{formatKolkataDateTime(student.user?.createdAt)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#8D6E63]">Parent Account Created:</span>
-                          <span className="text-[#2D1E18]">
-                            {formatKolkataDateTime(student.parentRelations?.[0]?.parent?.user?.createdAt)}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -476,34 +457,59 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
                               className="hidden"
-                              onChange={async (e) => {
+                              onChange={(e) => {
                                 const file = e.target.files?.[0];
-                                if (!file) return;
-                                const formData = new FormData();
-                                formData.append('photo', file);
-                                try {
-                                  const res = await apiFetch(`/students/${student.id}/photo`, {
-                                    method: 'POST',
-                                    body: formData,
-                                  });
-                                  if (res.success) {
-                                    success('Student photograph updated');
-                                    fetchDetails();
-                                    if (onStudentUpdated) onStudentUpdated();
-                                  } else {
-                                    error(res.error || 'Failed to upload photo');
-                                  }
-                                } catch (err: any) {
-                                  error(err.message);
-                                }
+                                if (file) handlePhotoChange(file);
                               }}
                             />
-                            📷 {student.photoUrl ? 'Replace Photo' : 'Upload Photo'}
+                            📷 {student.photoUrl ? (uploadingPhoto ? 'Uploading...' : 'Replace Photo') : (uploadingPhoto ? 'Uploading...' : 'Upload Photo')}
                           </label>
                         </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* Guardian & Emergency Contact Details (Purely Informational, No Login/Passwords) */}
+                  {student.parentRelations && student.parentRelations.length > 0 && (
+                    <div className="bg-[#FDFBF7] p-4 rounded-2xl border border-[#D7CCC8]/70 space-y-3">
+                      <h4 className="text-xs font-bold text-[#4E342E] uppercase tracking-wider flex items-center gap-1.5 border-b border-[#EFEBE9] pb-2">
+                        <Users className="w-3.5 h-3.5 text-[#6D4C41]" /> Guardian & Primary Contact Details
+                      </h4>
+                      <div className="space-y-3">
+                        {student.parentRelations.map((rel: any) => {
+                          const parentUser = rel.parent?.user;
+                          return (
+                            <div
+                              key={rel.id}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2 border-b border-[#EFEBE9] last:border-0 pb-2.5 last:pb-0"
+                            >
+                              <div>
+                                <span className="font-bold text-[#2D1E18] text-sm">
+                                  {parentUser?.fullName || 'Parent / Guardian'}
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] ml-2">
+                                  {rel.relation || 'Guardian'}
+                                </span>
+                                {rel.isPrimaryContact && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 border border-sky-200 ml-1.5">
+                                    Primary Contact
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-left sm:text-right">
+                                <span className="font-mono font-bold text-[#2D1E18]">
+                                  {parentUser?.phone || student.parentRelations?.[0]?.parent?.phone || 'No phone'}
+                                </span>
+                                {parentUser?.email && (
+                                  <span className="text-[#8D6E63] text-[11px] block">{parentUser.email}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {student.notes && (
                     <div className="p-3.5 rounded-2xl bg-[#FDFBF7] border border-[#D7CCC8]/70">
@@ -516,264 +522,7 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
                 </div>
               )}
 
-              {/* TAB 2: STUDENT LOGIN ACCOUNT */}
-              {activeTab === 'account' && (
-                <div className="space-y-6">
-                  {student.user ? (
-                    <div className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-2xl p-5 space-y-4">
-                      <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-                        <div className="flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-emerald-700" />
-                          <h4 className="text-xs font-bold text-[#2D1E18] uppercase tracking-wider">
-                            Student Login Account
-                          </h4>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          Account Active
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                        <div>
-                          <span className="text-[#8D6E63] block">Login Phone:</span>
-                          <span className="font-mono font-bold text-[#2D1E18]">{student.user.phone || 'None registered'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[#8D6E63] block">Login Email:</span>
-                          <span className="font-mono text-[#2D1E18]">{student.user.email || 'None registered'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[#8D6E63] block">Student Login Created:</span>
-                          <span className="font-semibold text-[#2D1E18]">{formatKolkataDateTime(student.user.createdAt)}</span>
-                        </div>
-                        <div>
-                          <span className="text-[#8D6E63] block">Last Login:</span>
-                          <span className="font-semibold text-[#2D1E18]">{formatKolkataDateTime(student.user.lastLoginAt)}</span>
-                        </div>
-                        <div>
-                          <span className="text-[#8D6E63] block">Force Password Change:</span>
-                          <span className={`font-semibold ${student.user.mustChangePassword ? 'text-amber-800' : 'text-emerald-700'}`}>
-                            {student.user.mustChangePassword ? 'Yes (Pending first login)' : 'No'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[#8D6E63] block">Joined Date:</span>
-                          <span className="font-semibold text-[#2D1E18]">{formatKolkataDate(student.admissionDate)}</span>
-                        </div>
-                      </div>
-
-                      {/* Authorized Actions */}
-                      <div className="pt-3 border-t border-[#EFEBE9] flex flex-wrap gap-3">
-                        <button
-                          onClick={() => {
-                            setResetTarget({
-                              type: 'student',
-                              id: student.id,
-                              name: `${student.firstName} ${student.lastName}`,
-                            });
-                            setNewPasswordInput('');
-                            setTemporaryPasswordResult(null);
-                          }}
-                          className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" /> Reset Student Password
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIdentifierTarget({
-                              type: 'student',
-                              id: student.id,
-                              currentEmail: student.user.email || '',
-                              currentPhone: student.user.phone || student.phone || '',
-                              name: `${student.firstName} ${student.lastName}`,
-                            });
-                            setEditEmail(student.user.email || '');
-                            setEditPhone(student.user.phone || student.phone || '');
-                          }}
-                          className="bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Update Login Identifier
-                        </button>
-                        <button
-                          onClick={() => handleToggleStudentAccountStatus(student.user.isActive)}
-                          className={`text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 border ${
-                            student.user.isActive
-                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
-                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                          }`}
-                        >
-                          {student.user.isActive ? 'Deactivate Login Account' : 'Reactivate Login Account'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-[#FDFBF7] border border-dashed border-[#D7CCC8] rounded-2xl p-6 text-center space-y-3">
-                      <div className="w-12 h-12 rounded-full bg-[#EFEBE9] text-[#6D4C41] flex items-center justify-center mx-auto">
-                        <Shield className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-[#2D1E18]">No Student Login Account</h4>
-                        <p className="text-xs text-[#8D6E63] max-w-sm mx-auto mt-1">
-                          This student currently does not have login credentials assigned. Authorized staff can generate a login account now.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setResetTarget({
-                            type: 'student',
-                            id: student.id,
-                            name: `${student.firstName} ${student.lastName}`,
-                          });
-                          setNewPasswordInput('');
-                          setTemporaryPasswordResult(null);
-                        }}
-                        className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm"
-                      >
-                        <KeyRound className="w-3.5 h-3.5" /> Create Student Login & Credentials
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 3: LINKED GUARDIANS */}
-              {activeTab === 'guardians' && (
-                <div className="space-y-4">
-                  {student.parentRelations && student.parentRelations.length > 0 ? (
-                    student.parentRelations.map((rel: any) => {
-                      const parentUser = rel.parent?.user;
-                      return (
-                        <div
-                          key={rel.id}
-                          className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-2xl p-5 space-y-4"
-                        >
-                          <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-[#2D1E18]">
-                                {parentUser?.fullName || 'Parent / Guardian'}
-                              </span>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8]">
-                                {rel.relation}
-                              </span>
-                              {rel.isPrimaryContact && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 border border-sky-200">
-                                  Primary Contact
-                                </span>
-                              )}
-                            </div>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                                parentUser?.isActive
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : 'bg-stone-100 text-stone-700 border-stone-200'
-                              }`}
-                            >
-                              {parentUser?.isActive ? 'Active Account' : 'Inactive'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                            <div>
-                              <span className="text-[#8D6E63] block">Phone / Login ID:</span>
-                              <span className="font-mono font-bold text-[#2D1E18]">{parentUser?.phone || 'None registered'}</span>
-                            </div>
-                            <div>
-                              <span className="text-[#8D6E63] block">Email:</span>
-                              <span className="font-mono text-[#2D1E18]">{parentUser?.email || 'None registered'}</span>
-                            </div>
-                            <div>
-                              <span className="text-[#8D6E63] block">Parent Login Created:</span>
-                              <span className="font-semibold text-[#2D1E18]">
-                                {formatKolkataDateTime(parentUser?.createdAt)}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[#8D6E63] block">Last Login:</span>
-                              <span className="font-semibold text-[#2D1E18]">
-                                {formatKolkataDateTime(parentUser?.lastLoginAt)}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[#8D6E63] block">SMS Notifications:</span>
-                              <span className={`font-semibold ${rel.canReceiveSms ? 'text-emerald-700' : 'text-stone-500'}`}>
-                                {rel.canReceiveSms ? 'Eligible (Consent On)' : 'Disabled'}
-                              </span>
-                            </div>
-                            {rel.parent?.studentRelations && rel.parent.studentRelations.length > 1 && (
-                              <div className="col-span-full pt-1 border-t border-[#EFEBE9]">
-                                <span className="text-[#8D6E63] block mb-1">Other Linked Children (Siblings):</span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {rel.parent.studentRelations
-                                    .filter((r: any) => r.student?.id !== student.id)
-                                    .map((r: any) => (
-                                      <span
-                                        key={r.student?.id || r.id}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EFEBE9] text-[#4E342E] text-[11px] font-semibold border border-[#D7CCC8]"
-                                      >
-                                        <GraduationCap className="w-3 h-3 text-[#6D4C41]" />
-                                        {r.student?.firstName} {r.student?.lastName} ({r.student?.admissionNumber})
-                                      </span>
-                                    ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Authorized Guardian Actions */}
-                          <div className="pt-3 border-t border-[#EFEBE9] flex flex-wrap gap-3">
-                            <button
-                              onClick={() => {
-                                setResetTarget({
-                                  type: 'parent',
-                                  id: rel.parent.id,
-                                  name: parentUser?.fullName || 'Parent',
-                                });
-                                setNewPasswordInput('');
-                                setTemporaryPasswordResult(null);
-                              }}
-                              className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
-                            >
-                              <KeyRound className="w-3.5 h-3.5" /> Reset Parent Password
-                            </button>
-                            <button
-                              onClick={() => {
-                                setIdentifierTarget({
-                                  type: 'parent',
-                                  id: rel.parent.id,
-                                  currentEmail: parentUser?.email || '',
-                                  currentPhone: parentUser?.phone || '',
-                                  name: parentUser?.fullName || 'Parent',
-                                });
-                                setEditEmail(parentUser?.email || '');
-                                setEditPhone(parentUser?.phone || '');
-                              }}
-                              className="bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" /> Update Contact / Login ID
-                            </button>
-                            <button
-                              onClick={() => handleToggleParentAccountStatus(rel.parent.id, parentUser?.isActive ?? true)}
-                              className={`text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 border ${
-                                parentUser?.isActive
-                                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
-                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                              }`}
-                            >
-                              {parentUser?.isActive ? 'Deactivate Login Account' : 'Reactivate Login Account'}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="p-8 text-center bg-[#FDFBF7] border border-dashed border-[#D7CCC8] rounded-2xl text-xs text-[#8D6E63]">
-                      No guardians linked to this student record.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 4: ACADEMIC & ATTENDANCE SUMMARY */}
+              {/* TAB 2: ACADEMIC & ATTENDANCE SUMMARY */}
               {activeTab === 'academics' && (
                 <div className="space-y-4">
                   <div className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-2xl p-5 space-y-3">
@@ -831,150 +580,6 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Password Reset Modal */}
-      {resetTarget && (
-        <div className="fixed inset-0 z-[9995] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
-              <h3 className="text-base font-bold text-[#2D1E18]">
-                Reset Password: {resetTarget.name}
-              </h3>
-              <button
-                onClick={() => setResetTarget(null)}
-                className="text-[#8D6E63] hover:text-[#2D1E18] p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {temporaryPasswordResult ? (
-              <div className="space-y-4 text-center py-2">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl">
-                  ✓
-                </div>
-                <h4 className="text-sm font-bold text-[#2D1E18]">New Temporary Password Generated</h4>
-                <p className="text-xs text-[#8D6E63]">
-                  Provide this password to the {resetTarget.type}. They will be required to choose a new password upon login.
-                </p>
-                <div className="bg-[#FDFBF7] border-2 border-dashed border-[#8D6E63]/40 rounded-2xl p-3.5 flex items-center justify-between">
-                  <span className="font-mono text-base font-bold text-[#4E342E] select-all">
-                    {temporaryPasswordResult}
-                  </span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(temporaryPasswordResult);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }}
-                    className="p-1.5 rounded-lg bg-[#EFEBE9] hover:bg-[#D7CCC8] text-[#4E342E] transition flex items-center gap-1 text-xs"
-                  >
-                    {copied ? <Check className="w-4 h-4 text-emerald-700" /> : <Copy className="w-4 h-4" />}
-                    <span>{copied ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-                <button
-                  onClick={() => setResetTarget(null)}
-                  className="w-full bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-bold py-2.5 rounded-xl transition"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-xs text-[#6D4C41]">
-                  You can specify a new password below (min 8 characters), or leave it blank to automatically generate a secure temporary password.
-                </p>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                    Custom Password (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={newPasswordInput}
-                    onChange={(e) => setNewPasswordInput(e.target.value)}
-                    placeholder="Leave blank to auto-generate"
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
-                </div>
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    onClick={() => setResetTarget(null)}
-                    className="px-4 py-2 text-xs font-semibold text-[#6D4C41]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleResetPassword}
-                    disabled={resetLoading}
-                    className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50"
-                  >
-                    {resetLoading ? 'Resetting...' : 'Confirm Password Reset'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Update Login Identifier Modal */}
-      {identifierTarget && (
-        <div className="fixed inset-0 z-[9995] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
-              <h3 className="text-base font-bold text-[#2D1E18]">
-                Update Login Credentials: {identifierTarget.name}
-              </h3>
-              <button
-                onClick={() => setIdentifierTarget(null)}
-                className="text-[#8D6E63] hover:text-[#2D1E18] p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Phone Number (Login ID)</label>
-                <input
-                  type="text"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  placeholder="e.g. 9876543210"
-                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                  placeholder="e.g. guardian@example.com"
-                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setIdentifierTarget(null)}
-                className="px-4 py-2 text-xs font-semibold text-[#6D4C41]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpdateIdentifier}
-                disabled={identifierLoading}
-                className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-5 py-2 rounded-xl transition disabled:opacity-50"
-              >
-                {identifierLoading ? 'Saving...' : 'Save Credentials'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Confirmation Modal for destructive actions */}
       <ConfirmationModal

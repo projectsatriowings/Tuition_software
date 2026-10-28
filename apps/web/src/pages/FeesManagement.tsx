@@ -114,17 +114,19 @@ export const FeesManagement: React.FC = () => {
 
   // Initial load
   useEffect(() => {
+    if (!isAdmin) return;
     loadDashboardData();
     loadBatches();
     loadStudents();
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin) return;
     if (activeTab === 'structures') loadFeeStructures();
     if (activeTab === 'assignments') loadAssignments();
     if (activeTab === 'payments') loadPayments();
     if (activeTab === 'adjustments') loadAdjustments();
-  }, [activeTab]);
+  }, [activeTab, isAdmin]);
 
   const loadDashboardData = async () => {
     try {
@@ -410,6 +412,10 @@ export const FeesManagement: React.FC = () => {
         );
     }
   };
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">

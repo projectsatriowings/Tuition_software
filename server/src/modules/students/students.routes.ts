@@ -13,6 +13,10 @@ import {
   uploadStudentPhoto,
   getStudentPhoto,
   getRawPhoto,
+  lookupParent,
+  assignStudentBatch,
+  lookupExistingStudent,
+  enrollExistingStudent,
 } from './students.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 import { fileUpload, photoUpload } from '../../utils/storage.js';
@@ -32,23 +36,30 @@ const handlePhotoUpload = (req: any, res: any, next: any) => {
 const router = Router();
 
 router.use(authenticateToken);
+
+// Photograph streaming routes (accessible via <img> tags with query token ?token=...)
+router.get('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentPhoto);
+router.get('/photo-raw/:key', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getRawPhoto);
+
 router.use(requireInstituteContext);
 
 // Student management routes
 router.get('/admission-prefix', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getAdmissionPrefixInfo);
+router.get('/lookup', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), lookupExistingStudent);
+router.get('/lookup-parent', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), lookupParent);
 router.get('/my/profile', requireRole('STUDENT'), getMyStudentProfile);
 router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listStudents);
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), admitStudent);
+router.post('/:id/enroll', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), enrollExistingStudent);
 
-// Photograph upload & streaming routes
+// Photograph upload routes
 router.post('/upload-photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), handlePhotoUpload, uploadStudentPhoto);
 router.post('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), handlePhotoUpload, uploadStudentPhoto);
-router.get('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentPhoto);
-router.get('/photo-raw/:key', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getRawPhoto);
 
 router.get('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentById);
 router.patch('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudent);
 router.put('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudent);
+router.put('/:id/batch-assignment', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), assignStudentBatch);
 router.patch('/:id/status', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateStudentStatus);
 
 import {

@@ -1,3 +1,4 @@
+import { matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
@@ -50,6 +51,12 @@ export function verifyQrPassToken(qrToken: string): { valid: boolean; studentId?
 }
 
 // Validation Schemas
+export const voiceMatchSchema = z.object({
+  transcript: z.string().trim().min(1, 'Transcript or query text is required'),
+  batchId: z.string().uuid().optional().nullable(),
+  subjectId: z.string().uuid().optional().nullable(),
+});
+
 export const checkInSchema = z.object({
   studentId: z.string().uuid(),
   batchId: z.string().uuid().optional(),
@@ -89,6 +96,49 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     }
 
     const { studentId, batchId, subjectId, method, isLate, remarks, idempotencyKey } = parse.data;
+
+    // Upfront idempotency check to safely handle retries and prevent duplicate records/notifications
+    if (idempotencyKey) {
+      const existing = await prisma.attendanceEvent.findUnique({
+        where: { idempotencyKey },
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              admissionNumber: true,
+              photoUrl: true,
+            },
+          },
+          batch: {
+            select: { id: true, name: true },
+          },
+        },
+      });
+      if (existing) {
+        const timeStr = new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }).format(existing.eventTime);
+
+        return res.status(200).json({
+          success: true,
+          message: `${existing.student.firstName} ${existing.student.lastName} check-in was already processed.`,
+          data: {
+            event: existing,
+            student: {
+              ...existing.student,
+              batchName: existing.batch?.name || null,
+              checkInTimeFormatted: timeStr,
+            },
+            alreadyProcessed: true,
+          },
+        });
+      }
+    }
 
     // Staff validation for batch and subject
     if (req.user?.role === 'STAFF') {
@@ -152,15 +202,40 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     });
 
     // Check transition validity:
-    // If there is an existing CHECK_IN without an intervening CHECK_OUT in the latest session, reject!
+    // If there is an existing CHECK_IN without an intervening CHECK_OUT in the latest session, reject with rich existing status!
     const latestCheckIn = todaysEvents.find((e) => e.eventType === 'CHECK_IN');
     const latestCheckOut = todaysEvents.find((e) => e.eventType === 'CHECK_OUT');
 
     if (latestCheckIn) {
       if (!latestCheckOut || latestCheckOut.sessionNumber < latestCheckIn.sessionNumber) {
+        const timeFormatted = new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }).format(latestCheckIn.eventTime);
+
         return res.status(409).json({
           success: false,
-          error: 'Student is already checked in for today. Please record check-out before starting a new session.',
+          alreadyCheckedIn: true,
+          error: `${student.firstName} ${student.lastName} is already checked in for today at ${timeFormatted}.`,
+          data: {
+            student: {
+              id: student.id,
+              firstName: student.firstName,
+              lastName: student.lastName,
+              admissionNumber: student.admissionNumber,
+              photoUrl: student.photoUrl,
+            },
+            existingEvent: {
+              id: latestCheckIn.id,
+              eventTime: latestCheckIn.eventTime,
+              eventTimeFormatted: timeFormatted,
+              eventType: latestCheckIn.eventType,
+              sessionNumber: latestCheckIn.sessionNumber,
+              method: latestCheckIn.method,
+            },
+          },
         });
       }
     }
@@ -168,55 +243,323 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     // Determine session number (e.g. 1 for morning, 2 for evening session)
     const nextSessionNumber = latestCheckIn ? latestCheckIn.sessionNumber + 1 : 1;
 
-    // Record Event in transaction + queue notification
-    const event = await prisma.$transaction(
-      async (tx) => {
-        const createdEvent = await tx.attendanceEvent.create({
-          data: {
-            instituteId,
-            studentId,
-            batchId: assignedBatchId,
-            eventDate,
-            eventType: 'CHECK_IN',
-            eventTime: serverNow,
-            sessionNumber: nextSessionNumber,
-            method,
-            isLate,
-            markedById: req.user!.userId,
-            remarks: remarks || null,
-            idempotencyKey: idempotencyKey || null,
-          },
-        });
-
-        // Queue SMS notification for guardians
-        await NotificationService.queueAttendanceNotification({
-          attendanceEventId: createdEvent.id,
-          studentId,
-          instituteId,
-          eventType: 'CHECK_IN',
-          eventTime: serverNow,
-          tx,
-        });
-
-        return createdEvent;
+    // Record Event in transactional scope
+    const event = await prisma.attendanceEvent.create({
+      data: {
+        instituteId,
+        studentId,
+        batchId: assignedBatchId,
+        eventDate,
+        eventType: 'CHECK_IN',
+        eventTime: serverNow,
+        sessionNumber: nextSessionNumber,
+        method,
+        isLate,
+        markedById: req.user!.userId,
+        remarks: remarks || null,
+        idempotencyKey: idempotencyKey || null,
       },
-      { timeout: 15000, maxWait: 10000 }
-    );
+      include: {
+        batch: { select: { id: true, name: true } },
+      },
+    });
+
+    // Queue SMS notification for guardians safely outside transaction
+    // (Preserves successful attendance record even if telephony provider or template fails)
+    let smsNotifications: any[] = [];
+    try {
+      smsNotifications = await NotificationService.queueAttendanceNotification({
+        attendanceEventId: event.id,
+        studentId,
+        instituteId,
+        eventType: 'CHECK_IN',
+        eventTime: serverNow,
+      });
+    } catch (smsErr: any) {
+      console.error('[NotificationService] Non-blocking SMS enqueue warning:', smsErr.message);
+    }
+
+    const checkInTimeStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(serverNow);
 
     return res.status(201).json({
       success: true,
       message: `${student.firstName} ${student.lastName} checked in successfully.`,
-      data: { event },
+      data: {
+        event,
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          admissionNumber: student.admissionNumber,
+          photoUrl: student.photoUrl,
+          batchName: event.batch?.name || null,
+          checkInTimeFormatted: checkInTimeStr,
+        },
+        smsNotification:
+          smsNotifications.length > 0
+            ? {
+                queued: true,
+                count: smsNotifications.length,
+                status: smsNotifications[0].status,
+                recipient: smsNotifications[0].phoneNumber.replace(/(\d{2})\d+(\d{2})/, '$1******$2'),
+              }
+            : {
+                queued: false,
+                reason: 'No linked guardian with SMS permission enabled',
+              },
+      },
     });
   } catch (err: any) {
     console.error('[Check-in Error]', err);
+
+    // Prisma Unique Constraint Violation (concurrent requests for same student/date/session)
+    if (err?.code === 'P2002') {
+      try {
+        const existing = await prisma.attendanceEvent.findFirst({
+          where: {
+            studentId: req.body?.studentId,
+            eventType: 'CHECK_IN',
+          },
+          orderBy: { eventTime: 'desc' },
+        });
+        const timeStr = existing
+          ? new Intl.DateTimeFormat('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true,
+            }).format(existing.eventTime)
+          : 'earlier today';
+
+        return res.status(409).json({
+          success: false,
+          alreadyCheckedIn: true,
+          error: `Student was already checked in at ${timeStr}. Duplicate attendance prevented.`,
+          data: { existingEvent: existing },
+        });
+      } catch {}
+    }
+
     return res.status(500).json({ success: false, error: 'Failed to record check-in' });
   }
 }
 
 /**
- * Record Student Check-Out
+ * Voice Match Students:
+ * Searches eligible students within the staff member's institute and authorized batches/subjects,
+ * matches the spoken transcript, determines if already checked in, and determines if eligible for automatic check-in.
  */
+export async function voiceMatchStudents(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const rawInput = req.method === 'GET' ? req.query : req.body;
+    const parse = voiceMatchSchema.safeParse(rawInput);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: parse.error.errors[0]?.message });
+    }
+
+    const { transcript, batchId, subjectId } = parse.data;
+
+    // Staff validation for batch and subject
+    if (req.user?.role === 'STAFF') {
+      if (batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view students in this batch' });
+        }
+      }
+      if (batchId && subjectId) {
+        const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, subjectId, prisma);
+        if (!isAssignedSub) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view students for this subject' });
+        }
+      }
+    }
+
+    const scope = await getAuthorizedStudentScope(req, prisma, {
+      batchId: batchId || undefined,
+      subjectId: subjectId || undefined,
+    });
+
+    const andConditions: any[] = [
+      { instituteId, status: 'ACTIVE' },
+      scope.whereClause,
+    ];
+
+    if (req.user?.role !== 'STAFF') {
+      if (batchId) {
+        andConditions.push({
+          enrollments: { some: { batchId, isActive: true } },
+        });
+      }
+      if (subjectId) {
+        andConditions.push({
+          enrollments: { some: { batchId: batchId || undefined, subjectId, isActive: true } },
+        });
+      }
+    }
+
+    const serverNow = new Date();
+    const targetDate = getInstituteLocalDate(serverNow);
+
+    const students = await prisma.student.findMany({
+      where: { AND: andConditions },
+      include: {
+        enrollments: {
+          where: { isActive: true },
+          include: {
+            batch: { select: { id: true, name: true, code: true } },
+            subject: { select: { id: true, name: true, code: true } },
+          },
+        },
+        attendanceEvents: {
+          where: {
+            instituteId,
+            eventDate: targetDate,
+            ...(batchId ? { batchId } : {}),
+          },
+          orderBy: { sessionNumber: 'desc' },
+          select: {
+            id: true,
+            eventType: true,
+            eventTime: true,
+            sessionNumber: true,
+            method: true,
+          },
+        },
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    });
+
+    const timeFormatter = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const candidates: EnrolledStudentCandidate[] = students.map((s) => {
+      const latestCheckIn = s.attendanceEvents.find((e) => e.eventType === 'CHECK_IN');
+      const latestCheckOut = s.attendanceEvents.find((e) => e.eventType === 'CHECK_OUT');
+      const isCheckedIn = !!(
+        latestCheckIn &&
+        (!latestCheckOut || latestCheckOut.sessionNumber < latestCheckIn.sessionNumber)
+      );
+
+      const checkInTimeFormatted = latestCheckIn ? timeFormatter.format(latestCheckIn.eventTime) : null;
+      const targetEnrollment = batchId
+        ? s.enrollments.find((e) => e.batchId === batchId) || s.enrollments[0]
+        : s.enrollments[0];
+
+      return {
+        id: s.id,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        admissionNumber: s.admissionNumber,
+        rollNumber: (s as any).rollNumber || null,
+        phone: s.phone,
+        photoUrl: s.photoUrl,
+        status: s.status,
+        batchId: targetEnrollment?.batchId,
+        batchName: targetEnrollment?.batch?.name || 'Unassigned',
+        subjectId: targetEnrollment?.subjectId || null,
+        subjectName: targetEnrollment?.subject?.name || null,
+        alreadyCheckedIn: isCheckedIn,
+        checkInTimeFormatted,
+        todayStatus: isCheckedIn ? 'CHECKED_IN' : latestCheckOut ? 'CHECKED_OUT' : 'ABSENT',
+      };
+    });
+
+    // Run voice matching
+    const matchResult = matchStudentVoice(transcript, candidates);
+
+    if (matchResult.status === 'EXACT_SINGLE' && matchResult.bestMatch) {
+      const match = matchResult.bestMatch;
+      return res.json({
+        success: true,
+        status: 'EXACT_SINGLE',
+        matchCount: 1,
+        bestMatch: match,
+        matches: [match],
+        autoCheckInEligible: !match.alreadyCheckedIn,
+        alreadyCheckedIn: !!match.alreadyCheckedIn,
+        checkInTimeFormatted: match.checkInTimeFormatted,
+        message: match.alreadyCheckedIn
+          ? `${match.firstName} ${match.lastName} is already checked in at ${match.checkInTimeFormatted}.`
+          : `Exact match found for ${match.firstName} ${match.lastName}. Initiating automatic check-in.`,
+        cleanedQuery: matchResult.cleanedQuery,
+      });
+    }
+
+    if (matchResult.status === 'EXACT_MULTIPLE') {
+      return res.json({
+        success: true,
+        status: 'EXACT_MULTIPLE',
+        matchCount: matchResult.exactMatches.length,
+        bestMatch: null,
+        matches: matchResult.exactMatches,
+        autoCheckInEligible: false,
+        message: `Multiple students matched '${transcript}'. Please select the intended student.`,
+        cleanedQuery: matchResult.cleanedQuery,
+      });
+    }
+
+    if (matchResult.status === 'FUZZY_SINGLE' && matchResult.bestMatch) {
+      const match = matchResult.bestMatch;
+      const confidence = matchResult.fuzzyMatches[0]?.score || 0.8;
+      return res.json({
+        success: true,
+        status: 'FUZZY_SINGLE',
+        matchCount: 1,
+        bestMatch: match,
+        matches: [match],
+        autoCheckInEligible: false, // Never auto check-in low/fuzzy confidence! Requires staff confirmation
+        requiresConfirmation: true,
+        confidenceScore: Math.round(confidence * 100),
+        alreadyCheckedIn: !!match.alreadyCheckedIn,
+        checkInTimeFormatted: match.checkInTimeFormatted,
+        message: `Low confidence match for ${match.firstName} ${match.lastName} (${Math.round(confidence * 100)}% match). Please confirm manually.`,
+        cleanedQuery: matchResult.cleanedQuery,
+      });
+    }
+
+    if (matchResult.status === 'FUZZY_MULTIPLE') {
+      const matches = matchResult.fuzzyMatches.map((f) => f.student);
+      return res.json({
+        success: true,
+        status: 'FUZZY_MULTIPLE',
+        matchCount: matches.length,
+        bestMatch: null,
+        matches,
+        autoCheckInEligible: false,
+        message: `Multiple students have similar names to '${transcript}'. Please select the intended student.`,
+        cleanedQuery: matchResult.cleanedQuery,
+      });
+    }
+
+    return res.json({
+      success: true,
+      status: 'NO_MATCH',
+      matchCount: 0,
+      bestMatch: null,
+      matches: [],
+      autoCheckInEligible: false,
+      message: `No matching student found for '${transcript}'.`,
+      cleanedQuery: matchResult.cleanedQuery,
+    });
+  } catch (err: any) {
+    console.error('[Voice Match Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to process voice matching' });
+  }
+}
+
 export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
   try {
     const instituteId = req.instituteId;
@@ -415,7 +758,6 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           id: student.id,
           name: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           photoUrl: student.photoUrl,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
         },
@@ -509,7 +851,7 @@ export async function getAttendanceReports(req: AuthenticatedRequest, res: Respo
       orderBy: [{ eventDate: 'desc' }, { eventTime: 'desc' }],
       include: {
         student: {
-          select: { id: true, firstName: true, lastName: true, admissionNumber: true, rollNumber: true },
+          select: { id: true, firstName: true, lastName: true, admissionNumber: true },
         },
         batch: { select: { id: true, name: true } },
         markedBy: { select: { id: true, fullName: true } },
@@ -565,7 +907,6 @@ export async function getStudentQrPass(req: AuthenticatedRequest, res: Response)
           id: student.id,
           fullName: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           instituteName: student.institute.name,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
         },
@@ -632,7 +973,6 @@ export async function validateScannedQr(req: AuthenticatedRequest, res: Response
           id: student.id,
           name: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
-          rollNumber: student.rollNumber,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
           batchId: student.enrollments[0]?.batchId,
         },

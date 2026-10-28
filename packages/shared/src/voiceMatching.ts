@@ -7,6 +7,13 @@ export interface EnrolledStudentCandidate {
   phone?: string | null;
   photoUrl?: string | null;
   status?: string;
+  batchId?: string;
+  batchName?: string;
+  subjectId?: string | null;
+  subjectName?: string | null;
+  alreadyCheckedIn?: boolean;
+  checkInTimeFormatted?: string | null;
+  todayStatus?: string;
 }
 
 export interface VoiceMatchResult {

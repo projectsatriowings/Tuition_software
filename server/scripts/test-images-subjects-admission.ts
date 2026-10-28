@@ -597,6 +597,41 @@ async function runTestSuite() {
     recordTest(14, 'Staff cannot create unauthorized batch enrollments (403 Forbidden)', test14Passed, `status: ${resStaffUnauth.status}`);
 
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // 16. Staff role blocked from all Fees endpoints (403 Forbidden)
+    // -------------------------------------------------------------------------
+    const resStaffFeesStruct = await fetch(`${BASE_URL}/fees/structures`, {
+      headers: {
+        Authorization: `Bearer ${staffToken}`,
+        'x-institute-id': instA.id,
+      },
+    });
+    const resStaffFeesPay = await fetch(`${BASE_URL}/fees/payments`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${staffToken}`,
+        'x-institute-id': instA.id,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    const resStaffFeesAssign = await fetch(`${BASE_URL}/fees/assignments`, {
+      headers: {
+        Authorization: `Bearer ${staffToken}`,
+        'x-institute-id': instA.id,
+      },
+    });
+    const test16Passed =
+      resStaffFeesStruct.status === 403 &&
+      resStaffFeesPay.status === 403 &&
+      resStaffFeesAssign.status === 403;
+    recordTest(
+      16,
+      'Staff role strictly denied from Fees management endpoints (403 Forbidden)',
+      test16Passed,
+      `structures: ${resStaffFeesStruct.status}, payments: ${resStaffFeesPay.status}, assignments: ${resStaffFeesAssign.status}`
+    );
+
     // 15. Overall tenant isolation, format constraints, and schema safety
     // -------------------------------------------------------------------------
     const allAdmissionsValidFormat = concurrentAdmNums.every((adm) => {

@@ -45,7 +45,10 @@ const AppContent: React.FC = () => {
     if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework')) {
       setCurrentTab('academic_dashboard');
     }
-  }, [user?.role, currentTab]);
+    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff')) {
+      setCurrentTab('attendance');
+    }
+  }, [user, currentTab]);
 
   if (loading) {
     return (
@@ -87,11 +90,11 @@ const AppContent: React.FC = () => {
                   <AcademicAdminDashboard onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
-                {currentTab === 'staff' && <StaffManagement />}
+                {currentTab === 'staff' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <StaffManagement />}
 
                 {currentTab === 'students' && <StudentManagement />}
 
-                {currentTab === 'academics' && (
+                {currentTab === 'academics' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
                   <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
@@ -110,7 +113,7 @@ const AppContent: React.FC = () => {
                 {currentTab === 'progress_reviews' && <ProgressReviewsManagement />}
 
                 {currentTab === 'messaging' && <MessagingInbox />}
-                {currentTab === 'fees' && <FeesManagement />}
+                {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -131,4 +134,3 @@ export default function App() {
     </ToastProvider>
   );
 }
-

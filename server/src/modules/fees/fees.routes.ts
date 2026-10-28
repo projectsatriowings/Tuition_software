@@ -41,12 +41,12 @@ router.post(
 );
 router.get(
   '/structures',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
   listFeeStructures
 );
 router.get(
   '/structures/:id',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
   getFeeStructureById
 );
 router.patch(
@@ -70,17 +70,17 @@ router.post(
 );
 router.get(
   '/assignments',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'PARENT', 'STUDENT'),
   listFeeAssignments
 );
 router.get(
   '/assignments/:id',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'PARENT', 'STUDENT'),
   getFeeAssignmentById
 );
 router.get(
   '/students/:studentId/statement',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'PARENT', 'STUDENT'),
   getStudentFeeStatement
 );
 
@@ -89,17 +89,17 @@ router.get(
 // ============================================================================
 router.post(
   '/payments',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
   recordPayment
 );
 router.get(
   '/payments',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'PARENT', 'STUDENT'),
   listPayments
 );
 router.get(
   '/payments/:id/receipt',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'PARENT', 'STUDENT'),
   getReceipt
 );
 

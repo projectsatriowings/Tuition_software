@@ -16,7 +16,7 @@ interface AcademicAdminDashboardProps {
 }
 
 export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({ onNavigateTab }) => {
-  const { activeInstitute } = useAuth();
+  const { activeInstitute, user } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -118,41 +118,45 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({ 
           </span>
         </button>
 
-        <button
-          onClick={() => onNavigateTab('staff')}
-          className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
-        >
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center mb-4">
-            <Users className="w-5 h-5" />
-          </div>
-          <h3 className="font-bold text-[#2D1E18] text-base group-hover:text-[#4E342E] transition">
-            Staff & Faculty
-          </h3>
-          <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
-            Provision faculty accounts, assign subjects, and configure permissions.
-          </p>
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 mt-4">
-            Manage Staff <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
-          </span>
-        </button>
+        {user?.role === 'ACADEMIC_ADMIN' && (
+          <button
+            onClick={() => onNavigateTab('staff')}
+            className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center mb-4">
+              <Users className="w-5 h-5" />
+            </div>
+            <h3 className="font-bold text-[#2D1E18] text-base group-hover:text-[#4E342E] transition">
+              Staff & Faculty
+            </h3>
+            <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
+              Provision faculty accounts, assign subjects, and configure permissions.
+            </p>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 mt-4">
+              Manage Staff <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+            </span>
+          </button>
+        )}
 
-        <button
-          onClick={() => onNavigateTab('academics')}
-          className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
-        >
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 flex items-center justify-center mb-4">
-            <Layers className="w-5 h-5" />
-          </div>
-          <h3 className="font-bold text-[#2D1E18] text-base group-hover:text-[#4E342E] transition">
-            Batches & Curriculum
-          </h3>
-          <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
-            Manage academic batches, assign subjects, faculty, and student rosters.
-          </p>
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 mt-4">
-            Manage Batches <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
-          </span>
-        </button>
+        {user?.role === 'ACADEMIC_ADMIN' && (
+          <button
+            onClick={() => onNavigateTab('academics')}
+            className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 flex items-center justify-center mb-4">
+              <Layers className="w-5 h-5" />
+            </div>
+            <h3 className="font-bold text-[#2D1E18] text-base group-hover:text-[#4E342E] transition">
+              Batches & Curriculum
+            </h3>
+            <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
+              Manage academic batches, assign subjects, faculty, and student rosters.
+            </p>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 mt-4">
+              Manage Batches <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

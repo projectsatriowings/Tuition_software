@@ -233,7 +233,6 @@ model Student {
   instituteId     String
   userId          String?       @unique // Optional student login account
   admissionNumber String
-  rollNumber      String?
   firstName       String
   lastName        String
   dob             DateTime?

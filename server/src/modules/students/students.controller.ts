@@ -13,11 +13,12 @@ import {
   getAdmissionYear,
 } from './admission-number.service.js';
 
-export function formatStudentResponse<T extends { id: string; photoUrl?: string | null; notes?: string | null }>(student: T): T & { credentialsOnRecord?: { studentPassword: string | null; parentPassword: string | null } } {
+export function formatStudentResponse<T extends { id: string; photoUrl?: string | null; notes?: string | null; updatedAt?: Date | string }>(student: T): T & { credentialsOnRecord?: { studentPassword: string | null; parentPassword: string | null } } {
   if (!student) return student;
   let formattedPhoto = student.photoUrl;
   if (formattedPhoto && !formattedPhoto.startsWith('http://') && !formattedPhoto.startsWith('https://') && !formattedPhoto.startsWith('/api/')) {
-    formattedPhoto = `/api/students/${student.id}/photo`;
+    const v = (student as any).updatedAt ? new Date((student as any).updatedAt).getTime() : '';
+    formattedPhoto = `/api/students/${student.id}/photo${v ? `?v=${v}` : ''}`;
   }
 
   let credentialsOnRecord = {
@@ -29,10 +30,7 @@ export function formatStudentResponse<T extends { id: string; photoUrl?: string 
   if (student.notes && student.notes.startsWith('{') && (student.notes.includes('studentPassword') || student.notes.includes('parentPassword'))) {
     try {
       const parsed = JSON.parse(student.notes);
-      credentialsOnRecord = {
-        studentPassword: parsed.studentPassword || null,
-        parentPassword: parsed.parentPassword || null,
-      };
+      // Clean notes without exposing passwords
       cleanNotes = parsed.userNotes || null;
     } catch {}
   }
@@ -57,7 +55,6 @@ const prisma = new PrismaClient();
 
 export const studentAdmissionSchema = z.object({
   admissionNumber: z.string().optional(), // Automatically generated on server
-  rollNumber: z.string().optional(),
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
   studentPhone: z.string().optional().or(z.literal('')),
@@ -88,15 +85,21 @@ export const studentAdmissionSchema = z.object({
 });
 
 export const updateStudentSchema = z.object({
-  rollNumber: z.string().optional(),
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  studentPhone: z.string().optional(),
-  dob: z.string().optional(),
+  firstName: z.string().min(1, 'First name is required').optional(),
+  lastName: z.string().min(1, 'Last name is required').optional(),
+  studentPhone: z.string().optional().or(z.literal('')),
+  studentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
+  dob: z.string().optional().or(z.literal('')),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(),
-  bloodGroup: z.string().optional(),
-  notes: z.string().optional(),
-  photoUrl: z.string().optional(),
+  bloodGroup: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal('')),
+  photoUrl: z.string().optional().or(z.literal('')),
+  batchId: z.string().uuid().optional().or(z.literal('')).nullable(),
+  subjectIds: z.array(z.string().uuid()).optional(),
+  parentFullName: z.string().optional().or(z.literal('')),
+  parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).optional(),
+  parentPhone: z.string().optional().or(z.literal('')),
+  parentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
 });
 
 export const updateStudentStatusSchema = z.object({
@@ -191,7 +194,6 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
       andConditions.push({
         OR: [
           { admissionNumber: { contains: search, mode: 'insensitive' } },
-          { rollNumber: { contains: search, mode: 'insensitive' } },
           { firstName: { contains: search, mode: 'insensitive' } },
           { lastName: { contains: search, mode: 'insensitive' } },
         ],
@@ -309,6 +311,49 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
         }
       }
     }
+    // Check if likely existing student already exists in this institute (by phone, email, or admissionNumber)
+    const cleanPhone = data.studentPhone?.trim() || data.phone?.trim() || null;
+    const cleanEmail = data.studentEmail?.trim().toLowerCase() || data.email?.trim().toLowerCase() || null;
+
+    if (cleanPhone || cleanEmail) {
+      const existingStudent = await prisma.student.findFirst({
+        where: {
+          instituteId,
+          OR: [
+            ...(cleanPhone ? [{ phone: cleanPhone }] : []),
+            ...(cleanPhone ? [{ user: { phone: cleanPhone } }] : []),
+            ...(cleanEmail ? [{ user: { email: cleanEmail } }] : []),
+          ],
+        },
+        include: {
+          enrollments: {
+            where: { isActive: true },
+            include: { batch: true, subject: true },
+          },
+        },
+      });
+
+      if (existingStudent) {
+        return res.status(409).json({
+          success: false,
+          isExistingStudent: true,
+          message: `A student profile already exists in this institute (${existingStudent.firstName} ${existingStudent.lastName}, Admission: ${existingStudent.admissionNumber}). Please use 'Enroll Existing Student' to enroll them into another batch or subject without duplicating the account.`,
+          existingStudent: {
+            id: existingStudent.id,
+            admissionNumber: existingStudent.admissionNumber,
+            firstName: existingStudent.firstName,
+            lastName: existingStudent.lastName,
+            phone: existingStudent.phone,
+            enrollments: existingStudent.enrollments.map((e) => ({
+              batchId: e.batchId,
+              batchName: e.batch?.name,
+              subjectId: e.subjectId,
+              subjectName: e.subject?.name,
+            })),
+          },
+        });
+      }
+    }
 
     // Execute in transaction with safe retry handling for pooler concurrency and unique-constraint conflicts
     let result: any;
@@ -380,7 +425,6 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 instituteId,
                 userId: studentUser?.id || null,
                 admissionNumber,
-                rollNumber: data.rollNumber?.trim() || null,
                 firstName: data.firstName.trim(),
                 lastName: data.lastName.trim(),
                 phone: data.studentPhone?.trim() || (data.createLoginAccount ? data.phone?.trim() : null) || null,
@@ -453,8 +497,8 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               });
 
               if (existingUser) {
-                if (existingUser.role !== 'PARENT') {
-                  throw new Error(`Phone or email is already registered to a non-parent account (${existingUser.role}).`);
+                if (existingUser.role === 'STUDENT' && !existingUser.parentProfile) {
+                  throw new Error(`Phone or email is registered to a student account and cannot be linked as a parent.`);
                 }
 
                 parentUser = existingUser;
@@ -547,17 +591,6 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                 },
               });
             }
-
-            // Save credentials in student.notes for authorized staff/admin review
-            const credentialNotes = {
-              studentPassword: tempPassword || null,
-              parentPassword: parentTempPassword || null,
-              userNotes: data.notes?.trim() || null,
-            };
-            await tx.student.update({
-              where: { id: student.id },
-              data: { notes: JSON.stringify(credentialNotes) },
-            });
 
             // Record Audit Log
             await tx.auditLog.create({
@@ -731,7 +764,22 @@ export async function getMyStudentProfile(req: AuthenticatedRequest, res: Respon
         enrollments: {
           where: { isActive: true },
           include: {
-            batch: true,
+            batch: {
+              include: {
+                batchSubjects: {
+                  include: {
+                    subject: true,
+                    staffProfile: {
+                      include: {
+                        user: {
+                          select: { id: true, fullName: true, email: true },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             subject: true,
           },
         },
@@ -905,6 +953,16 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
 
     const existing = await prisma.student.findFirst({
       where: { id, instituteId },
+      include: {
+        user: true,
+        parentRelations: {
+          include: {
+            parent: {
+              include: { user: true },
+            },
+          },
+        },
+      },
     });
 
     if (!existing) {
@@ -914,41 +972,146 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     const data = parse.data;
     const updateData: any = {};
 
-    if (data.rollNumber !== undefined) updateData.rollNumber = data.rollNumber?.trim() || null;
     if (data.firstName) updateData.firstName = data.firstName.trim();
     if (data.lastName) updateData.lastName = data.lastName.trim();
     if (data.studentPhone !== undefined) updateData.phone = data.studentPhone?.trim() || null;
     if (data.gender !== undefined) updateData.gender = data.gender;
     if (data.bloodGroup !== undefined) updateData.bloodGroup = data.bloodGroup?.trim() || null;
-    if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
     if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl?.trim() || null;
-    if (data.dob) updateData.dob = new Date(data.dob);
+    if (data.dob !== undefined) {
+      updateData.dob = data.dob && data.dob.trim() ? new Date(data.dob) : null;
+    }
 
-    const updated = await prisma.student.update({
-      where: { id },
-      data: updateData,
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes?.trim() || null;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Update Student Table
+      await tx.student.update({
+        where: { id },
+        data: updateData,
+      });
+
+      // 2. Update Student User Account (if exists)
+      if (existing.userId) {
+        const userUpdate: any = {};
+        if (data.firstName || data.lastName) {
+          const newFirst = data.firstName ? data.firstName.trim() : existing.firstName;
+          const newLast = data.lastName ? data.lastName.trim() : existing.lastName;
+          userUpdate.fullName = `${newFirst} ${newLast}`;
+        }
+        if (data.studentPhone !== undefined) {
+          userUpdate.phone = data.studentPhone?.trim() || null;
+        }
+        if (data.studentEmail !== undefined) {
+          userUpdate.email = data.studentEmail?.trim().toLowerCase() || null;
+        }
+        if (Object.keys(userUpdate).length > 0) {
+          await tx.user.update({
+            where: { id: existing.userId },
+            data: userUpdate,
+          });
+        }
+      }
+
+      // 3. Update Batch & Subjects if specified (strictly scoped to this batchId, preserving other batches)
+      if (data.batchId !== undefined) {
+        if (data.batchId) {
+          await tx.studentEnrollment.updateMany({
+            where: { studentId: id, batchId: data.batchId, isActive: true },
+            data: { isActive: false },
+          });
+
+          await tx.studentEnrollment.create({
+            data: {
+              studentId: id,
+              batchId: data.batchId,
+              subjectId: null,
+              isActive: true,
+            },
+          });
+
+          if (Array.isArray(data.subjectIds) && data.subjectIds.length > 0) {
+            for (const sid of data.subjectIds) {
+              await tx.studentEnrollment.create({
+                data: {
+                  studentId: id,
+                  batchId: data.batchId,
+                  subjectId: sid,
+                  isActive: true,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Update Parent Relation & Parent User Account if specified
+      if (data.parentFullName || data.parentPhone || data.parentEmail !== undefined || data.parentRelationship) {
+        const primaryRel = existing.parentRelations?.[0];
+        if (primaryRel) {
+          if (data.parentRelationship) {
+            await tx.studentParentRelation.update({
+              where: { id: primaryRel.id },
+              data: { relation: data.parentRelationship },
+            });
+          }
+          if (primaryRel.parent?.user) {
+            const parentUserUpdate: any = {};
+            if (data.parentFullName) parentUserUpdate.fullName = data.parentFullName.trim();
+            if (data.parentPhone) parentUserUpdate.phone = data.parentPhone.trim();
+            if (data.parentEmail !== undefined) parentUserUpdate.email = data.parentEmail?.trim().toLowerCase() || null;
+            if (Object.keys(parentUserUpdate).length > 0) {
+              await tx.user.update({
+                where: { id: primaryRel.parent.user.id },
+                data: parentUserUpdate,
+              });
+            }
+          }
+        }
+      }
+
+      // 5. Record Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_UPDATED',
+          entityType: 'Student',
+          entityId: id,
+          oldValues: existing as any,
+          newValues: { ...updateData, batchId: data.batchId, subjectIds: data.subjectIds },
+        },
+      });
     });
 
-    // Record Audit Log
-    await prisma.auditLog.create({
-      data: {
-        instituteId,
-        userId: req.user?.userId || null,
-        action: 'STUDENT_UPDATED',
-        entityType: 'Student',
-        entityId: id,
-        oldValues: existing as any,
-        newValues: updated as any,
+    const fullUpdated = await prisma.student.findFirst({
+      where: { id, instituteId },
+      include: {
+        user: true,
+        enrollments: {
+          where: { isActive: true },
+          include: { batch: true, subject: true },
+        },
+        parentRelations: {
+          include: {
+            parent: {
+              include: { user: true },
+            },
+          },
+        },
       },
     });
 
     return res.json({
       success: true,
       message: 'Student profile updated successfully',
-      data: { student: formatStudentResponse(updated) },
+      data: { student: formatStudentResponse(fullUpdated || existing) },
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: 'Failed to update student profile' });
+    console.error('Error updating student profile:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to update student profile' });
   }
 }
 
@@ -1285,7 +1448,7 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
         return res.status(403).json({ success: false, error: 'Forbidden: Not authorized to update this student photograph' });
       }
 
-      await prisma.student.update({
+      const updatedStudent = await prisma.student.update({
         where: { id },
         data: { photoUrl: relativeKey },
       });
@@ -1295,7 +1458,7 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
         message: 'Student photograph uploaded successfully',
         data: {
           photoStorageKey: relativeKey,
-          photoUrl: `/api/students/${id}/photo`,
+          photoUrl: `/api/students/${id}/photo?v=${new Date(updatedStudent.updatedAt).getTime()}`,
         },
       });
     }
@@ -1319,7 +1482,7 @@ export async function uploadStudentPhoto(req: AuthenticatedRequest, res: Respons
  */
 export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) {
   try {
-    const instituteId = req.instituteId;
+    const targetInstituteId = req.instituteId || (req.query.instituteId as string);
     const { id } = req.params;
 
     const authorized = await isStudentAuthorized(req, id, prisma);
@@ -1327,13 +1490,17 @@ export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) 
       return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to view this student photograph' });
     }
 
-    const student = await prisma.student.findFirst({
-      where: { id, instituteId },
-      select: { photoUrl: true },
+    const student = await prisma.student.findUnique({
+      where: { id },
+      select: { photoUrl: true, instituteId: true },
     });
 
     if (!student || !student.photoUrl) {
       return res.status(404).json({ success: false, error: 'No photograph on file for this student' });
+    }
+
+    if (targetInstituteId && student.instituteId !== targetInstituteId && req.user?.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Cross-institute photograph access rejected' });
     }
 
     if (student.photoUrl.startsWith('http://') || student.photoUrl.startsWith('https://')) {
@@ -1354,7 +1521,7 @@ export async function getStudentPhoto(req: AuthenticatedRequest, res: Response) 
     };
 
     res.setHeader('Content-Type', mimeTypes[ext] || 'image/jpeg');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cache-Control', 'no-cache, private');
     return fs.createReadStream(absPath).pipe(res);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to stream student photograph' });
@@ -1460,4 +1627,477 @@ export async function updateStudentAccountStatus(req: AuthenticatedRequest, res:
     return res.status(500).json({ success: false, error: 'Failed to update student account status' });
   }
 }
+
+/**
+ * Real-time parent account lookup by phone or email for sibling auto-linking during admission
+ */
+export async function lookupParent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const query = ((req.query.query || req.query.phone || req.query.email || '') as string).trim();
+    if (!query || query.length < 3) {
+      return res.json({ success: true, data: { found: false } });
+    }
+
+    const cleanQuery = query.toLowerCase();
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone: { equals: query, mode: 'insensitive' } },
+          { email: { equals: cleanQuery, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        parentProfile: {
+          include: {
+            studentRelations: {
+              include: {
+                student: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    admissionNumber: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!existingUser) {
+      return res.json({ success: true, data: { found: false } });
+    }
+
+    if (existingUser.role === 'STUDENT' && !existingUser.parentProfile) {
+      return res.json({
+        success: true,
+        data: {
+          found: true,
+          isStudent: true,
+          message: 'Phone or email is registered to a student account and cannot be linked as a parent.',
+        },
+      });
+    }
+
+    const children = (existingUser.parentProfile?.studentRelations || []).map((r) => ({
+      name: `${r.student.firstName} ${r.student.lastName}`,
+      admissionNumber: r.student.admissionNumber,
+      relation: r.relation,
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        found: true,
+        isStudent: false,
+        user: {
+          id: existingUser.id,
+          fullName: existingUser.fullName,
+          phone: existingUser.phone,
+          email: existingUser.email,
+          role: existingUser.role,
+        },
+        children,
+      },
+    });
+  } catch (err: any) {
+    console.error('Error looking up parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to lookup parent' });
+  }
+}
+
+/**
+ * Assign or update student batch and subject allocations
+ */
+export async function assignStudentBatch(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const { id } = req.params;
+    const { batchId, subjectIds = [] } = req.body;
+
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+    });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    if (student.status !== 'ACTIVE') {
+      return res.status(400).json({ success: false, error: `Cannot assign batch to student in ${student.status} status` });
+    }
+
+    // Staff authorization check
+    if (req.user?.role === 'STAFF') {
+      const authorized = await isStudentAuthorized(req, id, prisma);
+      if (!authorized) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to manage this student' });
+      }
+      if (batchId) {
+        const isAssigned = await isStaffAssignedToBatch(req, batchId, prisma);
+        if (!isAssigned) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized for this batch' });
+        }
+      }
+      if (batchId && Array.isArray(subjectIds) && subjectIds.length > 0) {
+        for (const sid of subjectIds) {
+          const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, sid, prisma);
+          if (!isAssignedSub) {
+            return res.status(403).json({ success: false, error: `Forbidden: You are not authorized for subject '${sid}' in this batch` });
+          }
+        }
+      }
+    }
+
+    // Verify batch if provided
+    let batch: any = null;
+    if (batchId) {
+      batch = await prisma.batch.findFirst({
+        where: { id: batchId, instituteId },
+        include: {
+          batchSubjects: {
+            include: { subject: true },
+          },
+        },
+      });
+      if (!batch) {
+        return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (batchId) {
+        // Deactivate existing active enrollments for this specific batch only, preserving other batches!
+        await tx.studentEnrollment.updateMany({
+          where: { studentId: id, batchId, isActive: true },
+          data: { isActive: false },
+        });
+
+        // 2. Create primary batch enrollment
+        await tx.studentEnrollment.create({
+          data: {
+            studentId: id,
+            batchId,
+            subjectId: null,
+            isActive: true,
+          },
+        });
+
+        // 3. Create subject enrollments for specified subjectIds
+        if (Array.isArray(subjectIds) && subjectIds.length > 0) {
+          const validSubjectIds = (batch?.batchSubjects || []).map((bs: any) => bs.subjectId);
+          for (const sid of subjectIds) {
+            if (validSubjectIds.includes(sid)) {
+              await tx.studentEnrollment.create({
+                data: {
+                  studentId: id,
+                  batchId,
+                  subjectId: sid,
+                  isActive: true,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_BATCH_ASSIGNED',
+          entityType: 'Student',
+          entityId: id,
+          newValues: { batchId, subjectIds },
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: batchId
+        ? `Student assigned to ${batch?.name} successfully`
+        : 'Student batch unassigned successfully',
+    });
+  } catch (err: any) {
+    console.error('Error assigning student batch:', err);
+    return res.status(500).json({ success: false, error: 'Failed to assign student batch' });
+  }
+}
+
+/**
+ * Lookup existing students within the current institute (for enrollment and deduplication)
+ */
+export async function lookupExistingStudent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const search = ((req.query.search || req.query.query || req.query.q || req.query.phone || req.query.admissionNumber || '') as string).trim();
+    if (!search || search.length < 2) {
+      return res.status(400).json({ success: false, error: 'Search term must be at least 2 characters' });
+    }
+
+    const students = await prisma.student.findMany({
+      where: {
+        instituteId,
+        OR: [
+          { admissionNumber: { contains: search, mode: 'insensitive' } },
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } },
+          { user: { phone: { contains: search, mode: 'insensitive' } } },
+          { user: { email: { contains: search, mode: 'insensitive' } } },
+        ],
+      },
+      take: 20,
+      include: {
+        user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } },
+        enrollments: {
+          where: { isActive: true },
+          include: {
+            batch: { select: { id: true, name: true, code: true } },
+            subject: { select: { id: true, name: true, code: true } },
+          },
+        },
+        parentRelations: {
+          include: {
+            parent: {
+              include: {
+                user: { select: { id: true, fullName: true, phone: true, email: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const formatted = students.map((s) => ({
+      id: s.id,
+      admissionNumber: s.admissionNumber,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      fullName: `${s.firstName} ${s.lastName}`,
+      phone: s.phone || s.user?.phone || null,
+      email: s.user?.email || null,
+      status: s.status,
+      photoUrl: s.photoUrl,
+      activeEnrollments: s.enrollments.map((e) => ({
+        batchId: e.batchId,
+        batchName: e.batch?.name,
+        batchCode: e.batch?.code,
+        subjectId: e.subjectId,
+        subjectName: e.subject?.name,
+      })),
+      parents: s.parentRelations.map((pr) => ({
+        fullName: pr.parent?.user?.fullName,
+        phone: pr.parent?.user?.phone,
+        email: pr.parent?.user?.email,
+        relation: pr.relation,
+      })),
+    }));
+
+    return res.json({
+      success: true,
+      data: { students: formatted },
+    });
+  } catch (err: any) {
+    console.error('[lookupExistingStudent error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to lookup students' });
+  }
+}
+
+export const enrollExistingStudentSchema = z.object({
+  batchId: z.string().uuid('Valid batch ID is required'),
+  subjectIds: z.array(z.string().uuid()).optional().default([]),
+});
+
+/**
+ * Enroll an existing canonical student profile into an authorized batch and subject(s)
+ */
+export async function enrollExistingStudent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const { id } = req.params;
+    const parse = enrollExistingStudentSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: parse.error.errors[0]?.message || 'Validation error' });
+    }
+
+    const { batchId, subjectIds } = parse.data;
+
+    // 1. Verify student exists in this institute
+    const student = await prisma.student.findFirst({
+      where: { id, instituteId },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, phone: true } },
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this institute' });
+    }
+
+    if (student.status !== 'ACTIVE') {
+      return res.status(400).json({ success: false, error: `Cannot enroll student in ${student.status} status` });
+    }
+
+    // 2. Verify batch in this institute
+    const batch = await prisma.batch.findFirst({
+      where: { id: batchId, instituteId },
+      include: {
+        batchSubjects: { include: { subject: true } },
+      },
+    });
+
+    if (!batch) {
+      return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+    }
+
+    // 3. Verify subjects belong to batch
+    if (subjectIds.length > 0) {
+      const validSubjectIds = (batch.batchSubjects || []).map((bs) => bs.subjectId);
+      for (const sid of subjectIds) {
+        if (!validSubjectIds.includes(sid)) {
+          return res.status(400).json({
+            success: false,
+            error: `Subject '${sid}' does not belong to batch '${batch.name}'`,
+          });
+        }
+      }
+    }
+
+    // 4. If caller is STAFF, verify staff authorization
+    if (req.user?.role === 'STAFF') {
+      const isAssignedBatch = await isStaffAssignedToBatch(req, batchId, prisma);
+      if (!isAssignedBatch) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: You are not authorized to enroll students into this batch',
+        });
+      }
+
+      if (subjectIds.length > 0) {
+        for (const sid of subjectIds) {
+          const isAssignedSub = await isStaffAssignedToBatchSubject(req, batchId, sid, prisma);
+          if (!isAssignedSub) {
+            return res.status(403).json({
+              success: false,
+              error: `Forbidden: You are not authorized to enroll students into subject '${sid}' in this batch`,
+            });
+          }
+        }
+      }
+    }
+
+    // 5. Check if student is ALREADY actively enrolled in this batch and all requested subjects
+    const existingEnrollments = await prisma.studentEnrollment.findMany({
+      where: { studentId: id, batchId, isActive: true },
+    });
+
+    const hasActivePrimary = existingEnrollments.some((e) => e.subjectId === null);
+    const existingActiveSubjectIds = new Set(existingEnrollments.map((e) => e.subjectId).filter(Boolean));
+    const allSubjectsAlreadyEnrolled = subjectIds.every((sid) => existingActiveSubjectIds.has(sid));
+
+    if (hasActivePrimary && (subjectIds.length === 0 || allSubjectsAlreadyEnrolled)) {
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        message: `${student.firstName} ${student.lastName} is already actively enrolled in ${batch.name}${subjectIds.length > 0 ? ' with all selected subjects' : ''}. No duplicate allocation was created.`,
+        data: {
+          studentId: id,
+          batchId,
+          batchName: batch.name,
+          existingEnrollments,
+        },
+      });
+    }
+
+    // 6. In a transaction, add or reactivate missing enrollments without deactivating other batches!
+    await prisma.$transaction(async (tx) => {
+      // Primary batch enrollment
+      const primary = await tx.studentEnrollment.findFirst({
+        where: { studentId: id, batchId, subjectId: null },
+      });
+      if (!primary) {
+        await tx.studentEnrollment.create({
+          data: { studentId: id, batchId, subjectId: null, isActive: true },
+        });
+      } else if (!primary.isActive) {
+        await tx.studentEnrollment.update({
+          where: { id: primary.id },
+          data: { isActive: true },
+        });
+      }
+
+      // Subject enrollments
+      for (const sid of subjectIds) {
+        const subEnr = await tx.studentEnrollment.findFirst({
+          where: { studentId: id, batchId, subjectId: sid },
+        });
+        if (!subEnr) {
+          await tx.studentEnrollment.create({
+            data: { studentId: id, batchId, subjectId: sid, isActive: true },
+          });
+        } else if (!subEnr.isActive) {
+          await tx.studentEnrollment.update({
+            where: { id: subEnr.id },
+            data: { isActive: true },
+          });
+        }
+      }
+
+      // Audit Log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user?.userId || null,
+          action: 'STUDENT_ENROLLED_EXISTING',
+          entityType: 'Student',
+          entityId: id,
+          newValues: {
+            batchId,
+            batchName: batch.name,
+            subjectIds,
+          },
+        },
+      });
+    });
+
+    // Fetch updated enrollments
+    const updatedEnrollments = await prisma.studentEnrollment.findMany({
+      where: { studentId: id, isActive: true },
+      include: {
+        batch: { select: { id: true, name: true, code: true } },
+        subject: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      duplicate: false,
+      message: `${student.firstName} ${student.lastName} successfully enrolled into ${batch.name}.`,
+      data: {
+        student: {
+          id: student.id,
+          admissionNumber: student.admissionNumber,
+          fullName: `${student.firstName} ${student.lastName}`,
+          phone: student.phone,
+        },
+        batch: { id: batch.id, name: batch.name },
+        enrollments: updatedEnrollments,
+      },
+    });
+  } catch (err: any) {
+    console.error('[enrollExistingStudent error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to enroll student' });
+  }
+}
+
 

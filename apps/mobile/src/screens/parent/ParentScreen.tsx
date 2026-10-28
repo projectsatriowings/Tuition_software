@@ -47,6 +47,25 @@ export const ParentScreen: React.FC = () => {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
 
+  const formatKolkataTime = (isoString?: string | null) => {
+    if (!isoString) return 'Not available';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return 'Not available';
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(date);
+    } catch {
+      return 'Not available';
+    }
+  };
+
   const fetchParentData = useCallback(async () => {
     try {
       // 1. Fetch Verified Linked Children
@@ -318,8 +337,13 @@ export const ParentScreen: React.FC = () => {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.childName}>{selectedChild.user?.fullName}</Text>
                         <Text style={styles.childRoll}>
-                          Roll No: {selectedChild.rollNumber} &bull; Batch: {selectedChild.batch?.name || 'Class 12'}
+                          Admission: {selectedChild.admissionNumber} &bull; Batch: {selectedChild.batch?.name || 'Class 12'}
                         </Text>
+                        {selectedChild.createdAt && (
+                          <Text style={[styles.childRoll, { marginTop: 2, fontSize: 11 }]}>
+                            Created: {formatKolkataTime(selectedChild.createdAt)}
+                          </Text>
+                        )}
                         <View style={styles.childBadgeRow}>
                           <Badge label="VERIFIED LINKAGE" variant="success" size="sm" />
                           <Badge label="IN PERSON PASS" variant="info" size="sm" />

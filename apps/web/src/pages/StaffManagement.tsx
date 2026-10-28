@@ -20,6 +20,10 @@ import {
   Lock,
   RefreshCw,
   Building2,
+  BookOpen,
+  GraduationCap,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 
 export const StaffManagement: React.FC = () => {
@@ -66,6 +70,123 @@ export const StaffManagement: React.FC = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  // Batch & Subject Assignment Modal State
+  const [viewingStaffAssignments, setViewingStaffAssignments] = useState<StaffMember | null>(null);
+  const [assignmentBatchIds, setAssignmentBatchIds] = useState<string[]>([]);
+  const [assignmentSubjectMap, setAssignmentSubjectMap] = useState<Record<string, string[]>>({});
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
+
+  const handleOpenAssignmentModal = (item: StaffMember) => {
+    setViewingStaffAssignments(item);
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+
+    const assignedBatchIds = item.assignments?.map((a) => a.batch.id) || [];
+    setAssignmentBatchIds(assignedBatchIds);
+
+    const subMap: Record<string, string[]> = {};
+    if (item.batchSubjects && item.batchSubjects.length > 0) {
+      for (const bs of item.batchSubjects) {
+        if (!subMap[bs.batchId]) {
+          subMap[bs.batchId] = [];
+        }
+        if (!subMap[bs.batchId].includes(bs.subjectId)) {
+          subMap[bs.batchId].push(bs.subjectId);
+        }
+      }
+    }
+    setAssignmentSubjectMap(subMap);
+  };
+
+  const handleToggleBatch = (batchId: string) => {
+    const isSelected = assignmentBatchIds.includes(batchId);
+    if (isSelected) {
+      setAssignmentBatchIds((prev) => prev.filter((id) => id !== batchId));
+      setAssignmentSubjectMap((prev) => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
+    } else {
+      setAssignmentBatchIds((prev) => [...prev, batchId]);
+      const batch = batches.find((b) => b.id === batchId);
+      const subjectIds = batch?.batchSubjects?.map((bs) => bs.subjectId) || [];
+      if (subjectIds.length > 0) {
+        setAssignmentSubjectMap((prev) => ({
+          ...prev,
+          [batchId]: subjectIds,
+        }));
+      }
+    }
+  };
+
+  const handleToggleSubject = (batchId: string, subjectId: string) => {
+    setAssignmentSubjectMap((prev) => {
+      const current = prev[batchId] || [];
+      const updated = current.includes(subjectId)
+        ? current.filter((id) => id !== subjectId)
+        : [...current, subjectId];
+      return {
+        ...prev,
+        [batchId]: updated,
+      };
+    });
+  };
+
+  const handleSelectAllSubjectsForBatch = (batchId: string) => {
+    const batch = batches.find((b) => b.id === batchId);
+    const subjectIds = batch?.batchSubjects?.map((bs) => bs.subjectId) || [];
+    setAssignmentSubjectMap((prev) => ({
+      ...prev,
+      [batchId]: subjectIds,
+    }));
+  };
+
+  const handleClearSubjectsForBatch = (batchId: string) => {
+    setAssignmentSubjectMap((prev) => ({
+      ...prev,
+      [batchId]: [],
+    }));
+  };
+
+  const handleSaveAssignments = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viewingStaffAssignments) return;
+
+    setAssignmentLoading(true);
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+
+    try {
+      const assignments = assignmentBatchIds.map((batchId) => ({
+        batchId,
+        subjectIds: assignmentSubjectMap[batchId] || [],
+      }));
+
+      const res = await apiFetch(`/staff/${viewingStaffAssignments.id}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          batchIds: assignmentBatchIds,
+          assignments,
+        }),
+      });
+
+      if (res.success) {
+        setAssignmentSuccess('Batch and subject assignments saved successfully!');
+        await fetchData();
+        setTimeout(() => {
+          setViewingStaffAssignments(null);
+        }, 1200);
+      }
+    } catch (err: any) {
+      setAssignmentError(err.message || 'Failed to update assignments');
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
 
   const generateStrongPassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyz';
@@ -371,15 +492,28 @@ Please keep this login and password safe. This is your permanent account passwor
                     <td className="py-3.5 px-4 text-[#2D1E18] font-medium">{item.designation}</td>
                     <td className="py-3.5 px-4 text-[#5D4037]">
                       {item.assignments && item.assignments.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {item.assignments.map((a) => (
-                            <span
-                              key={a.id}
-                              className="px-2 py-0.5 rounded-md bg-[#F7F2EF] text-[10px] text-[#4E342E] border border-[#D7CCC8] font-medium"
-                            >
-                              {a.batch.name}
-                            </span>
-                          ))}
+                        <div className="flex flex-wrap gap-1.5 max-w-xs">
+                          {item.assignments.map((a) => {
+                            const assignedSubjectsForBatch = item.batchSubjects?.filter(
+                              (bs) => bs.batchId === a.batch.id
+                            ) || [];
+
+                            return (
+                              <span
+                                key={a.id}
+                                className="inline-flex flex-col px-2 py-1 rounded-lg bg-[#F7F2EF] text-[11px] text-[#4E342E] border border-[#D7CCC8]"
+                              >
+                                <span className="font-bold">{a.batch.name}</span>
+                                {assignedSubjectsForBatch.length > 0 ? (
+                                  <span className="text-[10px] text-[#8D6E63] font-medium">
+                                    {assignedSubjectsForBatch.map((bs) => bs.subject.name).join(', ')}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-[#A1887F] italic">All / General</span>
+                                )}
+                              </span>
+                            );
+                          })}
                         </div>
                       ) : (
                         <span className="text-[#A1887F] italic">None</span>
@@ -398,6 +532,14 @@ Please keep this login and password safe. This is your permanent account passwor
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenAssignmentModal(item)}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
+                          title="Assign batches and subjects taught by this staff member"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-[#8D6E63]" />
+                          <span>Assign Batches</span>
+                        </button>
                         <button
                           onClick={() => handleOpenCredentialsModal(item)}
                           className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
@@ -944,6 +1086,187 @@ Please keep this login and password safe. This is your permanent account passwor
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Batches & Subjects Modal */}
+      {viewingStaffAssignments && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
+                  <BookOpen className="w-5 h-5 text-[#4E342E]" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-[#2D1E18]">
+                    Assign Batches & Subjects
+                  </h2>
+                  <p className="text-xs text-[#6D4C41]">
+                    {viewingStaffAssignments.user.fullName} • {viewingStaffAssignments.designation}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingStaffAssignments(null)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-lg hover:bg-[#F7F2EF] transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {assignmentError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{assignmentError}</span>
+                </div>
+              )}
+
+              {assignmentSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{assignmentSuccess}</span>
+                </div>
+              )}
+
+              <div className="p-3 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs text-[#5D4037] leading-relaxed">
+                <span className="font-bold text-[#4E342E]">Staff Permission Scoping:</span> Select the batches and specific subjects this staff member teaches. They will only see attendance, students, homework, and materials for their assigned subjects in these batches.
+              </div>
+
+              <form onSubmit={handleSaveAssignments} className="space-y-4">
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-[#4E342E] uppercase tracking-wider block">
+                    Institute Batches & Curriculum
+                  </label>
+
+                  {batches.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#8D6E63] border border-dashed border-[#D7CCC8] rounded-2xl bg-[#FDFBF7]">
+                      No active batches found in this institute. Please create a batch in Academics first.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                      {batches.map((b) => {
+                        const isBatchSelected = assignmentBatchIds.includes(b.id);
+                        const batchSubjects = b.batchSubjects || [];
+                        const selectedSubjectsForBatch = assignmentSubjectMap[b.id] || [];
+
+                        return (
+                          <div
+                            key={b.id}
+                            className={`p-3.5 rounded-2xl border transition-all ${
+                              isBatchSelected
+                                ? 'bg-[#FDFBF7] border-[#8D6E63] shadow-sm'
+                                : 'bg-white border-[#EFEBE9] hover:border-[#D7CCC8]'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isBatchSelected}
+                                  onChange={() => handleToggleBatch(b.id)}
+                                  className="w-4 h-4 rounded text-[#4E342E] border-[#D7CCC8] focus:ring-[#8D6E63] cursor-pointer"
+                                />
+                                <div>
+                                  <div className="font-bold text-xs text-[#2D1E18]">
+                                    {b.name}
+                                  </div>
+                                  <div className="text-[11px] text-[#8D6E63]">
+                                    Year: {b.academicYear} {b.code ? `• Code: ${b.code}` : ''}
+                                  </div>
+                                </div>
+                              </label>
+
+                              {isBatchSelected && batchSubjects.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectAllSubjectsForBatch(b.id)}
+                                    className="text-[10px] font-semibold text-[#4E342E] hover:underline"
+                                  >
+                                    All Subjects
+                                  </button>
+                                  <span className="text-[#D7CCC8]">|</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearSubjectsForBatch(b.id)}
+                                    className="text-[10px] font-semibold text-[#8D6E63] hover:underline"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Subjects list for this batch */}
+                            {isBatchSelected && (
+                              <div className="mt-3 pt-3 border-t border-[#EFEBE9] pl-6 space-y-2">
+                                <div className="text-[11px] font-bold text-[#6D4C41]">
+                                  Subjects taught by this staff member:
+                                </div>
+
+                                {batchSubjects.length === 0 ? (
+                                  <div className="text-[11px] text-[#A1887F] italic">
+                                    No distinct subjects added to this batch. Staff will have general batch access.
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {batchSubjects.map((bs) => {
+                                      const isSubjectSelected = selectedSubjectsForBatch.includes(bs.subjectId);
+                                      return (
+                                        <label
+                                          key={bs.id}
+                                          className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                            isSubjectSelected
+                                              ? 'bg-white border-[#8D6E63] text-[#2D1E18] font-semibold shadow-xs'
+                                              : 'bg-[#F7F2EF]/60 border-transparent text-[#6D4C41]'
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isSubjectSelected}
+                                            onChange={() => handleToggleSubject(b.id, bs.subjectId)}
+                                            className="w-3.5 h-3.5 rounded text-[#4E342E] border-[#D7CCC8] focus:ring-[#8D6E63] cursor-pointer"
+                                          />
+                                          <span className="truncate">
+                                            {bs.subject.name}
+                                            {bs.subject.code ? ` (${bs.subject.code})` : ''}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#EFEBE9]">
+                  <button
+                    type="button"
+                    onClick={() => setViewingStaffAssignments(null)}
+                    disabled={assignmentLoading}
+                    className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={assignmentLoading}
+                    className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-md transition disabled:opacity-50"
+                  >
+                    {assignmentLoading ? 'Saving Assignments...' : 'Save Assignments'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

@@ -73,17 +73,20 @@ export async function login(req: Request, res: Response) {
       });
     }
 
-    // Server-enforced role validation
-    if (role && user.role !== role) {
+    // Server-enforced role validation: allow PARENT portal login if user has a parent profile
+    const isParentLoginAllowed = role === 'PARENT' && (user.role === 'PARENT' || !!user.parentProfile);
+    if (role && user.role !== role && !isParentLoginAllowed) {
       return res.status(403).json({
         success: false,
         error: `Account role mismatch: Selected ${role} but account is registered as ${user.role}`,
       });
     }
 
+    const effectiveRole = isParentLoginAllowed ? 'PARENT' : user.role;
+
     // Determine active institute context
     let activeInstitute = null;
-    if (user.role !== 'SUPER_ADMIN') {
+    if (effectiveRole !== 'SUPER_ADMIN') {
       if (instituteCode) {
         const found = user.memberships.find(
           (m) => m.institute.code.toLowerCase() === instituteCode.toLowerCase()
@@ -115,7 +118,7 @@ export async function login(req: Request, res: Response) {
       userId: user.id,
       email: user.email,
       phone: user.phone,
-      role: user.role,
+      role: effectiveRole,
       instituteId: activeInstitute?.id || null,
     };
 
@@ -126,7 +129,7 @@ export async function login(req: Request, res: Response) {
       .filter((m) => m.isActive && m.institute.status === 'ACTIVE')
       .map((m) => ({
         id: m.id,
-        role: m.role,
+        role: effectiveRole === 'PARENT' ? 'PARENT' : m.role,
         institute: {
           id: m.institute.id,
           code: m.institute.code,
@@ -146,7 +149,7 @@ export async function login(req: Request, res: Response) {
           fullName: user.fullName,
           email: user.email,
           phone: user.phone,
-          role: user.role,
+          role: effectiveRole,
           mustChangePassword: user.mustChangePassword,
           memberships: activeMemberships,
         },

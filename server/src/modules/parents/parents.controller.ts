@@ -83,7 +83,6 @@ export async function listParents(req: AuthenticatedRequest, res: Response) {
                 firstName: true,
                 lastName: true,
                 admissionNumber: true,
-                rollNumber: true,
                 status: true,
               },
             },
