@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import crypto from 'crypto';
 import { PrismaClient, Prisma, FeeFrequency, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
@@ -1768,3 +1769,361 @@ export async function getOutstandingReport(req: AuthenticatedRequest, res: Respo
     return res.status(500).json({ success: false, error: 'Failed to generate outstanding report' });
   }
 }
+
+// ============================================================================
+// MODULE G: ONLINE PAYMENT WORKFLOW (RAZORPAY INTEGRATION)
+// ============================================================================
+
+export const createOnlineOrderSchema = z.object({
+  studentId: z.string().uuid('Valid student ID is required'),
+  feeAssignmentId: z.string().uuid('Valid fee assignment ID is required'),
+  amount: z.number().positive('Payment amount must be greater than zero'),
+});
+
+export const verifyOnlinePaymentSchema = z.object({
+  orderId: z.string().min(1, 'Order ID is required'),
+  paymentId: z.string().min(1, 'Payment ID is required'),
+  signature: z.string().min(1, 'Gateway signature is required'),
+});
+
+/**
+ * Create a verified payment order on the server
+ */
+export async function createOnlinePaymentOrder(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const parse = createOnlineOrderSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: 'Validation failed', details: parse.error.errors });
+    }
+
+    const { studentId, feeAssignmentId, amount } = parse.data;
+
+    // Strict student authorization check
+    const isAuth = await isStudentAuthorized(req, studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized for this student' });
+    }
+
+    // Verify fee assignment
+    const assignment = await prisma.studentFeeAssignment.findFirst({
+      where: {
+        id: feeAssignmentId,
+        studentId,
+        student: { instituteId },
+      },
+      include: {
+        feeStructure: { select: { name: true } },
+        student: { select: { firstName: true, lastName: true, admissionNumber: true } },
+        payments: { where: { status: 'SUCCESS' }, select: { amountPaid: true } },
+        adjustments: true,
+      },
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, error: 'Fee assignment not found' });
+    }
+
+    const financials = calculateAssignmentFinancials(assignment);
+    if (financials.remainingBalance <= 0) {
+      return res.status(400).json({ success: false, error: 'Fee is already fully paid' });
+    }
+
+    if (amount > financials.remainingBalance) {
+      return res.status(400).json({
+        success: false,
+        error: `Requested amount (₹${amount}) exceeds remaining balance of ₹${financials.remainingBalance}`,
+      });
+    }
+
+    const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+    const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    let gatewayOrderId = '';
+    const currency = 'INR';
+
+    if (razorpayKeyId && razorpayKeySecret) {
+      // Call real Razorpay API
+      const authHeader = 'Basic ' + Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+      const orderRes = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+        },
+        body: JSON.stringify({
+          amount: Math.round(amount * 100), // in paise
+          currency,
+          receipt: `rcpt_${Date.now().toString().slice(-8)}`,
+          notes: {
+            studentId,
+            feeAssignmentId,
+            instituteId,
+          },
+        }),
+      });
+
+      if (!orderRes.ok) {
+        const errorData = await orderRes.json().catch(() => ({}));
+        console.error('[Razorpay Order Creation Failed]', errorData);
+        return res.status(502).json({ success: false, error: 'Failed to create payment order with gateway' });
+      }
+
+      const orderData = (await orderRes.json()) as any;
+      gatewayOrderId = orderData.id;
+    } else {
+      // Development simulated order with cryptographic seed
+      gatewayOrderId = `order_sim_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    }
+
+    // Record pending order
+    const paymentOrder = await prisma.onlinePaymentOrder.create({
+      data: {
+        instituteId,
+        studentId,
+        feeAssignmentId,
+        orderId: gatewayOrderId,
+        amount: new Prisma.Decimal(amount),
+        currency,
+        status: 'PENDING',
+        metadata: {
+          feeName: assignment.feeStructure.name,
+          termLabel: assignment.termLabel,
+          studentName: `${assignment.student.firstName} ${assignment.student.lastName}`,
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Payment order created successfully',
+      data: {
+        orderId: gatewayOrderId,
+        amount,
+        currency,
+        keyId: razorpayKeyId || 'rzp_test_simulated',
+        studentId,
+        feeAssignmentId,
+        studentName: `${assignment.student.firstName} ${assignment.student.lastName}`,
+        feeName: assignment.feeStructure.name,
+        termLabel: assignment.termLabel,
+        isSimulated: !razorpayKeyId,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Create Online Payment Order Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to initiate payment order' });
+  }
+}
+
+/**
+ * Server-side signature verification & atomic payment recording
+ */
+export async function verifyOnlinePayment(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const parse = verifyOnlinePaymentSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, error: 'Validation failed', details: parse.error.errors });
+    }
+
+    const { orderId, paymentId, signature } = parse.data;
+
+    // Retrieve pending order
+    const order = await prisma.onlinePaymentOrder.findUnique({
+      where: { orderId },
+      include: {
+        feeAssignment: {
+          include: {
+            feeStructure: true,
+            student: true,
+            payments: { where: { status: 'SUCCESS' } },
+            adjustments: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Payment order not found' });
+    }
+
+    if (order.instituteId !== instituteId) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Order institute mismatch' });
+    }
+
+    if (order.status === 'VERIFIED') {
+      return res.status(409).json({
+        success: false,
+        error: 'Payment for this order has already been processed and credited',
+        receiptNumber: order.receiptNumber,
+      });
+    }
+
+    if (order.status !== 'PENDING') {
+      return res.status(400).json({ success: false, error: `Invalid order state: ${order.status}` });
+    }
+
+    // Verify cryptographic signature if secret is configured
+    const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (razorpayKeySecret && !orderId.startsWith('order_sim_')) {
+      const generatedSignature = crypto
+        .createHmac('sha256', razorpayKeySecret)
+        .update(`${orderId}|${paymentId}`)
+        .digest('hex');
+
+      const isSignatureValid = crypto.timingSafeEqual(
+        Buffer.from(generatedSignature, 'utf8'),
+        Buffer.from(signature, 'utf8')
+      );
+
+      if (!isSignatureValid) {
+        await prisma.onlinePaymentOrder.update({
+          where: { id: order.id },
+          data: { status: 'FAILED', gatewayPaymentId: paymentId, gatewaySignature: signature },
+        });
+        return res.status(400).json({ success: false, error: 'Invalid payment signature verification failed' });
+      }
+    }
+
+    // Atomic credit transaction
+    const receiptNumber = `REC-ONL-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Re-check anti-replay inside transaction
+      const freshOrder = await tx.onlinePaymentOrder.findUnique({ where: { id: order.id } });
+      if (freshOrder?.status === 'VERIFIED') {
+        throw new Error('ORDER_ALREADY_VERIFIED');
+      }
+
+      // 2. Create official Payment record
+      const payment = await tx.payment.create({
+        data: {
+          instituteId,
+          studentId: order.studentId,
+          feeAssignmentId: order.feeAssignmentId,
+          receiptNumber,
+          amountPaid: order.amount,
+          method: PaymentMethod.ONLINE,
+          transactionReference: paymentId,
+          idempotencyKey: `online_${orderId}_${paymentId}`,
+          status: 'SUCCESS',
+          recordedById: req.user!.userId,
+          remarks: `Online Payment Gateway verified (Order: ${orderId})`,
+        },
+      });
+
+      // 3. Recalculate and update fee assignment status
+      const existingPayments = await tx.payment.findMany({
+        where: { feeAssignmentId: order.feeAssignmentId, status: 'SUCCESS' },
+      });
+      const totalPaid = existingPayments.reduce((acc, p) => acc.plus(p.amountPaid), new Prisma.Decimal(0));
+      const finalAmount = order.feeAssignment.finalAmount;
+
+      const newStatus = totalPaid.greaterThanOrEqualTo(finalAmount)
+        ? PaymentStatus.PAID
+        : totalPaid.greaterThan(0)
+        ? PaymentStatus.PARTIALLY_PAID
+        : PaymentStatus.PENDING;
+
+      await tx.studentFeeAssignment.update({
+        where: { id: order.feeAssignmentId },
+        data: { status: newStatus },
+      });
+
+      // 4. Update online order status
+      const updatedOrder = await tx.onlinePaymentOrder.update({
+        where: { id: order.id },
+        data: {
+          status: 'VERIFIED',
+          gatewayPaymentId: paymentId,
+          gatewaySignature: signature,
+          receiptNumber,
+          paymentId: payment.id,
+        },
+      });
+
+      // 5. In-app notification
+      await tx.inAppNotification.create({
+        data: {
+          instituteId,
+          userId: req.user!.userId,
+          studentId: order.studentId,
+          type: 'FEE_PAID',
+          title: 'Fee Payment Verified',
+          message: `Your online payment of ₹${order.amount} for ${order.feeAssignment.feeStructure.name} was successfully verified (Receipt: ${receiptNumber}).`,
+          link: `/parent_portal?tab=fees&receipt=${payment.id}`,
+        },
+      });
+
+      // 6. Audit log
+      await tx.auditLog.create({
+        data: {
+          instituteId,
+          userId: req.user!.userId,
+          action: 'ONLINE_FEE_PAYMENT_VERIFIED',
+          entityType: 'Payment',
+          entityId: payment.id,
+          newValues: {
+            orderId,
+            paymentId,
+            receiptNumber,
+            amount: Number(order.amount),
+          },
+        },
+      });
+
+      return { payment, updatedOrder };
+    });
+
+    return res.json({
+      success: true,
+      message: 'Online payment verified and credited successfully',
+      data: {
+        payment: result.payment,
+        receiptNumber,
+      },
+    });
+  } catch (err: any) {
+    if (err.message === 'ORDER_ALREADY_VERIFIED') {
+      return res.status(409).json({ success: false, error: 'Order has already been processed' });
+    }
+    console.error('[Verify Online Payment Error]', err);
+    return res.status(500).json({ success: false, error: 'Payment verification failed' });
+  }
+}
+
+/**
+ * Gateway Webhook listener for asynchronous confirmation
+ */
+export async function handlePaymentWebhook(req: AuthenticatedRequest, res: Response) {
+  try {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = req.headers['x-razorpay-signature'] as string;
+
+    if (webhookSecret && signature) {
+      const bodyStr = JSON.stringify(req.body);
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(bodyStr)
+        .digest('hex');
+
+      if (signature !== expectedSignature) {
+        return res.status(400).json({ success: false, error: 'Invalid webhook signature' });
+      }
+    }
+
+    const event = req.body?.event;
+    console.log(`[Payment Webhook Received] event: ${event}`);
+
+    return res.json({ status: 'ok' });
+  } catch (err: any) {
+    console.error('[Payment Webhook Error]', err);
+    return res.status(500).json({ success: false, error: 'Webhook processing error' });
+  }
+}
+

@@ -131,6 +131,8 @@ model Institute {
   paymentAdjustments PaymentAdjustment[]
   auditLogs         AuditLog[]
   smsNotifications  SmsNotification[]
+  inAppNotifications InAppNotification[]
+  onlinePaymentOrders OnlinePaymentOrder[]
 
   @@index([status])
   @@index([name])
@@ -166,6 +168,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   createdStudents     Student[]             @relation("StudentCreator")
   auditLogs           AuditLog[]
+  inAppNotifications  InAppNotification[]
 
   @@index([role])
   @@index([email])
@@ -260,6 +263,7 @@ model Student {
   feeAssignments   StudentFeeAssignment[]
   payments         Payment[]
   smsNotifications SmsNotification[]
+  onlinePaymentOrders OnlinePaymentOrder[]
 
   @@unique([instituteId, admissionNumber])
   @@index([instituteId])
@@ -689,6 +693,7 @@ model StudentFeeAssignment {
   feeStructure FeeStructure         @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
   payments     Payment[]
   adjustments  PaymentAdjustment[]
+  onlinePaymentOrders OnlinePaymentOrder[]
 
   @@unique([studentId, feeStructureId, termLabel])
   @@index([status])
@@ -797,3 +802,56 @@ model AdmissionSequence {
   @@unique([instituteId, year])
   @@index([instituteId, year])
 }
+
+// -------------------------------------------------------------
+// IN-APP NOTIFICATIONS & ONLINE PAYMENTS
+// -------------------------------------------------------------
+
+model InAppNotification {
+  id          String    @id @default(uuid())
+  instituteId String
+  userId      String
+  studentId   String?
+  type        String    // e.g. "ABSENCE", "NEW_MESSAGE", "TEST_RESULT", "FEE_DUE", "FEE_PAID", "ANNOUNCEMENT"
+  title       String
+  message     String
+  link        String?
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([instituteId, createdAt])
+}
+
+model OnlinePaymentOrder {
+  id                   String        @id @default(uuid())
+  instituteId          String
+  studentId            String
+  feeAssignmentId      String
+  orderId              String        @unique
+  amount               Decimal       @db.Decimal(10, 2)
+  currency             String        @default("INR")
+  status               String        @default("PENDING")
+  receiptNumber        String?
+  gatewayPaymentId     String?
+  gatewaySignature     String?
+  paymentId            String?
+  idempotencyKey       String?       @unique
+  metadata             Json?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  institute     Institute            @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  student       Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeAssignment StudentFeeAssignment @relation(fields: [feeAssignmentId], references: [id], onDelete: Cascade)
+
+  @@index([instituteId])
+  @@index([studentId])
+  @@index([orderId])
+  @@index([status])
+}
+
