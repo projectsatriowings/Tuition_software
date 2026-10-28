@@ -186,6 +186,9 @@ export const MaterialsManagement: React.FC = () => {
   }
 
   const filteredMaterials = materials.filter((m) => {
+    // Homework assignments belong exclusively to the Homework & Tasks page
+    if (m.type === 'HOMEWORK') return false;
+
     const matchesSearch =
       m.title.toLowerCase().includes(search.toLowerCase()) ||
       (m.description && m.description.toLowerCase().includes(search.toLowerCase())) ||

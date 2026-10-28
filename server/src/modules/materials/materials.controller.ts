@@ -180,6 +180,8 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
 
     if (type && type !== 'ALL') {
       where.type = type;
+    } else {
+      where.type = { not: 'HOMEWORK' };
     }
     if (subjectId && subjectId !== 'ALL') {
       where.subjectId = subjectId;
@@ -517,12 +519,17 @@ export async function downloadMaterial(req: AuthenticatedRequest, res: Response)
     const instituteId = req.instituteId;
     const { id } = req.params;
 
-    const material = await prisma.learningMaterial.findFirst({
-      where: { id, instituteId },
+    const material = await prisma.learningMaterial.findUnique({
+      where: { id },
     });
 
     if (!material || !material.fileUrl) {
       return res.status(404).json({ success: false, error: 'File attachment not found' });
+    }
+
+    const effectiveInstituteId = instituteId || req.user?.instituteId;
+    if (effectiveInstituteId && material.instituteId !== effectiveInstituteId && req.user?.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, error: 'Forbidden: Material does not belong to your institute' });
     }
 
     // Scope check: Student must be in enrolled batch and material must be published
