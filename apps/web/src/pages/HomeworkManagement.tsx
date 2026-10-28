@@ -14,6 +14,12 @@ import {
   Search,
   Eye,
   X,
+  Download,
+  CheckSquare,
+  Users,
+  AlertCircle,
+  FileCheck,
+  Send,
 } from 'lucide-react';
 
 export const HomeworkManagement: React.FC = () => {
@@ -23,26 +29,41 @@ export const HomeworkManagement: React.FC = () => {
 
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selectedBatchFilter, setSelectedBatchFilter] = useState('ALL');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
 
   // Homework creation modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('23:59');
   const [batchId, setBatchId] = useState('');
   const [subjectId, setSubjectId] = useState('');
+  const [maxMarks, setMaxMarks] = useState('');
+  const [isPublished, setIsPublished] = useState(true);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Student submission modal
   const [selectedHwForSubmit, setSelectedHwForSubmit] = useState<any>(null);
   const [studentNotes, setStudentNotes] = useState('');
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
 
-  // Staff review submissions drawer/modal
+  // Student simple complete confirmation modal
+  const [confirmCompleteHw, setConfirmCompleteHw] = useState<any>(null);
+
+  // Staff completion monitoring drawer/modal
   const [selectedHwForReview, setSelectedHwForReview] = useState<any>(null);
-  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [reviewData, setReviewData] = useState<{
+    summary?: any;
+    roster?: any[];
+    submissions?: any[];
+  } | null>(null);
+  const [loadingReview, setLoadingReview] = useState(false);
   const [evaluatingSubId, setEvaluatingSubId] = useState<string | null>(null);
   const [gradeInput, setGradeInput] = useState('');
   const [feedbackInput, setFeedbackInput] = useState('');
@@ -50,7 +71,7 @@ export const HomeworkManagement: React.FC = () => {
   useEffect(() => {
     loadHomework();
     if (isStaffOrAdmin) {
-      loadBatchesAndSubjects();
+      loadBatches();
     }
   }, []);
 
@@ -61,48 +82,113 @@ export const HomeworkManagement: React.FC = () => {
       if (res.success) {
         setHomeworkList(res.data.homework || []);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadBatchesAndSubjects() {
+  async function loadBatches() {
     try {
-      const [bRes, sRes] = await Promise.all([
-        apiFetch('/academics/batches'),
-        apiFetch('/academics/subjects'),
-      ]);
+      const bRes = await apiFetch('/academics/batches');
       if (bRes.success) setBatches(bRes.data.batches || []);
-      if (sRes.success) setSubjects(sRes.data.subjects || []);
     } catch (err) {
       console.error(err);
     }
   }
 
+  // Derive subjects specifically for the selected batch in the creation form
+  const selectedBatchObj = batches.find((b) => b.id === batchId);
+  const availableSubjects: any[] = selectedBatchObj?.batchSubjects?.map((bs: any) => bs.subject).filter(Boolean) || [];
+
   async function handleCreateHomework(e: React.FormEvent) {
     e.preventDefault();
+    if (!batchId) {
+      setMessage({ text: 'Please select a batch', type: 'error' });
+      return;
+    }
+
     try {
       setSubmitting(true);
-      const res = await apiFetch('/homework', {
+      setMessage(null);
+
+      const combinedDue = `${dueDate}T${dueTime || '23:59'}:00.000Z`;
+
+      const formData = new FormData();
+      formData.append('title', title.trim());
+      if (description) formData.append('description', description.trim());
+      formData.append('batchId', batchId);
+      if (subjectId) formData.append('subjectId', subjectId);
+      formData.append('dueDate', combinedDue);
+      if (maxMarks) formData.append('maxMarks', maxMarks);
+      formData.append('isPublished', String(isPublished));
+      if (attachmentFile) formData.append('file', attachmentFile);
+
+      const token = localStorage.getItem('tuition_token');
+      const instId = localStorage.getItem('tuition_active_institute_id');
+
+      const res = await fetch('/api/homework', {
         method: 'POST',
-        body: JSON.stringify({ batchId, subjectId, title, description, dueDate }),
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(instId ? { 'x-institute-id': instId } : {}),
+        },
+        body: formData,
       });
-      if (res.success) {
-        setShowCreateModal(false);
-        setTitle('');
-        setDescription('');
-        setDueDate('');
-        loadHomework();
-      }
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create homework');
+
+      setMessage({
+        text: isPublished
+          ? 'Homework assignment published to all enrolled students!'
+          : 'Homework assignment saved as draft (faculty only).',
+        type: 'success',
+      });
+      setShowCreateModal(false);
+      resetCreateForm();
+      loadHomework();
     } catch (err: any) {
-      alert(err.message || 'Failed to create homework');
+      setMessage({ text: err.message, type: 'error' });
     } finally {
       setSubmitting(false);
     }
   }
 
+  function resetCreateForm() {
+    setTitle('');
+    setDescription('');
+    setDueDate('');
+    setDueTime('23:59');
+    setBatchId('');
+    setSubjectId('');
+    setMaxMarks('');
+    setIsPublished(true);
+    setAttachmentFile(null);
+  }
+
+  // Action: Mark as Completed (simple completion task)
+  async function handleMarkCompleted(hw: any) {
+    try {
+      setSubmitting(true);
+      const res = await apiFetch(`/homework/${hw.id}/submissions`, {
+        method: 'POST',
+        body: JSON.stringify({ isCompleted: true, status: 'COMPLETED' }),
+      });
+      if (res.success) {
+        setMessage({ text: 'Assignment marked as completed!', type: 'success' });
+        setConfirmCompleteHw(null);
+        loadHomework();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to complete assignment');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Action: Student Submit work with notes and optional attachment
   async function handleStudentSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedHwForSubmit) return;
@@ -110,7 +196,7 @@ export const HomeworkManagement: React.FC = () => {
     try {
       setSubmitting(true);
       const formData = new FormData();
-      formData.append('studentNotes', studentNotes);
+      formData.append('studentNotes', studentNotes.trim());
       if (submissionFile) formData.append('file', submissionFile);
 
       const token = localStorage.getItem('tuition_token');
@@ -128,30 +214,36 @@ export const HomeworkManagement: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission failed');
 
-      alert(data.message || 'Submitted successfully!');
+      setMessage({ text: data.message || 'Assignment submitted successfully!', type: 'success' });
       setSelectedHwForSubmit(null);
       setStudentNotes('');
       setSubmissionFile(null);
       loadHomework();
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Submission error');
     } finally {
       setSubmitting(false);
     }
   }
 
+  // Action: Open Staff Completion Review
   async function openReviewDrawer(hw: any) {
     setSelectedHwForReview(hw);
+    setReviewData(null);
+    setLoadingReview(true);
     try {
       const res = await apiFetch(`/homework/${hw.id}/submissions`);
       if (res.success) {
-        setSubmissions(res.data.submissions || []);
+        setReviewData(res.data);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert(err.message || 'Failed to load submissions');
+    } finally {
+      setLoadingReview(false);
     }
   }
 
+  // Action: Grade a student submission
   async function handleGradeSubmission(submissionId: string) {
     try {
       const res = await apiFetch(`/homework/submissions/${submissionId}/grade`, {
@@ -163,11 +255,31 @@ export const HomeworkManagement: React.FC = () => {
         setGradeInput('');
         setFeedbackInput('');
         openReviewDrawer(selectedHwForReview);
+        loadHomework();
       }
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Failed to grade submission');
     }
   }
+
+  const filteredHomework = homeworkList.filter((hw) => {
+    const matchesSearch =
+      hw.title.toLowerCase().includes(search.toLowerCase()) ||
+      (hw.description && hw.description.toLowerCase().includes(search.toLowerCase()));
+
+    const matchesBatch = selectedBatchFilter === 'ALL' || hw.batchId === selectedBatchFilter;
+
+    let matchesStatus = true;
+    if (selectedStatusFilter === 'COMPLETED') {
+      matchesStatus = hw.studentStatus === 'COMPLETED' || hw.studentStatus === 'GRADED' || hw.studentStatus === 'SUBMITTED';
+    } else if (selectedStatusFilter === 'PENDING') {
+      matchesStatus = hw.studentStatus === 'NOT_STARTED' && !hw.isOverdue;
+    } else if (selectedStatusFilter === 'OVERDUE') {
+      matchesStatus = hw.isOverdue || hw.studentStatus === 'OVERDUE';
+    }
+
+    return matchesSearch && matchesBatch && matchesStatus;
+  });
 
   return (
     <div className="space-y-6">
@@ -188,35 +300,117 @@ export const HomeworkManagement: React.FC = () => {
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl font-semibold text-sm shadow-sm transition-all self-start sm:self-auto"
           >
-            <Plus className="w-4 h-4" /> Assign Homework
+            <Plus className="w-4 h-4" /> Create Homework / Task
           </button>
         )}
       </div>
 
+      {message && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center justify-between gap-2.5 ${
+            message.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border border-rose-200 text-rose-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {message.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+            <span>{message.text}</span>
+          </div>
+          <button onClick={() => setMessage(null)} className="text-current hover:opacity-75">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div className="p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="relative w-full md:w-80">
+          <Search className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-3" />
+          <input
+            type="text"
+            placeholder="Search assignments, topics..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl pl-10 pr-4 py-2 text-sm text-[#2D1E18] placeholder-[#8D6E63] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {isStaffOrAdmin && batches.length > 0 && (
+            <select
+              value={selectedBatchFilter}
+              onChange={(e) => setSelectedBatchFilter(e.target.value)}
+              className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+            >
+              <option value="ALL">All Batches</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {isStudent && (
+            <select
+              value={selectedStatusFilter}
+              onChange={(e) => setSelectedStatusFilter(e.target.value)}
+              className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+            >
+              <option value="ALL">All Assignments</option>
+              <option value="PENDING">Pending / Not Started</option>
+              <option value="COMPLETED">Submitted & Completed</option>
+              <option value="OVERDUE">Overdue Deadlines</option>
+            </select>
+          )}
+        </div>
+      </div>
+
       {/* Homework Cards */}
       {loading ? (
-        <div className="p-12 text-center text-[#8D6E63] text-sm">Loading homework assignments...</div>
-      ) : homeworkList.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm">
-          No homework assignments have been assigned yet.
+        <div className="p-12 text-center text-[#8D6E63] text-sm flex items-center justify-center gap-3">
+          <div className="w-4 h-4 rounded-full bg-[#6D4C41] animate-ping"></div>
+          <span>Loading homework assignments...</span>
+        </div>
+      ) : filteredHomework.length === 0 ? (
+        <div className="p-12 text-center rounded-2xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm space-y-2">
+          <FileText className="w-8 h-8 text-[#BCAAA4] mx-auto" />
+          <p className="font-medium">No homework assignments found.</p>
+          <p className="text-xs text-[#A1887F]">All upcoming tasks and assignments will appear here.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {homeworkList.map((hw) => {
+          {filteredHomework.map((hw) => {
             const hasSubmitted = Boolean(hw.mySubmission);
+            const subStatus = hw.mySubmission?.status;
             const isLate = hw.mySubmission?.isLate;
 
             return (
               <div
                 key={hw.id}
-                className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"
+                className={`p-5 rounded-2xl bg-white border shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4 ${
+                  !hw.isPublished ? 'border-amber-300 bg-amber-50/20' : 'border-[#D7CCC8]'
+                }`}
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
-                      {hw.subject?.name || 'Subject'}
-                    </span>
-                    {hw.isOverdue ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
+                        {hw.subject?.name ? hw.subject.name : 'Batch-wide'}
+                      </span>
+                      {hw.batch?.name && (
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-[#F7F2EF] text-[#6D4C41] border border-[#EFEBE9]">
+                          {hw.batch.name}
+                        </span>
+                      )}
+                    </div>
+
+                    {!hw.isPublished ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        Draft
+                      </span>
+                    ) : hw.isOverdue ? (
                       <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3 text-rose-600" /> Overdue
                       </span>
@@ -228,43 +422,109 @@ export const HomeworkManagement: React.FC = () => {
                   </div>
 
                   <div>
-                    <h3 className="font-bold text-[#2D1E18] text-base">{hw.title}</h3>
-                    {hw.description && <p className="text-xs text-[#6D4C41] mt-1">{hw.description}</p>}
+                    <h3 className="font-bold text-[#2D1E18] text-base leading-snug">{hw.title}</h3>
+                    {hw.description && <p className="text-xs text-[#6D4C41] mt-1 line-clamp-2">{hw.description}</p>}
                   </div>
 
-                  <div className="pt-2 flex items-center gap-2 text-xs text-[#6D4C41]">
-                    <Clock className="w-3.5 h-3.5 text-[#8D6E63]" />
-                    <span>Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString() : 'No date'}</span>
+                  <div className="pt-2 flex flex-wrap items-center gap-3 text-xs text-[#6D4C41]">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-[#8D6E63]" />
+                      <span>Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString() : 'No date'}</span>
+                    </span>
+
+                    {hw.maxMarks && (
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-[#8D6E63]">
+                        <Award className="w-3 h-3 text-amber-600" /> Max: {hw.maxMarks} pts
+                      </span>
+                    )}
                   </div>
 
-                  {/* Student Submission Status Card */}
+                  {hw.fileUrl && (
+                    <a
+                      href={`/api/materials/${hw.id}/download`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Attached Worksheet / Instructions
+                    </a>
+                  )}
+
+                  {/* Student View Submission Status & Actions */}
                   {isStudent && (
-                    <div className="pt-2">
+                    <div className="pt-2 space-y-2">
                       {hasSubmitted ? (
-                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1.5">
                           <div className="flex items-center justify-between font-semibold">
                             <span className="flex items-center gap-1.5">
-                              <CheckCircle className="w-4 h-4 text-emerald-600" /> Submitted
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
+                              {subStatus === 'COMPLETED' ? 'Completed' : 'Submitted'}
                             </span>
-                            {isLate && <span className="text-[10px] text-amber-800 font-bold">Late</span>}
+                            {isLate && <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">Late</span>}
                           </div>
-                          {hw.mySubmission?.grade && (
-                            <div className="text-[11px] text-[#2D1E18]">
-                              Grade: <strong className="text-amber-800">{hw.mySubmission.grade}</strong>
+
+                          <div className="text-[11px] text-[#6D4C41]">
+                            Submitted on {new Date(hw.mySubmission.submittedAt).toLocaleString()}
+                          </div>
+
+                          {hw.mySubmission.studentNotes && (
+                            <p className="text-[11px] text-[#2D1E18] bg-white/80 p-2 rounded border border-emerald-200">
+                              "{hw.mySubmission.studentNotes}"
+                            </p>
+                          )}
+
+                          {hw.mySubmission.grade && (
+                            <div className="text-[11px] text-[#2D1E18] pt-1 border-t border-emerald-200 flex items-center justify-between">
+                              <span>
+                                Grade: <strong className="text-amber-800 font-bold">{hw.mySubmission.grade}</strong>
+                              </span>
                               {hw.mySubmission.feedback && (
-                                <span className="block text-[#6D4C41] mt-0.5 italic">"{hw.mySubmission.feedback}"</span>
+                                <span className="text-[#6D4C41] italic">"{hw.mySubmission.feedback}"</span>
                               )}
                             </div>
                           )}
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setSelectedHwForSubmit(hw)}
-                          className="w-full py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-1.5 transition-all"
-                        >
-                          <Upload className="w-3.5 h-3.5" /> Submit Homework
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setConfirmCompleteHw(hw)}
+                            className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-1 transition-all"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" /> Complete
+                          </button>
+
+                          <button
+                            onClick={() => setSelectedHwForSubmit(hw)}
+                            className="flex-1 py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-1 transition-all"
+                          >
+                            <Upload className="w-3.5 h-3.5" /> Submit Work
+                          </button>
+                        </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Staff Completion Summary Metrics */}
+                  {isStaffOrAdmin && hw.summary && (
+                    <div className="pt-2 grid grid-cols-4 gap-1 text-center text-[10px]">
+                      <div className="p-1.5 rounded-lg bg-[#F7F2EF] border border-[#EFEBE9]">
+                        <span className="text-[#8D6E63] block">Eligible</span>
+                        <strong className="text-[#2D1E18] font-bold text-xs">{hw.summary.totalEligible}</strong>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                        <span className="text-emerald-800 block">Done</span>
+                        <strong className="text-emerald-800 font-bold text-xs">
+                          {hw.summary.submittedCount + hw.summary.completedCount}
+                        </strong>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-[#FAF7F5] border border-[#D7CCC8]">
+                        <span className="text-[#8D6E63] block">Pending</span>
+                        <strong className="text-[#6D4C41] font-bold text-xs">{hw.summary.notStartedCount}</strong>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-rose-50 border border-rose-200">
+                        <span className="text-rose-800 block">Overdue</span>
+                        <strong className="text-rose-800 font-bold text-xs">{hw.summary.overdueCount}</strong>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -272,14 +532,15 @@ export const HomeworkManagement: React.FC = () => {
                 {/* Staff Actions */}
                 {isStaffOrAdmin && (
                   <div className="pt-3 border-t border-[#EFEBE9] flex items-center justify-between text-xs">
-                    <span className="text-[#8D6E63] text-[11px]">
+                    <span className="text-[#8D6E63] text-[11px] flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" />
                       {hw.submissions?.length || 0} Submissions
                     </span>
                     <button
                       onClick={() => openReviewDrawer(hw)}
                       className="px-3 py-1.5 rounded-xl bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] font-semibold text-xs flex items-center gap-1.5 transition-colors"
                     >
-                      <Eye className="w-3.5 h-3.5" /> View & Grade
+                      <Eye className="w-3.5 h-3.5" /> View Progress & Grade
                     </button>
                   </div>
                 )}
@@ -289,14 +550,21 @@ export const HomeworkManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Staff Review Drawer / Modal */}
+      {/* Staff Completion Monitoring & Grading Drawer/Modal */}
       {selectedHwForReview && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[90vh] flex flex-col space-y-4 shadow-2xl my-6">
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
               <div>
-                <h2 className="text-xl font-bold text-[#2D1E18]">Submissions: {selectedHwForReview.title}</h2>
-                <p className="text-xs text-[#6D4C41]">Review student work and assign grades</p>
+                <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
+                  <FileCheck className="w-5 h-5 text-[#6D4C41]" />
+                  <span>Completion Progress: {selectedHwForReview.title}</span>
+                </h2>
+                <div className="flex items-center gap-2 text-xs text-[#6D4C41] mt-1">
+                  <span>Batch: {selectedHwForReview.batch?.name}</span>
+                  <span>&bull;</span>
+                  <span>Due: {new Date(selectedHwForReview.dueDate).toLocaleString()}</span>
+                </div>
               </div>
               <button
                 onClick={() => setSelectedHwForReview(null)}
@@ -306,122 +574,230 @@ export const HomeworkManagement: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {submissions.length === 0 ? (
-                <div className="p-8 text-center text-[#8D6E63] text-xs italic">
-                  No students have submitted this assignment yet.
-                </div>
-              ) : (
-                submissions.map((sub) => (
-                  <div key={sub.id} className="p-4 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="font-bold text-[#2D1E18] text-sm">
-                          {sub.student.firstName} {sub.student.lastName}
-                        </span>
-                        <span className="text-xs text-[#6D4C41] block font-mono">
-                          {sub.student.admissionNumber} {sub.isLate && <strong className="text-amber-800 ml-2">&bull; Late</strong>}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-[#8D6E63]">
-                        {new Date(sub.submittedAt).toLocaleString()}
-                      </span>
+            {loadingReview ? (
+              <div className="p-12 text-center text-[#8D6E63] text-sm">Loading student completion data...</div>
+            ) : reviewData ? (
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                {/* Summary Badges Bar */}
+                {reviewData.summary && (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                    <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <span className="text-[10px] uppercase font-bold text-[#8D6E63] block">Total Enrolled</span>
+                      <strong className="text-sm font-bold text-[#2D1E18]">{reviewData.summary.totalEligible}</strong>
                     </div>
-
-                    {sub.studentNotes && (
-                      <p className="text-xs text-[#2D1E18] bg-white p-2.5 rounded-lg border border-[#D7CCC8]">
-                        "{sub.studentNotes}"
-                      </p>
-                    )}
-
-                    {sub.fileUrl && (
-                      <a
-                        href={`/api/materials/${selectedHwForReview.id}/download`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
-                      >
-                        <FileText className="w-3.5 h-3.5" /> View Attached File
-                      </a>
-                    )}
-
-                    {evaluatingSubId === sub.id ? (
-                      <div className="pt-2 space-y-2 border-t border-[#D7CCC8]">
-                        <div className="grid grid-cols-3 gap-2">
-                          <input
-                            type="text"
-                            placeholder="Grade (e.g. A+)"
-                            value={gradeInput}
-                            onChange={(e) => setGradeInput(e.target.value)}
-                            className="bg-white border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Feedback remarks"
-                            value={feedbackInput}
-                            onChange={(e) => setFeedbackInput(e.target.value)}
-                            className="col-span-2 bg-white border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                          />
-                        </div>
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => setEvaluatingSubId(null)}
-                            className="px-2.5 py-1 text-xs text-[#8D6E63]"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => handleGradeSubmission(sub.id)}
-                            className="px-3 py-1 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-lg text-xs font-semibold"
-                          >
-                            Save Grade
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-2 flex items-center justify-between border-t border-[#D7CCC8]/60 text-xs">
-                        <span className="text-[#2D1E18]">
-                          Grade: <strong className="text-amber-800">{sub.grade || 'Not Graded'}</strong>
-                        </span>
-                        <button
-                          onClick={() => {
-                            setEvaluatingSubId(sub.id);
-                            setGradeInput(sub.grade || '');
-                            setFeedbackInput(sub.feedback || '');
-                          }}
-                          className="px-2.5 py-1 rounded bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] text-xs font-medium transition-colors"
-                        >
-                          {sub.grade ? 'Edit Grade' : 'Grade'}
-                        </button>
-                      </div>
-                    )}
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 block">Submitted</span>
+                      <strong className="text-sm font-bold text-emerald-800">
+                        {reviewData.summary.submittedCount + reviewData.summary.completedCount}
+                      </strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                      <span className="text-[10px] uppercase font-bold text-indigo-800 block">Graded</span>
+                      <strong className="text-sm font-bold text-indigo-800">{reviewData.summary.gradedCount}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                      <span className="text-[10px] uppercase font-bold text-amber-800 block">Not Started</span>
+                      <strong className="text-sm font-bold text-amber-800">{reviewData.summary.notStartedCount}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+                      <span className="text-[10px] uppercase font-bold text-rose-800 block">Overdue</span>
+                      <strong className="text-sm font-bold text-rose-800">{reviewData.summary.overdueCount}</strong>
+                    </div>
                   </div>
-                ))
-              )}
+                )}
+
+                {/* Student-wise Completion Roster */}
+                <div className="space-y-3">
+                  <h3 className="font-bold text-sm text-[#2D1E18]">Enrolled Students Completion Roster</h3>
+
+                  {reviewData.roster?.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#8D6E63] bg-[#F7F2EF] rounded-xl border border-[#D7CCC8]">
+                      No students are actively enrolled in this batch.
+                    </div>
+                  ) : (
+                    reviewData.roster?.map((r: any) => {
+                      const st = r.student;
+                      const sub = r.submission;
+
+                      return (
+                        <div
+                          key={st.id}
+                          className="p-4 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-[#6D4C41] text-white flex items-center justify-center font-bold text-sm">
+                                {st.firstName?.[0] || 'S'}
+                              </div>
+                              <div>
+                                <span className="font-bold text-[#2D1E18] text-sm block">
+                                  {st.firstName} {st.lastName}
+                                </span>
+                                <span className="text-xs text-[#6D4C41] font-mono">
+                                  Adm: {st.admissionNumber}
+                                </span>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                r.status === 'COMPLETED' || r.status === 'GRADED'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : r.status === 'SUBMITTED'
+                                  ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                  : r.status === 'LATE'
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : r.isOverdue
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  : 'bg-gray-100 text-gray-700 border border-gray-300'
+                              }`}
+                            >
+                              {r.status === 'NOT_STARTED' && r.isOverdue ? 'OVERDUE' : r.status}
+                            </span>
+                          </div>
+
+                          {sub && (
+                            <div className="space-y-2 pt-2 border-t border-[#D7CCC8]/60 text-xs">
+                              <div className="flex items-center justify-between text-[#8D6E63] text-[11px]">
+                                <span>Submitted: {new Date(sub.submittedAt).toLocaleString()}</span>
+                                {sub.isLate && <strong className="text-amber-800">Late Submission</strong>}
+                              </div>
+
+                              {sub.studentNotes && (
+                                <p className="text-xs text-[#2D1E18] bg-white p-2.5 rounded-lg border border-[#D7CCC8]">
+                                  "{sub.studentNotes}"
+                                </p>
+                              )}
+
+                              {sub.fileUrl && (
+                                <a
+                                  href={`/api/homework/submissions/${sub.id}/download`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
+                                >
+                                  <Download className="w-3.5 h-3.5" /> Download Student Submission File
+                                </a>
+                              )}
+
+                              {/* Grading input */}
+                              {evaluatingSubId === sub.id ? (
+                                <div className="pt-2 space-y-2 bg-white p-3 rounded-xl border border-[#D7CCC8]">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Grade (e.g. A+ or 18/20)"
+                                      value={gradeInput}
+                                      onChange={(e) => setGradeInput(e.target.value)}
+                                      className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Feedback / Remarks"
+                                      value={feedbackInput}
+                                      onChange={(e) => setFeedbackInput(e.target.value)}
+                                      className="col-span-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2 pt-1">
+                                    <button
+                                      onClick={() => setEvaluatingSubId(null)}
+                                      className="px-2.5 py-1 text-xs text-[#8D6E63]"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      onClick={() => handleGradeSubmission(sub.id)}
+                                      className="px-3 py-1 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-lg text-xs font-semibold"
+                                    >
+                                      Save Grade
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-[#2D1E18]">
+                                    Grade: <strong className="text-amber-800">{sub.grade || 'Not Graded Yet'}</strong>
+                                    {sub.feedback && <span className="ml-2 text-[#6D4C41] italic">"{sub.feedback}"</span>}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      setEvaluatingSubId(sub.id);
+                                      setGradeInput(sub.grade || '');
+                                      setFeedbackInput(sub.feedback || '');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] text-xs font-medium transition-colors"
+                                  >
+                                    {sub.grade ? 'Edit Grade' : 'Assign Grade'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* Student Confirm Mark Completed Modal */}
+      {confirmCompleteHw && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-sm w-full space-y-4 shadow-2xl text-center">
+            <CheckCircle className="w-12 h-12 text-emerald-600 mx-auto" />
+            <h2 className="text-lg font-bold text-[#2D1E18]">Mark Task as Completed?</h2>
+            <p className="text-xs text-[#6D4C41]">
+              Confirm that you have finished <strong>"{confirmCompleteHw.title}"</strong>. This will notify your faculty that the task is complete.
+            </p>
+            <div className="pt-2 flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmCompleteHw(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] border border-[#D7CCC8]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => handleMarkCompleted(confirmCompleteHw)}
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-50"
+              >
+                {submitting ? 'Confirming...' : 'Yes, Mark Completed'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Student Submit Modal */}
+      {/* Student Submit Work Modal */}
       {selectedHwForSubmit && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-4 shadow-2xl my-6">
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-              <h2 className="text-lg font-bold text-[#2D1E18]">Submit: {selectedHwForSubmit.title}</h2>
+              <div>
+                <h2 className="text-lg font-bold text-[#2D1E18]">Submit Work: {selectedHwForSubmit.title}</h2>
+                <p className="text-xs text-[#6D4C41]">Enter answers or attach your completed solution sheet</p>
+              </div>
               <button onClick={() => setSelectedHwForSubmit(null)} className="text-[#8D6E63] hover:text-[#2D1E18]">
                 <X className="w-5 h-5" />
               </button>
             </div>
+
             <form onSubmit={handleStudentSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                  Submission Notes / Explanations
+                  Submission Notes / Explanations / Answers *
                 </label>
                 <textarea
-                  rows={3}
+                  rows={4}
                   required
-                  placeholder="Detail your work, question answers, or summary notes..."
+                  placeholder="Detail your completed answers, question steps, or work summary..."
                   value={studentNotes}
                   onChange={(e) => setStudentNotes(e.target.value)}
                   className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
@@ -430,13 +806,15 @@ export const HomeworkManagement: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                  Upload Assignment File (Optional)
+                  Attach Solution File (Optional)
                 </label>
                 <input
                   type="file"
+                  accept="application/pdf,image/*"
                   onChange={(e) => setSubmissionFile(e.target.files?.[0] || null)}
                   className="w-full text-xs text-[#6D4C41] file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[#4E342E] file:text-white"
                 />
+                <p className="text-[11px] text-[#8D6E63] mt-1">Accepts PDF and images up to 25MB.</p>
               </div>
 
               <div className="pt-2 flex justify-end gap-2 border-t border-[#EFEBE9]">
@@ -450,8 +828,9 @@ export const HomeworkManagement: React.FC = () => {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm"
+                  className="px-4 py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm flex items-center gap-1.5"
                 >
+                  <Send className="w-3.5 h-3.5" />
                   {submitting ? 'Submitting...' : 'Confirm Submission'}
                 </button>
               </div>
@@ -462,36 +841,40 @@ export const HomeworkManagement: React.FC = () => {
 
       {/* Staff Create Homework Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
               <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#6D4C41]" /> Create Homework Assignment
+                <Plus className="w-5 h-5 text-[#6D4C41]" /> Create Homework / Task
               </h2>
               <button onClick={() => setShowCreateModal(false)} className="text-[#8D6E63] hover:text-[#2D1E18]">
                 <X className="w-5 h-5" />
               </button>
             </div>
+
             <form onSubmit={handleCreateHomework} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-[#4E342E] mb-1">Assignment Title *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Chemical Bonding Practice Set"
+                  placeholder="e.g. Chemical Bonding Practice Set & Exercise Questions"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#4E342E] mb-1">Batch *</label>
                   <select
                     required
                     value={batchId}
-                    onChange={(e) => setBatchId(e.target.value)}
+                    onChange={(e) => {
+                      setBatchId(e.target.value);
+                      setSubjectId('');
+                    }}
                     className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
                   >
                     <option value="">Select Batch</option>
@@ -504,41 +887,93 @@ export const HomeworkManagement: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Subject *</label>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Subject Allocation</label>
                   <select
-                    required
                     value={subjectId}
                     onChange={(e) => setSubjectId(e.target.value)}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                    disabled={!batchId}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-50"
                   >
-                    <option value="">Select Subject</option>
-                    {subjects.map((s) => (
+                    <option value="">Entire Batch (Batch-wide)</option>
+                    {availableSubjects.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name}
+                        {s.name} {s.code ? `(${s.code})` : ''}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Due Date *</label>
-                <input
-                  type="date"
-                  required
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Due Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Due Time</label>
+                  <input
+                    type="time"
+                    value={dueTime}
+                    onChange={(e) => setDueTime(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Max Marks (Optional)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    placeholder="e.g. 50"
+                    value={maxMarks}
+                    onChange={(e) => setMaxMarks(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Publication Status *</label>
+                  <select
+                    value={isPublished ? 'PUBLISHED' : 'DRAFT'}
+                    onChange={(e) => setIsPublished(e.target.value === 'PUBLISHED')}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="PUBLISHED">Publish to Students Immediately</option>
+                    <option value="DRAFT">Save as Draft (Faculty Only)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-[#4E342E] mb-1">Instructions / Description</label>
                 <textarea
                   rows={2}
+                  placeholder="Instructions for exercises, questions, or completion guidelines..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                  Attachment Worksheet / PDF (Optional)
+                </label>
+                <input
+                  type="file"
+                  accept="application/pdf,image/*"
+                  onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-[#6D4C41] file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[#4E342E] file:text-white"
                 />
               </div>
 
@@ -553,9 +988,9 @@ export const HomeworkManagement: React.FC = () => {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm"
+                  className="px-4 py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-50"
                 >
-                  {submitting ? 'Publishing...' : 'Assign Homework'}
+                  {submitting ? 'Publishing...' : isPublished ? 'Publish Homework' : 'Save Draft'}
                 </button>
               </div>
             </form>

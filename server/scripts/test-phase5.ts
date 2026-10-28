@@ -108,6 +108,19 @@ async function runPhase5Tests() {
       },
     });
     const staffUser = staffRes.data.data.user;
+    const staffProfileId = staffRes.data.data.staffId || staffRes.data.data.staff?.id;
+
+    // Assign Staff to batchA & subjectA
+    await request(`/academics/batches/${batchA.id}/staff`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: { staffProfileId },
+    });
+    await request(`/academics/batches/${batchA.id}/subjects`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: { subjectId: subjectA.id, staffProfileId },
+    });
 
     const staffLogin = await request('/auth/login', {
       method: 'POST',

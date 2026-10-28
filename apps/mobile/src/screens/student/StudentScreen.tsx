@@ -10,9 +10,10 @@ import {
   Alert,
   TextInput,
   Modal,
+  Linking,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
-import { mobileApiFetch } from '../../services/api';
+import { mobileApiFetch, buildApiUrl, getApiBaseUrl } from '../../services/api';
 import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
@@ -28,7 +29,6 @@ export const StudentScreen: React.FC = () => {
 
   // Data states
   const [studentProfile, setStudentProfile] = useState<any>(null);
-  const [qrPass, setQrPass] = useState<any>(null);
   const [materials, setMaterials] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
@@ -71,14 +71,8 @@ export const StudentScreen: React.FC = () => {
       if (profRes.success && currentStudent) {
         setStudentProfile(currentStudent);
 
-        // Fetch QR Pass
+        // Fetch Fee Statement
         if (currentStudent.id) {
-          const qrRes = await mobileApiFetch(`/attendance/students/${currentStudent.id}/qr`);
-          if (qrRes.success) {
-            setQrPass(qrRes.data);
-          }
-
-          // Fetch Fee Statement
           const feeRes = await mobileApiFetch(`/fees/students/${currentStudent.id}/statement`);
           if (feeRes.success) {
             setFeeStatement(feeRes.data);
@@ -147,15 +141,56 @@ export const StudentScreen: React.FC = () => {
   };
 
   const handleDownloadMaterial = (mat: any) => {
+    if (mat.content && !mat.fileUrl) {
+      Alert.alert(
+        mat.title,
+        `Topic / Subject: ${mat.subject?.name || 'General'}\n\n${mat.content}`,
+        [{ text: 'Close' }]
+      );
+      return;
+    }
+
+    const downloadUrl = buildApiUrl(getApiBaseUrl(), `/materials/${mat.id}/download`);
     Alert.alert(
       'Material Access',
-      `Opening "${mat.title}" (${mat.type}). File size: ${mat.fileSize ? `${Math.round(mat.fileSize / 1024)} KB` : 'Standard'}.`,
+      `Title: ${mat.title}\nType: ${mat.type}\nFile: ${mat.fileName || 'Online resource'}\n\nWould you like to open this study material?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Open in Viewer',
+          text: 'Open Material',
           onPress: () => {
-            Alert.alert('Document Viewer', `Viewing ${mat.title}. Encrypted streaming token verified.`);
+            Linking.openURL(downloadUrl).catch(() => {
+              Alert.alert('Notice', `Material download link ready: ${downloadUrl}`);
+            });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleMarkCompleted = (hw: any) => {
+    Alert.alert(
+      'Mark as Completed',
+      `Confirm that you have completed "${hw.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Complete',
+          onPress: async () => {
+            try {
+              const res = await mobileApiFetch(`/homework/${hw.id}/submissions`, {
+                method: 'POST',
+                body: { isCompleted: true, status: 'COMPLETED' },
+              });
+              if (res.success) {
+                Alert.alert('Success', 'Assignment marked as completed!');
+                fetchStudentData();
+              } else {
+                Alert.alert('Error', res.error || 'Could not complete assignment.');
+              }
+            } catch {
+              Alert.alert('Error', 'Connection failure');
+            }
           },
         },
       ]
@@ -173,8 +208,7 @@ export const StudentScreen: React.FC = () => {
       const res = await mobileApiFetch(`/homework/${submittingHw.id}/submissions`, {
         method: 'POST',
         body: {
-          content: submissionContent.trim(),
-          studentId: studentProfile?.id,
+          studentNotes: submissionContent.trim(),
         },
       });
 
@@ -275,43 +309,6 @@ export const StudentScreen: React.FC = () => {
                 </View>
               </Card>
 
-              {/* Attendance QR Pass Card */}
-              <Card>
-                <View style={styles.qrHeader}>
-                  <View>
-                    <Text style={styles.qrTitle}>Digital Attendance Pass</Text>
-                    <Text style={styles.qrSubtitle}>Scan at campus gate or biometric kiosk</Text>
-                  </View>
-                  <Badge label="INSTITUTE SECURE" variant="info" size="sm" />
-                </View>
-
-                <View style={styles.qrDisplayBox}>
-                  {qrPass ? (
-                    <View style={styles.qrDataContainer}>
-                      <View style={styles.qrCodeVisual}>
-                        <Text style={styles.qrIcon}>📱</Text>
-                        <Text style={styles.qrCodeText}>PASS ACTIVE</Text>
-                        <Text style={styles.qrCodeToken} numberOfLines={1}>
-                          {qrPass.qrToken ? `${qrPass.qrToken.slice(0, 24)}...` : 'SECURE-TOKEN'}
-                        </Text>
-                      </View>
-                      <Text style={styles.qrInstruction}>
-                        Cryptographic QR pass automatically verified on staff scan.
-                      </Text>
-                      <Text style={styles.qrExpires}>
-                        Valid for {user?.fullName || 'Student'} &bull; Academic Year 2026-27
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.qrLoadingBox}>
-                      <Text style={styles.qrPlaceholderText}>
-                        Generating campus access QR pass...
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </Card>
-
               {/* Key Highlights */}
               <View style={styles.statsRow}>
                 <View style={[styles.statBox, { backgroundColor: '#1e1b4b' }]}>
@@ -394,23 +391,61 @@ export const StudentScreen: React.FC = () => {
                         <Text style={styles.hwSubject}>{hw.subject?.name || 'Subject'}</Text>
                       </View>
                       <Badge
-                        label={hw.submissions?.length > 0 ? 'SUBMITTED' : 'PENDING'}
-                        variant={hw.submissions?.length > 0 ? 'success' : 'warning'}
+                        label={
+                          hw.mySubmission
+                            ? hw.mySubmission.status
+                            : hw.isOverdue
+                            ? 'OVERDUE'
+                            : 'NOT STARTED'
+                        }
+                        variant={
+                          hw.mySubmission?.status === 'COMPLETED' || hw.mySubmission?.status === 'GRADED'
+                            ? 'success'
+                            : hw.mySubmission?.status === 'SUBMITTED'
+                            ? 'info'
+                            : hw.isOverdue
+                            ? 'danger'
+                            : 'warning'
+                        }
                       />
                     </View>
                     <Text style={styles.hwDescription}>{hw.description}</Text>
+
+                    {hw.mySubmission && (
+                      <View style={{ marginTop: 8, padding: 8, backgroundColor: themeTokens.colors.surfaceMuted, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 11, color: themeTokens.colors.textSecondary }}>
+                          Submitted: {new Date(hw.mySubmission.submittedAt).toLocaleDateString('en-IN')}
+                        </Text>
+                        {hw.mySubmission.grade && (
+                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: themeTokens.colors.primary, marginTop: 2 }}>
+                            Grade: {hw.mySubmission.grade} {hw.mySubmission.feedback ? `(${hw.mySubmission.feedback})` : ''}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+
                     <View style={styles.hwFooter}>
                       <Text style={styles.hwDueDate}>
                         📅 Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString('en-IN') : 'Open'}
                       </Text>
-                      <TouchableOpacity
-                        onPress={() => setSubmittingHw(hw)}
-                        style={styles.submitHwBtn}
-                      >
-                        <Text style={styles.submitHwBtnText}>
-                          {hw.submissions?.length > 0 ? 'Re-Submit' : 'Submit Work'}
-                        </Text>
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {!hw.mySubmission && (
+                          <TouchableOpacity
+                            onPress={() => handleMarkCompleted(hw)}
+                            style={[styles.submitHwBtn, { backgroundColor: themeTokens.colors.success }]}
+                          >
+                            <Text style={styles.submitHwBtnText}>✓ Complete</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          onPress={() => setSubmittingHw(hw)}
+                          style={styles.submitHwBtn}
+                        >
+                          <Text style={styles.submitHwBtnText}>
+                            {hw.mySubmission ? 'Update Work' : 'Submit Work'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </Card>
                 ))
@@ -691,78 +726,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
     marginTop: 6,
-  },
-  qrHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  qrTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: themeTokens.colors.textPrimary,
-  },
-  qrSubtitle: {
-    fontSize: 12,
-    color: themeTokens.colors.textMuted,
-    marginTop: 1,
-  },
-  qrDisplayBox: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    padding: 16,
-    alignItems: 'center',
-  },
-  qrDataContainer: {
-    alignItems: 'center',
-    width: '100%',
-  },
-  qrCodeVisual: {
-    width: 130,
-    height: 130,
-    backgroundColor: themeTokens.colors.surface,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: themeTokens.colors.taupe,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  qrIcon: {
-    fontSize: 36,
-  },
-  qrCodeText: {
-    color: themeTokens.colors.success,
-    fontWeight: 'bold',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  qrCodeToken: {
-    color: themeTokens.colors.textSubtle,
-    fontSize: 9,
-    fontFamily: 'monospace',
-    marginTop: 2,
-  },
-  qrInstruction: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 12,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  qrExpires: {
-    color: themeTokens.colors.taupe,
-    fontSize: 11,
-    marginTop: 4,
-  },
-  qrLoadingBox: {
-    paddingVertical: 20,
-  },
-  qrPlaceholderText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
   },
   statsRow: {
     flexDirection: 'row',

@@ -29,6 +29,7 @@ import {
   AlertCircle,
   Phone,
   Award,
+  RefreshCw,
 } from 'lucide-react';
 
 interface StaffOption {
@@ -100,6 +101,12 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
     isOpen: false,
     batch: null,
   });
+  const [confirmDeleteBatch, setConfirmDeleteBatch] = useState<{ isOpen: boolean; batch: Batch | null }>({
+    isOpen: false,
+    batch: null,
+  });
+  const [deleteBatchLoading, setDeleteBatchLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [confirmRemoveSubject, setConfirmRemoveSubject] = useState<{ isOpen: boolean; subjectId: string; subjectName: string }>({
     isOpen: false,
     subjectId: '',
@@ -129,10 +136,11 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
     isActive: true,
   });
 
-  // Fetch initial batch list and helper options
-  const fetchData = useCallback(async () => {
+  // Fetch initial batch list and helper options (supports silent background sync)
+  const fetchData = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
+      setIsSyncing(true);
       const [batchesRes, staffRes, studentsRes] = await Promise.all([
         apiFetch('/academics/batches'),
         apiFetch('/academics/staff').catch(() => ({ data: { staff: [] } })),
@@ -143,14 +151,33 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
       setAvailableStaff(staffRes.data?.staff || []);
       setInstituteStudents(studentsRes.data?.students || []);
     } catch (err: any) {
-      error(err.message || 'Failed to load academics data');
+      if (!silent) error(err.message || 'Failed to load academics data');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      setIsSyncing(false);
     }
-  }, []);
+  }, [error]);
 
   useEffect(() => {
     fetchData();
+
+    // Auto-sync whenever user focuses the window (e.g. returning from DB editor/tool)
+    const handleFocus = () => fetchData(true);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchData(true);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Periodic sync every 10 seconds to keep UI 100% matched with database
+    const interval = setInterval(() => fetchData(true), 10000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+    };
   }, [fetchData]);
 
   // Load detailed batch with subjects, roster, allocations and faculty
@@ -269,6 +296,37 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
       }
     } catch (err: any) {
       error(err.message || 'Failed to change batch status');
+    }
+  };
+
+  // Manual Trigger to Synchronize directly with Database
+  const handleManualSync = async () => {
+    await fetchData();
+    info('Synchronized with database');
+  };
+
+  // Delete Batch Permanently from Database
+  const handleDeleteBatch = async () => {
+    if (!confirmDeleteBatch.batch) return;
+    setDeleteBatchLoading(true);
+    try {
+      const res = await apiFetch(`/academics/batches/${confirmDeleteBatch.batch.id}`, {
+        method: 'DELETE',
+      });
+      if (res.success) {
+        success(res.message || 'Batch deleted from database');
+        setConfirmDeleteBatch({ isOpen: false, batch: null });
+        fetchData();
+        if (selectedBatchDetails?.id === confirmDeleteBatch.batch.id) {
+          setSelectedBatchDetails(null);
+        }
+      } else {
+        error(res.error || 'Failed to delete batch');
+      }
+    } catch (err: any) {
+      error(err.message || 'Failed to delete batch');
+    } finally {
+      setDeleteBatchLoading(false);
     }
   };
 
@@ -1453,28 +1511,42 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
           </p>
         </div>
 
-        {/* Create Batch Action */}
-        <button
-          onClick={() => {
-            setEditingBatch(null);
-            setBatchForm({
-              name: '',
-              code: '',
-              academicYear: '2026-2027',
-              startDate: new Date().toISOString().split('T')[0],
-              endDate: '',
-              description: '',
-              schedule: '',
-              isActive: true,
-              staffProfileId: '',
-            });
-            setShowBatchModal(true);
-          }}
-          className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white px-4 py-2.5 rounded-xl shadow-md transition"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create New Batch</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Refresh / Sync with Database Action */}
+          <button
+            type="button"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#FAF8F5] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] px-3.5 py-2.5 rounded-xl transition shadow-sm disabled:opacity-60"
+            title="Synchronize batch list directly from database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-[#8D6E63]' : ''}`} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync DB'}</span>
+          </button>
+
+          {/* Create Batch Action */}
+          <button
+            onClick={() => {
+              setEditingBatch(null);
+              setBatchForm({
+                name: '',
+                code: '',
+                academicYear: '2026-2027',
+                startDate: new Date().toISOString().split('T')[0],
+                endDate: '',
+                description: '',
+                schedule: '',
+                isActive: true,
+                staffProfileId: '',
+              });
+              setShowBatchModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white px-4 py-2.5 rounded-xl shadow-md transition"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create New Batch</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -1646,6 +1718,13 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                       title={b.isActive ? 'Deactivate Batch' : 'Activate Batch'}
                     >
                       <Power className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteBatch({ isOpen: true, batch: b })}
+                      className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-xl transition"
+                      title="Delete Batch from Database"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
@@ -1825,6 +1904,18 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
         variant={confirmDeactivate.batch?.isActive ? 'danger' : 'primary'}
         onConfirm={() => confirmDeactivate.batch && handleToggleBatchStatus(confirmDeactivate.batch)}
         onCancel={() => setConfirmDeactivate({ isOpen: false, batch: null })}
+      />
+
+      {/* Confirmation Modal for Permanent Batch Deletion from Database */}
+      <ConfirmationModal
+        isOpen={confirmDeleteBatch.isOpen}
+        title="Delete Batch Permanently"
+        message={`Are you sure you want to permanently delete batch '${confirmDeleteBatch.batch?.name}' from the database? This will remove the batch and its curriculum associations. This action cannot be undone.`}
+        confirmLabel={deleteBatchLoading ? 'Deleting...' : 'Delete Permanently'}
+        variant="danger"
+        loading={deleteBatchLoading}
+        onConfirm={handleDeleteBatch}
+        onCancel={() => setConfirmDeleteBatch({ isOpen: false, batch: null })}
       />
     </div>
   );

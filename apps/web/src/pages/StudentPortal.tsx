@@ -1,14 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
-import { QRCodeSVG } from 'qrcode.react';
 import { 
   GraduationCap, 
   Calendar, 
   Clock, 
-  QrCode, 
   CheckCircle, 
   Building, 
-  ShieldCheck, 
   Users, 
   Sparkles,
   CreditCard,
@@ -33,7 +30,6 @@ export const StudentPortal: React.FC = () => {
     }).format(d);
   };
   const [student, setStudent] = useState<any>(null);
-  const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [feeStatement, setFeeStatement] = useState<any>(null);
   const [activeReceipt, setActiveReceipt] = useState<any>(null);
   const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
@@ -49,16 +45,6 @@ export const StudentPortal: React.FC = () => {
         if (res.success && res.data?.student) {
           const s = res.data.student;
           setStudent(s);
-
-          // Fetch QR Pass
-          try {
-            const qrRes = await apiFetch(`/attendance/students/${s.id}/qr`);
-            if (qrRes.success && qrRes.data?.qrData) {
-              setQrCodeData(qrRes.data.qrData);
-            }
-          } catch (qrErr) {
-            console.error('Failed to load QR pass', qrErr);
-          }
 
           // Fetch Student Fee Statement
           try {
@@ -175,41 +161,8 @@ export const StudentPortal: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Digital QR Attendance Pass */}
-        <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm flex flex-col items-center text-center space-y-4">
-          <div className="flex items-center gap-2 text-[#4E342E] font-bold text-sm tracking-wide uppercase">
-            <QrCode className="w-4 h-4 text-[#6D4C41]" />
-            <span>Personal QR Pass</span>
-          </div>
-
-          <div className="p-4 bg-[#F7F2EF] border border-[#D7CCC8] rounded-2xl shadow-inner flex items-center justify-center">
-            {qrCodeData ? (
-              <QRCodeSVG value={qrCodeData} size={180} level="H" />
-            ) : (
-              <div className="w-44 h-44 flex items-center justify-center text-[#8D6E63] text-xs">
-                Generating QR Pass...
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-mono text-[#4E342E] font-semibold">
-              Token ID: {student.id.slice(0, 8)}...{student.id.slice(-4)}
-            </p>
-            <p className="text-[11px] text-[#6D4C41]">
-              Scan at the institute terminal kiosk to record check-in and check-out.
-            </p>
-          </div>
-
-          <div className="pt-2 w-full border-t border-[#EFEBE9] flex items-center justify-center gap-2 text-xs text-emerald-800 font-medium">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Cryptographically Verified Pass</span>
-          </div>
-        </div>
-
-        {/* Academic & Attendance & Fees Overview */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* Academic & Attendance & Fees Overview */}
+      <div className="space-y-6">
           <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-[#2D1E18] font-bold text-base">
@@ -450,7 +403,6 @@ export const StudentPortal: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
 
       {/* Receipt Modal */}
       {showReceiptModal && activeReceipt && (

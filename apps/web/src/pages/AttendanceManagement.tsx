@@ -186,10 +186,11 @@ export const AttendanceManagement: React.FC = () => {
     }));
   }, [attendanceData]);
 
-  // Unified Check-In executor (supports Automatic Voice Check-In, Disambiguation Selection, & Manual Confirmation)
-  const executeStudentCheckIn = useCallback(
+  // Unified Attendance Action executor (supports Check In & Check Out, optimistic UI, live KPIs, & real SMS status)
+  const executeStudentAttendanceAction = useCallback(
     async (
       candidate: EnrolledStudentCandidate,
+      action: 'CHECK_IN' | 'CHECK_OUT',
       method: AttendanceMethod | 'MANUAL' | 'QR_SCAN' | 'VOICE_CONFIRMED' = AttendanceMethod.VOICE_CONFIRMED,
       isAuto = false
     ) => {
@@ -202,8 +203,9 @@ export const AttendanceManagement: React.FC = () => {
 
       try {
         const todayStr = new Date().toISOString().split('T')[0];
-        const idempotencyKey = `ATT_${candidate.id}_${todayStr}_CHECKIN_1`;
-        const res = await apiFetch('/attendance/check-in', {
+        const idempotencyKey = `ATT_${candidate.id}_${todayStr}_${action}_1`;
+        const endpoint = action === 'CHECK_IN' ? '/attendance/check-in' : '/attendance/check-out';
+        const res = await apiFetch(endpoint, {
           method: 'POST',
           body: JSON.stringify({
             studentId: candidate.id,
@@ -225,30 +227,82 @@ export const AttendanceManagement: React.FC = () => {
           return;
         }
 
-        if (isAuto) {
+        const smsInfo = res.data?.smsNotification;
+        let notificationNote = '';
+        if (smsInfo?.queued) {
+          const rec = smsInfo.recipient ? ` to ${smsInfo.recipient}` : '';
+          notificationNote = `SMS queued${rec} (${smsInfo.status || 'QUEUED'})`;
+        } else if (smsInfo?.reason) {
+          notificationNote = smsInfo.reason;
+        }
+
+        const nowFormatted = new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }).format(new Date());
+
+        const newStatus = action === 'CHECK_IN' ? 'CHECKED_IN' : 'CHECKED_OUT';
+
+        // 1. Optimistically update roster row and counts immediately (zero latency)
+        setAttendanceData((prev: any) => {
+          if (!prev?.records) return prev;
+          const updatedRecords = prev.records.map((r: any) => {
+            if (r.student.id === candidate.id) {
+              return {
+                ...r,
+                status: newStatus,
+                checkInTime: action === 'CHECK_IN' ? new Date().toISOString() : r.checkInTime,
+                checkInTimeFormatted: action === 'CHECK_IN' ? nowFormatted : r.checkInTimeFormatted,
+                checkOutTime: action === 'CHECK_OUT' ? new Date().toISOString() : r.checkOutTime,
+                checkOutTimeFormatted: action === 'CHECK_OUT' ? nowFormatted : r.checkOutTimeFormatted,
+              };
+            }
+            return r;
+          });
+
+          const checkedInCount = updatedRecords.filter((r: any) => r.status === 'CHECKED_IN').length;
+          const checkedOutCount = updatedRecords.filter((r: any) => r.status === 'CHECKED_OUT').length;
+          const presentTotal = checkedInCount + checkedOutCount;
+          const absentCount = updatedRecords.length - presentTotal;
+
+          return {
+            ...prev,
+            counts: {
+              ...prev.counts,
+              totalStudents: updatedRecords.length,
+              checkedInCount,
+              checkedOutCount,
+              presentTotal,
+              absentCount,
+            },
+            records: updatedRecords,
+          };
+        });
+
+        // 2. Set recent banner / feedback
+        if (isAuto && action === 'CHECK_IN') {
           setRecentAutoCheckIn({
-            student: res.data?.student || candidate,
+            student: res.data?.student || { ...candidate, checkInTimeFormatted: nowFormatted },
             smsNotification: res.data?.smsNotification,
           });
-          setPendingVoiceCandidate(null);
-          setCandidateOptions([]);
-          setVoiceResult(null);
         } else {
           setFeedback({
             type: 'success',
-            message: `${candidate.firstName} ${candidate.lastName} checked in successfully (${method}).`,
-            notificationNote: res.data?.smsNotification?.queued
-              ? `SMS queued to parent (${res.data.smsNotification.recipient})`
-              : res.data?.smsNotification?.reason || 'No SMS permission configured for linked guardians',
+            message: `${candidate.firstName} ${candidate.lastName} ${action === 'CHECK_IN' ? 'checked in' : 'checked out'} successfully.`,
+            notificationNote,
           });
-          setPendingVoiceCandidate(null);
-          setCandidateOptions([]);
-          setVoiceResult(null);
         }
 
+        setPendingVoiceCandidate(null);
+        setCandidateOptions([]);
+        setVoiceResult(null);
+
+        // 3. Immediately sync authoritative summary from backend
         fetchSummary();
       } catch (err: any) {
-        console.warn('[CheckIn Action Error]', err);
+        console.warn('[Attendance Action Error]', err);
         if (err.data?.alreadyCheckedIn) {
           setAlreadyCheckedInNotice({
             student: err.data.data?.student || candidate,
@@ -257,10 +311,18 @@ export const AttendanceManagement: React.FC = () => {
           setPendingVoiceCandidate(null);
           setCandidateOptions([]);
           setVoiceResult(null);
+        } else if (err.data?.alreadyCheckedOut) {
+          setFeedback({
+            type: 'warning',
+            message: err.message || `${candidate.firstName} ${candidate.lastName} has already checked out today.`,
+          });
+          setPendingVoiceCandidate(null);
+          setCandidateOptions([]);
+          setVoiceResult(null);
         } else {
           setFeedback({
             type: 'error',
-            message: err.message || 'Failed to record check-in',
+            message: err.message || `Failed to record ${action.toLowerCase()}`,
           });
         }
       } finally {
@@ -270,12 +332,14 @@ export const AttendanceManagement: React.FC = () => {
     [selectedBatchId, selectedSubjectId, fetchSummary]
   );
 
-  // Perform Voice Match with Backend and Auto-Check-In
+  // Perform Voice Match with Backend and Dynamic Check-In / Check-Out
+  const isSearchingRef = React.useRef(false);
   const performVoiceMatch = useCallback(
     async (spokenText: string) => {
       const trimmed = spokenText.trim();
-      if (!trimmed) return;
+      if (!trimmed || isSearchingRef.current) return;
 
+      isSearchingRef.current = true;
       setVoiceSearching(true);
       setNoMatchPhrase(null);
       setFeedback(null);
@@ -297,25 +361,38 @@ export const AttendanceManagement: React.FC = () => {
         if (res.success) {
           setVoiceResult(res);
 
-          // Case A: Exactly one eligible student matches AND not already checked in -> Auto Check-In!
-          if (res.status === 'EXACT_SINGLE' && res.autoCheckInEligible && res.bestMatch) {
-            await executeStudentCheckIn(res.bestMatch, 'VOICE_CONFIRMED', true);
-          } else if (res.alreadyCheckedIn && res.bestMatch) {
-            // Already checked in today
-            setAlreadyCheckedInNotice({
-              student: res.bestMatch,
-              checkInTimeFormatted: res.checkInTimeFormatted || 'earlier today',
-            });
-            setVoiceResult(null);
+          // Case A: Exactly one eligible student matches
+          if (res.status === 'EXACT_SINGLE' && res.bestMatch) {
+            const proposed = res.proposedAction || (res.bestMatch.alreadyCheckedIn ? 'CHECK_OUT' : 'CHECK_IN');
+            if (proposed === 'CHECK_IN' && res.autoActionEligible) {
+              await executeStudentAttendanceAction(res.bestMatch, 'CHECK_IN', 'VOICE_CONFIRMED', true);
+            } else if (proposed === 'CHECK_OUT') {
+              // Student is currently checked in; offer one-click Check-Out confirmation
+              setPendingVoiceCandidate({
+                ...res.bestMatch,
+                recommendedAction: 'CHECK_OUT',
+              });
+              setCandidateOptions([]);
+            } else if (proposed === 'COMPLETED' || res.alreadyCheckedOut) {
+              setFeedback({
+                type: 'warning',
+                message: `${res.bestMatch.firstName} ${res.bestMatch.lastName} has already checked out for today.`,
+              });
+              setVoiceResult(null);
+            }
           } else if (res.status === 'EXACT_MULTIPLE' || res.status === 'FUZZY_MULTIPLE') {
-            // Case B: Multiple students match -> Show disambiguation list at top with Check In buttons
+            // Case B: Multiple students match -> Show candidate cards with individual Check In / Check Out action
             setCandidateOptions(res.matches || []);
-          } else if (res.status === 'FUZZY_SINGLE' && res.requiresConfirmation && res.bestMatch) {
+            setPendingVoiceCandidate(null);
+          } else if (res.status === 'FUZZY_SINGLE' && res.bestMatch) {
             // Low confidence match -> Staff confirmation required
             setPendingVoiceCandidate(res.bestMatch);
+            setCandidateOptions([]);
           } else if (res.status === 'NO_MATCH') {
             // Case C: No student matches
             setNoMatchPhrase(trimmed);
+            setCandidateOptions([]);
+            setPendingVoiceCandidate(null);
           }
         }
       } catch (err: any) {
@@ -324,20 +401,26 @@ export const AttendanceManagement: React.FC = () => {
         const localRes = matchStudentVoice(trimmed, enrolledCandidates);
         if (localRes.status === 'EXACT_SINGLE' && localRes.bestMatch) {
           setPendingVoiceCandidate(localRes.bestMatch);
+          setCandidateOptions([]);
         } else if (localRes.status === 'EXACT_MULTIPLE' || localRes.status === 'FUZZY_MULTIPLE') {
           const cands =
-            localRes.exactMatches.length > 0
+            localRes.allMatches ||
+            (localRes.exactMatches.length > 0
               ? localRes.exactMatches
-              : localRes.fuzzyMatches.map((f) => f.student);
+              : localRes.fuzzyMatches.map((f) => f.student));
           setCandidateOptions(cands);
+          setPendingVoiceCandidate(null);
         } else {
           setNoMatchPhrase(trimmed);
+          setCandidateOptions([]);
+          setPendingVoiceCandidate(null);
         }
       } finally {
         setVoiceSearching(false);
+        isSearchingRef.current = false;
       }
     },
-    [selectedBatchId, selectedSubjectId, enrolledCandidates, executeStudentCheckIn]
+    [selectedBatchId, selectedSubjectId, enrolledCandidates, executeStudentAttendanceAction]
   );
 
   // Web Speech Recognition Hook
@@ -379,61 +462,29 @@ export const AttendanceManagement: React.FC = () => {
     }
   };
 
-  // Perform Voice-Confirmed Attendance Check-In (Manual confirm)
+  // Perform Voice-Confirmed Attendance (Manual confirm)
   const handleConfirmVoiceAttendance = async (student: EnrolledStudentCandidate) => {
-    await executeStudentCheckIn(student, 'VOICE_CONFIRMED', false);
+    const actionType =
+      student.recommendedAction === 'CHECK_OUT' || student.alreadyCheckedIn ? 'CHECK_OUT' : 'CHECK_IN';
+    await executeStudentAttendanceAction(student, actionType, 'VOICE_CONFIRMED', false);
     resetTranscript();
     setManualVoiceInput('');
   };
 
   // Handle Manual Check-In
   const handleCheckIn = async (studentId: string, isLate = false) => {
-    setActionLoading(studentId);
-    setFeedback(null);
-    try {
-      const res = await apiFetch('/attendance/check-in', {
-        method: 'POST',
-        body: JSON.stringify({
-          studentId,
-          batchId: selectedBatchId || undefined,
-          subjectId: selectedSubjectId || undefined,
-          isLate,
-          method: 'MANUAL',
-        }),
-      });
-      setFeedback({
-        type: 'success',
-        message: res.message,
-        notificationNote: 'Mock notification queued for SMS-eligible guardian',
-      });
-      fetchSummary();
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message });
-    } finally {
-      setActionLoading(null);
-    }
+    const candidate =
+      enrolledCandidates.find((c) => c.id === studentId) ||
+      ({ id: studentId, firstName: 'Student', lastName: '' } as any);
+    await executeStudentAttendanceAction(candidate, 'CHECK_IN', 'MANUAL', false);
   };
 
-  // Handle Check-Out
+  // Handle Manual Check-Out
   const handleCheckOut = async (studentId: string) => {
-    setActionLoading(studentId);
-    setFeedback(null);
-    try {
-      const res = await apiFetch('/attendance/check-out', {
-        method: 'POST',
-        body: JSON.stringify({ studentId, method: 'MANUAL' }),
-      });
-      setFeedback({
-        type: 'success',
-        message: res.message,
-        notificationNote: 'Mock notification queued for SMS-eligible guardian',
-      });
-      fetchSummary();
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message });
-    } finally {
-      setActionLoading(null);
-    }
+    const candidate =
+      enrolledCandidates.find((c) => c.id === studentId) ||
+      ({ id: studentId, firstName: 'Student', lastName: '' } as any);
+    await executeStudentAttendanceAction(candidate, 'CHECK_OUT', 'MANUAL', false);
   };
 
   // Execute Correction
@@ -615,26 +666,34 @@ export const AttendanceManagement: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-[#4E342E]">Attendance Date:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-            />
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#2D1E18]">
+              <Calendar className="w-3.5 h-3.5 text-[#8D6E63]" />
+              <span>{attendanceData?.formattedDate || new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} (Today Only)</span>
+            </div>
           </div>
         </div>
 
-        {/* Daily Stats Pill */}
-        <div className="flex items-center gap-3 text-xs font-semibold">
-          <span className="text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-            Present: {counts.checkedInCount}
+        {/* Live Attendance KPIs Pill */}
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="text-[#4E342E] bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1">
+            <Users className="w-3.5 h-3.5 text-[#8D6E63]" />
+            <span>Total: <strong>{counts.totalStudents}</strong></span>
+          </span>
+          <span className="text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300">
+            Present (Total): <strong>{counts.presentTotal ?? (counts.checkedInCount + counts.checkedOutCount)}</strong>
+          </span>
+          <span className="text-teal-900 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-300">
+            In Class: <strong>{counts.checkedInCount}</strong>
+          </span>
+          <span className="text-[#4E342E] bg-[#EFEBE9] px-2.5 py-1 rounded-lg border border-[#D7CCC8]">
+            Checked Out: <strong>{counts.checkedOutCount}</strong>
           </span>
           <span className="text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
-            Absent: {counts.absentCount}
+            Absent: <strong>{counts.absentCount}</strong>
           </span>
-          <span className="text-[#6D4C41] bg-[#F7F2EF] px-2.5 py-1 rounded-lg border border-[#D7CCC8]">
-            Total: {counts.totalStudents}
-          </span>
+          {loading && (
+            <RefreshCw className="w-3.5 h-3.5 text-[#8D6E63] animate-spin ml-1" />
+          )}
         </div>
       </div>
 
@@ -955,12 +1014,18 @@ export const AttendanceManagement: React.FC = () => {
                   <button
                     onClick={() => handleConfirmVoiceAttendance(pendingVoiceCandidate)}
                     disabled={actionLoading === pendingVoiceCandidate.id}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md transition disabled:opacity-50"
+                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition disabled:opacity-50 ${
+                      pendingVoiceCandidate.recommendedAction === 'CHECK_OUT' || pendingVoiceCandidate.alreadyCheckedIn
+                        ? 'bg-[#4E342E] hover:bg-[#3E2723]'
+                        : 'bg-emerald-700 hover:bg-emerald-800'
+                    }`}
                   >
                     <Check className="w-4 h-4" />
                     <span>
                       {actionLoading === pendingVoiceCandidate.id
-                        ? 'Confirming...'
+                        ? 'Processing...'
+                        : (pendingVoiceCandidate.recommendedAction === 'CHECK_OUT' || pendingVoiceCandidate.alreadyCheckedIn)
+                        ? `Confirm Check-Out for ${pendingVoiceCandidate.firstName}`
                         : `Confirm Check-In for ${pendingVoiceCandidate.firstName}`}
                     </span>
                   </button>
@@ -968,14 +1033,14 @@ export const AttendanceManagement: React.FC = () => {
               </div>
             )}
 
-            {/* Case B: Multiple Matched Candidates -> Disambiguation List with Individual Check-In Buttons */}
+            {/* Case B: Multiple Matched Candidates -> Disambiguation List with Individual Check-In / Check-Out Buttons */}
             {candidateOptions.length > 0 && !pendingVoiceCandidate && (
               <div className="p-5 rounded-2xl bg-amber-50 border border-amber-300 space-y-3 animate-in fade-in">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-amber-950 font-bold text-xs">
                     <HelpCircle className="w-4 h-4 text-amber-700 shrink-0" />
                     <span>
-                      Multiple students match '{transcript || manualVoiceInput}'. Please click Check In for the intended student:
+                      Multiple students match '{transcript || manualVoiceInput || voiceResult?.cleanedQuery || 'spoken name'}'. Please select action for the intended student:
                     </span>
                   </div>
                   <button
@@ -991,49 +1056,63 @@ export const AttendanceManagement: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  {candidateOptions.map((candidate) => (
-                    <div
-                      key={candidate.id}
-                      className="p-3.5 rounded-xl bg-white border border-amber-200 hover:border-[#4E342E] shadow-sm flex items-center justify-between gap-3"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <StudentAvatar
-                          studentId={candidate.id}
-                          photoUrl={candidate.photoUrl}
-                          name={`${candidate.firstName} ${candidate.lastName}`}
-                          size="md"
-                        />
-                        <div className="min-w-0">
-                          <div className="font-bold text-xs text-[#2D1E18] truncate">
-                            {candidate.firstName} {candidate.lastName}
-                          </div>
-                          <div className="text-[11px] font-mono text-[#6D4C41]">
-                            Adm: {candidate.admissionNumber}
-                          </div>
-                          {candidate.batchName && (
-                            <div className="text-[10px] text-[#8D6E63] truncate">
-                              {candidate.batchName} {candidate.subjectName ? `• ${candidate.subjectName}` : ''}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                  {candidateOptions.map((candidate) => {
+                    const isCheckedIn = candidate.todayStatus === 'CHECKED_IN' || candidate.alreadyCheckedIn;
+                    const isCheckedOut = candidate.todayStatus === 'CHECKED_OUT' || candidate.alreadyCheckedOut;
 
-                      {candidate.alreadyCheckedIn ? (
-                        <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
-                          Checked In {candidate.checkInTimeFormatted ? `(${candidate.checkInTimeFormatted})` : ''}
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => executeStudentCheckIn(candidate, 'VOICE_CONFIRMED', false)}
-                          disabled={actionLoading === candidate.id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition disabled:opacity-50 shrink-0"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>{actionLoading === candidate.id ? 'Checking In...' : 'Check In'}</span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    return (
+                      <div
+                        key={candidate.id}
+                        className="p-3.5 rounded-xl bg-white border border-amber-200 hover:border-[#4E342E] shadow-sm flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <StudentAvatar
+                            studentId={candidate.id}
+                            photoUrl={candidate.photoUrl}
+                            name={`${candidate.firstName} ${candidate.lastName}`}
+                            size="md"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-[#2D1E18] truncate">
+                              {candidate.firstName} {candidate.lastName}
+                            </div>
+                            <div className="text-[11px] font-mono text-[#6D4C41]">
+                              Adm: {candidate.admissionNumber}
+                            </div>
+                            {candidate.batchName && (
+                              <div className="text-[10px] text-[#8D6E63] truncate">
+                                {candidate.batchName} {candidate.subjectName ? `• ${candidate.subjectName}` : ''}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {isCheckedOut ? (
+                          <span className="text-[11px] font-bold text-[#4E342E] bg-[#EFEBE9] px-2.5 py-1 rounded-lg border border-[#D7CCC8] shrink-0">
+                            Checked Out {candidate.checkOutTimeFormatted ? `(${candidate.checkOutTimeFormatted})` : ''}
+                          </span>
+                        ) : isCheckedIn ? (
+                          <button
+                            onClick={() => executeStudentAttendanceAction(candidate, 'CHECK_OUT', 'VOICE_CONFIRMED', false)}
+                            disabled={actionLoading === candidate.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-bold shadow-sm transition disabled:opacity-50 shrink-0"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>{actionLoading === candidate.id ? 'Checking Out...' : 'Check Out'}</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => executeStudentAttendanceAction(candidate, 'CHECK_IN', 'VOICE_CONFIRMED', false)}
+                            disabled={actionLoading === candidate.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition disabled:opacity-50 shrink-0"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{actionLoading === candidate.id ? 'Checking In...' : 'Check In'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

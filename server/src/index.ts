@@ -19,6 +19,7 @@ import progressRoutes from './modules/progress/progress.routes.js';
 import reviewsRoutes from './modules/reviews/reviews.routes.js';
 import messagingRoutes from './modules/messaging/messaging.routes.js';
 import feesRoutes from './modules/fees/fees.routes.js';
+import { NotificationService } from './modules/notifications/notification.service.js';
 
 const app = express();
 
@@ -128,10 +129,23 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server if run directly
 const isMain = process.argv[1] && process.argv[1].endsWith('index.ts');
 if (isMain || process.env.NODE_ENV === 'production') {
-  app.listen(config.port, config.host, () => {
+  const server = app.listen(config.port, config.host, () => {
     console.log(`[TuitionOS API Server] listening on http://${config.host}:${config.port}`);
     console.log(`[TuitionOS API Server] Health check available at http://${config.host}:${config.port}/api/health`);
+    NotificationService.startWorker(15000);
   });
+
+  const handleShutdown = () => {
+    console.log('[TuitionOS API Server] Gracefully shutting down...');
+    NotificationService.stopWorker();
+    server.close(() => {
+      console.log('[TuitionOS API Server] Closed remaining connections.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', handleShutdown);
+  process.on('SIGTERM', handleShutdown);
 }
 
 export default app;
