@@ -56,6 +56,35 @@ export function getApiBaseUrl(): string {
   return activeBaseUrl;
 }
 
+/**
+ * Builds an authenticated URL with auth token and institute ID query parameters for browser/Linking navigation.
+ */
+export async function buildAuthenticatedDownloadUrl(endpoint: string): Promise<string> {
+  const base = getApiBaseUrl();
+  const url = buildApiUrl(base, endpoint);
+  const token = await MobileStorage.getItem(AppConfig.storageKeys.accessToken);
+  const storedInstitute = await MobileStorage.getItem(AppConfig.storageKeys.activeInstitute);
+  let resolvedInstituteId: string | null = null;
+  if (storedInstitute) {
+    if (storedInstitute.startsWith('{')) {
+      try {
+        resolvedInstituteId = JSON.parse(storedInstitute).id || null;
+      } catch {
+        resolvedInstituteId = storedInstitute;
+      }
+    } else {
+      resolvedInstituteId = storedInstitute;
+    }
+  }
+
+  const separator = url.includes('?') ? '&' : '?';
+  const params: string[] = [];
+  if (token) params.push(`token=${encodeURIComponent(token)}`);
+  if (resolvedInstituteId) params.push(`instituteId=${encodeURIComponent(resolvedInstituteId)}`);
+
+  return params.length > 0 ? `${url}${separator}${params.join('&')}` : url;
+}
+
 // Generate unique idempotency key for transactions
 export function generateIdempotencyKey(prefix: string = 'MOB'): string {
   return `${prefix}-${Date.now()}-${Math.floor(100000 + Math.random() * 900000)}`;

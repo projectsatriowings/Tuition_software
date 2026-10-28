@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { apiFetch } from '../services/api';
+import { apiFetch, getMaterialDownloadUrl, getSubmissionDownloadUrl, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   FileText,
@@ -20,6 +20,7 @@ import {
   AlertCircle,
   FileCheck,
   Send,
+  ExternalLink,
 } from 'lucide-react';
 
 export const HomeworkManagement: React.FC = () => {
@@ -440,14 +441,25 @@ export const HomeworkManagement: React.FC = () => {
                   </div>
 
                   {hw.fileUrl && (
-                    <a
-                      href={`/api/materials/${hw.id}/download`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
-                    >
-                      <Download className="w-3.5 h-3.5" /> Attached Worksheet / Instructions
-                    </a>
+                    <div className="flex items-center gap-2 pt-1">
+                      <a
+                        href={getMaterialDownloadUrl(hw.id, false)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-[#4E342E] hover:underline font-semibold"
+                        title="Open/Preview Worksheet in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> View Worksheet
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => downloadFileToDevice(getMaterialDownloadUrl(hw.id, true), hw.fileName || 'worksheet')}
+                        className="inline-flex items-center gap-1 text-xs text-[#4E342E] hover:text-[#2D1E18] font-semibold bg-[#4E342E]/10 px-2 py-0.5 rounded-lg border border-[#D7CCC8]"
+                        title="Download and save worksheet to device"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Save
+                      </button>
+                    </div>
                   )}
 
                   {/* Student View Submission Status & Actions */}
@@ -671,7 +683,7 @@ export const HomeworkManagement: React.FC = () => {
 
                               {sub.fileUrl && (
                                 <a
-                                  href={`/api/homework/submissions/${sub.id}/download`}
+                                  href={getSubmissionDownloadUrl(sub.id)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"

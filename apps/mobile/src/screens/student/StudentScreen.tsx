@@ -13,7 +13,7 @@ import {
   Linking,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
-import { mobileApiFetch, buildApiUrl, getApiBaseUrl } from '../../services/api';
+import { mobileApiFetch, buildApiUrl, getApiBaseUrl, buildAuthenticatedDownloadUrl } from '../../services/api';
 import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
@@ -160,7 +160,7 @@ export const StudentScreen: React.FC = () => {
     }
   };
 
-  const handleDownloadMaterial = (mat: any) => {
+  const handleDownloadMaterial = async (mat: any) => {
     if (mat.content && !mat.fileUrl) {
       Alert.alert(
         mat.title,
@@ -170,7 +170,7 @@ export const StudentScreen: React.FC = () => {
       return;
     }
 
-    const downloadUrl = buildApiUrl(getApiBaseUrl(), `/materials/${mat.id}/download`);
+    const downloadUrl = await buildAuthenticatedDownloadUrl(`/materials/${mat.id}/download`);
     Alert.alert(
       'Material Access',
       `Title: ${mat.title}\nType: ${mat.type}\nFile: ${mat.fileName || 'Online resource'}\n\nWould you like to open this study material?`,

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { apiFetch } from '../services/api';
+import { apiFetch, getMaterialDownloadUrl, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   BookOpen,
@@ -20,6 +20,7 @@ import {
   Eye,
   Layers,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 
 export const MaterialsManagement: React.FC = () => {
@@ -49,6 +50,19 @@ export const MaterialsManagement: React.FC = () => {
 
   // Text Note Reader Modal
   const [readingMaterial, setReadingMaterial] = useState<any | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleSaveToDevice(materialId: string, filename: string) {
+    try {
+      setDownloadingId(materialId);
+      const downloadUrl = getMaterialDownloadUrl(materialId, true);
+      await downloadFileToDevice(downloadUrl, filename);
+    } catch (err: any) {
+      alert(err.message || 'Failed to download file to device');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   useEffect(() => {
     loadMaterials();
@@ -399,15 +413,26 @@ export const MaterialsManagement: React.FC = () => {
                   )}
 
                   {mat.fileUrl && (
-                    <a
-                      href={`/api/materials/${mat.id}/download`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 rounded-xl bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] flex items-center gap-1 transition-colors font-medium text-xs"
-                      title="Preview or Download Attachment"
-                    >
-                      <Download className="w-3.5 h-3.5" /> Download
-                    </a>
+                    <>
+                      <a
+                        href={getMaterialDownloadUrl(mat.id, false)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-xl bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] flex items-center gap-1 transition-colors font-medium text-xs"
+                        title="Open and preview in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> View
+                      </a>
+                      <button
+                        onClick={() => handleSaveToDevice(mat.id, mat.fileName || `${mat.title}.${(mat.type || 'bin').toLowerCase()}`)}
+                        disabled={downloadingId === mat.id}
+                        className="p-2 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white border border-[#4E342E] flex items-center gap-1 transition-colors font-medium text-xs shadow-sm disabled:opacity-50"
+                        title="Download and save directly to your device"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        {downloadingId === mat.id ? 'Saving...' : 'Download'}
+                      </button>
+                    </>
                   )}
 
                   {isStaffOrAdmin && (

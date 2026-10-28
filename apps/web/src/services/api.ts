@@ -115,3 +115,54 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
 
   return data;
 }
+
+/**
+ * Generates an authenticated download / inline view URL for learning materials.
+ * Appends token and instituteId query parameters so browser tabs/links authenticate smoothly.
+ */
+export function getMaterialDownloadUrl(materialId: string, forceDownload = false): string {
+  const token = getAuthToken();
+  const instId = getActiveInstituteId();
+  const query = new URLSearchParams();
+  if (token) query.set('token', token);
+  if (instId) query.set('instituteId', instId);
+  if (forceDownload) query.set('download', 'true');
+  const qStr = query.toString();
+  return '/api/materials/' + materialId + '/download' + (qStr ? '?' + qStr : '');
+}
+
+/**
+ * Generates an authenticated download / inline view URL for student homework submissions.
+ */
+export function getSubmissionDownloadUrl(submissionId: string, forceDownload = false): string {
+  const token = getAuthToken();
+  const instId = getActiveInstituteId();
+  const query = new URLSearchParams();
+  if (token) query.set('token', token);
+  if (instId) query.set('instituteId', instId);
+  if (forceDownload) query.set('download', 'true');
+  const qStr = query.toString();
+  return '/api/homework/submissions/' + submissionId + '/download' + (qStr ? '?' + qStr : '');
+}
+
+/**
+ * Initiates a direct file download that saves the file directly to the user's device disk.
+ */
+export async function downloadFileToDevice(url: string, filename: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to download file (HTTP ${res.status})`);
+  }
+  const blob = await res.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = blobUrl;
+  a.download = filename || 'document';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    window.URL.revokeObjectURL(blobUrl);
+    document.body.removeChild(a);
+  }, 200);
+}

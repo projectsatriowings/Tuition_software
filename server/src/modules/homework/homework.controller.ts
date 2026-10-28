@@ -645,7 +645,7 @@ export async function gradeSubmission(req: AuthenticatedRequest, res: Response) 
  */
 export async function downloadSubmission(req: AuthenticatedRequest, res: Response) {
   try {
-    const instituteId = req.instituteId;
+    const instituteId = req.instituteId || req.user?.instituteId;
     const { submissionId } = req.params;
 
     const submission = await prisma.homeworkSubmission.findUnique({
@@ -656,7 +656,7 @@ export async function downloadSubmission(req: AuthenticatedRequest, res: Respons
       },
     });
 
-    if (!submission || submission.material.instituteId !== instituteId) {
+    if (!submission || (instituteId && submission.material.instituteId !== instituteId)) {
       return res.status(404).json({ success: false, error: 'Submission not found' });
     }
 
@@ -691,8 +691,12 @@ export async function downloadSubmission(req: AuthenticatedRequest, res: Respons
       return res.status(404).json({ success: false, error: 'Submission file not found on disk' });
     }
 
+    const isDownload = req.query.download === 'true' || req.query.attachment === 'true';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    const filename = submission.fileName || 'submission';
+
     res.setHeader('Content-Type', submission.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${submission.fileName || 'submission'}"`);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
 
     const stream = fs.createReadStream(absPath);
     return stream.pipe(res);

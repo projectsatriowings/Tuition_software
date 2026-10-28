@@ -577,8 +577,12 @@ export async function downloadMaterial(req: AuthenticatedRequest, res: Response)
       return res.status(404).json({ success: false, error: 'Attachment file not found on server' });
     }
 
+    const isDownload = req.query.download === 'true' || req.query.attachment === 'true';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    const filename = material.fileName || 'material';
+
     res.setHeader('Content-Type', material.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${material.fileName || 'material'}"`);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
 
     const stream = fs.createReadStream(absPath);
     return stream.pipe(res);
