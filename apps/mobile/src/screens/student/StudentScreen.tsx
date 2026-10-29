@@ -416,16 +416,22 @@ export const StudentScreen: React.FC = () => {
                       </View>
                       <Badge
                         label={
-                          hw.mySubmission
+                          hw.studentStatus === 'GRADED'
+                            ? `GRADED${hw.grade ? `: ${hw.grade}` : ''}`
+                            : hw.studentStatus === 'COMPLETED'
+                            ? 'COMPLETED'
+                            : hw.studentStatus === 'AWAITING_REVIEW'
+                            ? 'AWAITING REVIEW'
+                            : hw.mySubmission
                             ? hw.mySubmission.status
                             : hw.isOverdue
                             ? 'OVERDUE'
                             : 'NOT STARTED'
                         }
                         variant={
-                          hw.mySubmission?.status === 'COMPLETED' || hw.mySubmission?.status === 'GRADED'
+                          hw.studentStatus === 'GRADED' || hw.studentStatus === 'COMPLETED'
                             ? 'success'
-                            : hw.mySubmission?.status === 'SUBMITTED'
+                            : hw.studentStatus === 'AWAITING_REVIEW' || hw.studentStatus === 'SUBMITTED'
                             ? 'info'
                             : hw.isOverdue
                             ? 'danger'

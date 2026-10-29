@@ -198,32 +198,79 @@ export const StudentPortal: React.FC = () => {
           )}
         </div>
 
-        {/* Pending Homework */}
+        {/* Homework & Assigned Tasks */}
         <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[#4E342E] flex items-center gap-1.5 uppercase tracking-wider">
-              <FileText className="w-4 h-4 text-amber-700" /> Pending Homework
+              <FileText className="w-4 h-4 text-[#6D4C41]" /> Homework & Assigned Tasks
             </span>
+            {recentHomework.length > 0 && (
+              <span className="text-[10px] text-[#8D6E63] font-medium">
+                {recentHomework.filter((h) => !h.isSubmitted).length} Pending • {recentHomework.filter((h) => h.isSubmitted).length} Submitted
+              </span>
+            )}
           </div>
           {recentHomework.length === 0 ? (
             <p className="text-xs text-[#8D6E63] italic py-3 text-center">No assignments due.</p>
           ) : (
             <div className="space-y-2">
-              {recentHomework.map((hw: any) => (
-                <div key={hw.id} className="p-2.5 rounded-xl bg-amber-50/50 border border-amber-200/60 flex items-center justify-between text-xs">
-                  <div className="min-w-0 pr-2">
-                    <p className="font-bold text-[#2D1E18] truncate">{hw.title}</p>
-                    <span className="text-[10px] text-amber-800">
-                      Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString() : 'No date'}
+              {recentHomework.map((hw: any) => {
+                const isGraded = hw.studentStatus === 'GRADED' || Boolean(hw.grade);
+                const isCompleted = hw.studentStatus === 'COMPLETED';
+                const isAwaiting = hw.studentStatus === 'AWAITING_REVIEW' || (hw.isSubmitted && !isGraded && !isCompleted);
+                const isOverdue = hw.studentStatus === 'OVERDUE' || (hw.isOverdue && !hw.isSubmitted);
+
+                return (
+                  <div
+                    key={hw.id}
+                    className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-colors ${
+                      isGraded
+                        ? 'bg-emerald-50/50 border-emerald-200/70'
+                        : isCompleted
+                        ? 'bg-teal-50/50 border-teal-200/70'
+                        : isAwaiting
+                        ? 'bg-blue-50/50 border-blue-200/70'
+                        : isOverdue
+                        ? 'bg-rose-50/50 border-rose-200/70'
+                        : 'bg-[#F7F2EF] border-[#EFEBE9]'
+                    }`}
+                  >
+                    <div className="min-w-0 pr-2">
+                      <p className="font-bold text-[#2D1E18] truncate">{hw.title}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-[#6D4C41] mt-0.5">
+                        <span>Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString() : 'No date'}</span>
+                        {hw.subject?.name && <span>• {hw.subject.name}</span>}
+                        {hw.grade && (
+                          <strong className="text-emerald-800 font-bold">• Grade: {hw.grade}</strong>
+                        )}
+                      </div>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
+                        isGraded
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : isCompleted
+                          ? 'bg-teal-100 text-teal-800 border-teal-300'
+                          : isAwaiting
+                          ? 'bg-blue-100 text-blue-800 border-blue-300'
+                          : isOverdue
+                          ? 'bg-rose-100 text-rose-800 border-rose-300'
+                          : 'bg-amber-100 text-amber-800 border-amber-300'
+                      }`}
+                    >
+                      {isGraded
+                        ? `Graded (${hw.grade})`
+                        : isCompleted
+                        ? 'Completed'
+                        : isAwaiting
+                        ? 'Submitted'
+                        : isOverdue
+                        ? 'Overdue'
+                        : 'Not Started'}
                     </span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
-                    hw.isSubmitted ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'
-                  }`}>
-                    {hw.isSubmitted ? 'Done' : 'Pending'}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

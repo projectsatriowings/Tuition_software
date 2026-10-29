@@ -5,6 +5,7 @@ import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { isStudentAuthorized } from '../students/student-authorization.service.js';
+import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
 
 // ============================================================================
 // VALIDATION SCHEMAS
@@ -952,6 +953,11 @@ export async function recordPayment(req: AuthenticatedRequest, res: Response) {
         remainingBalanceAfter: remainingAfter,
       };
     }, { maxWait: 15000, timeout: 30000 });
+
+    // Notify parents and student of recorded payment
+    if (result?.payment?.id) {
+      InAppNotificationService.notifyFeePaymentRecorded(result.payment.id).catch(() => {});
+    }
 
     return res.status(201).json({
       success: true,

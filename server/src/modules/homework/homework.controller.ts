@@ -10,6 +10,78 @@ import {
   isStaffAssignedToBatchSubject,
   getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
+import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
+
+/**
+ * Canonical helper to derive student assignment status
+ */
+export function getCanonicalStudentHomeworkStatus(
+  dueDate: Date | string | null | undefined,
+  submission?: { status: string; grade?: string | null } | null
+) {
+  const isPastDue = dueDate ? new Date(dueDate) < new Date() : false;
+
+  if (submission) {
+    const isGraded = submission.status === 'GRADED' || Boolean(submission.grade);
+    const isCompleted = submission.status === 'COMPLETED' || isGraded;
+
+    if (isGraded) {
+      return {
+        studentStatus: 'GRADED' as const,
+        displayStatus: submission.grade ? `Graded (${submission.grade})` : 'Graded',
+        isSubmitted: true,
+        isGraded: true,
+        isCompleted: true,
+        isOverdue: false,
+        isPending: false,
+      };
+    }
+
+    if (submission.status === 'COMPLETED') {
+      return {
+        studentStatus: 'COMPLETED' as const,
+        displayStatus: 'Completed',
+        isSubmitted: true,
+        isGraded: false,
+        isCompleted: true,
+        isOverdue: false,
+        isPending: false,
+      };
+    }
+
+    return {
+      studentStatus: 'AWAITING_REVIEW' as const,
+      displayStatus: 'Awaiting Review',
+      isSubmitted: true,
+      isGraded: false,
+      isCompleted: false,
+      isOverdue: false,
+      isPending: false,
+    };
+  }
+
+  if (isPastDue) {
+    return {
+      studentStatus: 'OVERDUE' as const,
+      displayStatus: 'Overdue',
+      isSubmitted: false,
+      isGraded: false,
+      isCompleted: false,
+      isOverdue: true,
+      isPending: true,
+    };
+  }
+
+  return {
+    studentStatus: 'NOT_STARTED' as const,
+    displayStatus: 'Not Started',
+    isSubmitted: false,
+    isGraded: false,
+    isCompleted: false,
+    isOverdue: false,
+    isPending: true,
+  };
+}
 
 export const createHomeworkSchema = z.object({
   batchId: z.string().uuid('Valid Batch ID required'),
@@ -301,23 +373,20 @@ export async function listHomework(req: AuthenticatedRequest, res: Response) {
     const now = new Date();
 
     const formatted = homeworkList.map((hw) => {
-      const isPastDue = hw.dueDate ? new Date(hw.dueDate) < now : false;
-
       // For student caller: find caller's specific submission
       let mySubmission: any = null;
-      let studentStatus = 'NOT_STARTED';
 
       if (studentProfileId) {
         const found = hw.submissions.find((s) => s.studentId === studentProfileId);
         if (found) {
           mySubmission = found;
-          studentStatus = found.status;
-        } else if (isPastDue) {
-          studentStatus = 'OVERDUE';
         }
       }
 
+      const canonical = getCanonicalStudentHomeworkStatus(hw.dueDate, mySubmission);
+
       // Summary metrics for staff / admin
+      const isPastDue = hw.dueDate ? new Date(hw.dueDate) < now : false;
       const totalEligible = hw.batch?._count?.enrollments || 0;
       const submittedCount = hw.submissions.filter((s) => s.status === 'SUBMITTED' || s.status === 'LATE').length;
       const completedCount = hw.submissions.filter((s) => s.status === 'COMPLETED' || s.status === 'GRADED').length;
@@ -326,9 +395,11 @@ export async function listHomework(req: AuthenticatedRequest, res: Response) {
 
       return {
         ...hw,
-        isOverdue: isPastDue && (!mySubmission || mySubmission.status === 'PENDING'),
+        ...canonical,
         mySubmission,
-        studentStatus,
+        grade: mySubmission?.grade || null,
+        feedback: mySubmission?.feedback || null,
+        submittedAt: mySubmission?.submittedAt || null,
         summary: {
           totalEligible,
           submittedCount,
@@ -444,6 +515,9 @@ export async function submitHomework(req: AuthenticatedRequest, res: Response) {
         student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
       },
     });
+
+    // Notify faculty of new student submission
+    InAppNotificationService.notifyHomeworkSubmitted(submission.id).catch(() => {});
 
     return res.status(201).json({
       success: true,
@@ -694,6 +768,9 @@ export async function gradeSubmission(req: AuthenticatedRequest, res: Response) 
         gradedBy: { select: { id: true, fullName: true } },
       },
     });
+
+    // Notify student & linked parents of graded homework
+    InAppNotificationService.notifyHomeworkGraded(updated.id).catch(() => {});
 
     return res.json({
       success: true,

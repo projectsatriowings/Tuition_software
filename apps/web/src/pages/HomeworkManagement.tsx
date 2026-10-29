@@ -553,7 +553,11 @@ export const HomeworkManagement: React.FC = () => {
                           <div className="flex items-center justify-between font-semibold">
                             <span className="flex items-center gap-1.5">
                               <CheckCircle className="w-4 h-4 text-emerald-600" />
-                              {subStatus === 'COMPLETED' ? 'Completed' : 'Submitted'}
+                              {subStatus === 'GRADED' || hw.mySubmission?.grade
+                                ? `Graded${hw.mySubmission.grade ? ` (${hw.mySubmission.grade})` : ''}`
+                                : subStatus === 'COMPLETED'
+                                ? 'Completed'
+                                : 'Submitted (Awaiting Review)'}
                             </span>
                             {isLate && <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">Late</span>}
                           </div>
