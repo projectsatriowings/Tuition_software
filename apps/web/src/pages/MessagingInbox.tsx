@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -9,6 +9,7 @@ import {
   Clock,
   ShieldCheck,
   Check,
+  CheckCheck,
   Search,
   X,
 } from 'lucide-react';
@@ -21,6 +22,9 @@ export const MessagingInbox: React.FC = () => {
   const [messageBody, setMessageBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   // Start new conversation modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -38,6 +42,48 @@ export const MessagingInbox: React.FC = () => {
       loadMessages(selectedConversation.id);
     }
   }, [selectedConversation]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'MESSAGE_CREATED' && payload.data) {
+            const { conversationId, message } = payload.data;
+            if (selectedConversation && conversationId === selectedConversation.id) {
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === message.id)) return prev;
+                return [...prev, message];
+              });
+            }
+            loadConversations();
+          } else if (payload.type === 'NOTIFICATION_CREATED') {
+            loadConversations();
+          }
+        } catch (e) {
+          console.warn('[MessagingInbox SSE] parse error:', e);
+        }
+      };
+    } catch (err) {
+      console.warn('[MessagingInbox SSE] connect error:', err);
+    }
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, [selectedConversation?.id]);
 
   async function loadConversations() {
     try {
@@ -79,7 +125,7 @@ export const MessagingInbox: React.FC = () => {
           }));
           setAvailableUsers(list);
         }
-      } else if (user?.role === 'STAFF' || user?.role === 'ACADEMIC_ADMIN') {
+      } else if (user?.role === 'STAFF' || user?.role === 'ACADEMIC_ADMIN' || user?.role === 'SUPER_ADMIN') {
         // Staff can message parents
         const res = await apiFetch('/parents');
         if (res.success) {
@@ -271,16 +317,32 @@ export const MessagingInbox: React.FC = () => {
                           </span>
                           <p className="text-sm leading-relaxed">{msg.body}</p>
                         </div>
-                        <span className="text-[10px] text-[#8D6E63] mt-1 px-1 font-mono">
-                          {new Date(msg.createdAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-1 px-1">
+                          <span className="text-[10px] text-[#8D6E63] font-mono">
+                            {new Date(msg.createdAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          {isMe && (
+                            msg.isReadByRecipient ? (
+                              <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 font-medium" title="Read by recipient">
+                                <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Read</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-0.5 text-[10px] text-[#8D6E63]" title="Delivered">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Delivered</span>
+                              </span>
+                            )
+                          )}
+                        </div>
                       </div>
                     );
                   })
                 )}
+                <div ref={messagesEndRef} />
               </div>
 
               {/* Message Input Box */}

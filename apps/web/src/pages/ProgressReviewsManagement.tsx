@@ -13,6 +13,10 @@ import {
   ShieldCheck,
   CheckCircle,
   X,
+  Filter,
+  Clock,
+  CheckCircle2,
+  MessageSquare,
 } from 'lucide-react';
 
 export const ProgressReviewsManagement: React.FC = () => {
@@ -20,10 +24,19 @@ export const ProgressReviewsManagement: React.FC = () => {
   const isParent = user?.role === 'PARENT';
   const isStaffOrAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ACADEMIC_ADMIN' || user?.role === 'STAFF';
 
-  const [activeTab, setActiveTab] = useState<'feedback' | 'reviews'>('feedback');
+  const [activeTab, setActiveTab] = useState<'feedback' | 'parent_inquiries' | 'reviews'>('feedback');
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Staff Parent Feedback State
+  const [parentFeedbacks, setParentFeedbacks] = useState<any[]>([]);
+  const [feedbackFilterStatus, setFeedbackFilterStatus] = useState<string>('ALL');
+  const [feedbackFilterCategory, setFeedbackFilterCategory] = useState<string>('ALL');
+  const [respondingFeedback, setRespondingFeedback] = useState<any | null>(null);
+  const [staffResponseText, setStaffResponseText] = useState<string>('');
+  const [staffResponseStatus, setStaffResponseStatus] = useState<'RESPONDED' | 'RESOLVED'>('RESPONDED');
+  const [submittingStaffResponse, setSubmittingStaffResponse] = useState<boolean>(false);
 
   // Parent review submission
   const [myChildren, setMyChildren] = useState<any[]>([]);
@@ -49,8 +62,99 @@ export const ProgressReviewsManagement: React.FC = () => {
   const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
-    loadData();
-  }, [activeTab]);
+    if (activeTab === 'parent_inquiries') {
+      loadParentFeedbacks();
+    } else {
+      loadData();
+    }
+  }, [activeTab, feedbackFilterStatus, feedbackFilterCategory]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'FEEDBACK_CREATED' || payload.type === 'FEEDBACK_UPDATED') {
+            if (activeTab === 'parent_inquiries') {
+              loadParentFeedbacks();
+            }
+          }
+        } catch (e) {}
+      };
+    } catch (err) {}
+
+    return () => {
+      if (es) es.close();
+    };
+  }, [activeTab, feedbackFilterStatus, feedbackFilterCategory]);
+
+  async function loadParentFeedbacks() {
+    try {
+      setLoading(true);
+      let queryParams: string[] = [];
+      if (feedbackFilterStatus && feedbackFilterStatus !== 'ALL') {
+        queryParams.push(`status=${feedbackFilterStatus}`);
+      }
+      if (feedbackFilterCategory && feedbackFilterCategory !== 'ALL') {
+        queryParams.push(`category=${encodeURIComponent(feedbackFilterCategory)}`);
+      }
+      const qs = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+      const res = await apiFetch(`/feedback${qs}`);
+      if (res.success && res.data?.feedbacks) {
+        setParentFeedbacks(res.data.feedbacks);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStaffSubmitResponse(e: React.FormEvent) {
+    e.preventDefault();
+    if (!respondingFeedback || !staffResponseText.trim() || submittingStaffResponse) return;
+
+    try {
+      setSubmittingStaffResponse(true);
+      const res = await apiFetch(`/feedback/${respondingFeedback.id}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({
+          response: staffResponseText.trim(),
+          status: staffResponseStatus,
+        }),
+      });
+
+      if (res.success) {
+        setRespondingFeedback(null);
+        setStaffResponseText('');
+        setStaffResponseStatus('RESPONDED');
+        await loadParentFeedbacks();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit response');
+    } finally {
+      setSubmittingStaffResponse(false);
+    }
+  }
+
+  async function handleStaffUpdateStatus(id: string, status: 'OPEN' | 'RESPONDED' | 'RESOLVED') {
+    try {
+      const res = await apiFetch(`/feedback/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (res.success) {
+        await loadParentFeedbacks();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to update feedback status');
+    }
+  }
 
   async function loadData() {
     try {
@@ -207,6 +311,18 @@ export const ProgressReviewsManagement: React.FC = () => {
         >
           <Sparkles className="w-4 h-4" /> Academic Progress Feedback
         </button>
+        {isStaffOrAdmin && (
+          <button
+            onClick={() => setActiveTab('parent_inquiries')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'parent_inquiries'
+                ? 'bg-[#4E342E] text-white shadow-sm'
+                : 'text-[#6D4C41] hover:text-[#2D1E18]'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" /> Parent Feedback & Inquiries
+          </button>
+        )}
         <button
           onClick={() => setActiveTab('reviews')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
@@ -288,6 +404,177 @@ export const ProgressReviewsManagement: React.FC = () => {
                   <div className="pt-2 text-[11px] text-[#8D6E63] text-right">
                     {new Date(fb.createdAt).toLocaleDateString()}
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Parent Feedback & Inquiries */}
+      {activeTab === 'parent_inquiries' && (
+        <div className="space-y-6">
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-[#D7CCC8] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-[#4E342E] uppercase tracking-wider flex items-center gap-1.5 mr-1">
+                <Filter className="w-3.5 h-3.5" /> Status:
+              </span>
+              {(['ALL', 'OPEN', 'RESPONDED', 'RESOLVED'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setFeedbackFilterStatus(st)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    feedbackFilterStatus === st
+                      ? 'bg-[#4E342E] text-white shadow-xs'
+                      : 'bg-[#F7F2EF] text-[#6D4C41] hover:bg-[#EFEBE9]'
+                  }`}
+                >
+                  {st === 'ALL' ? 'All Feedback' : st === 'OPEN' ? 'Open / Pending' : st}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-[#6D4C41]">Category:</label>
+              <select
+                value={feedbackFilterCategory}
+                onChange={(e) => setFeedbackFilterCategory(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] text-[#2D1E18] text-xs font-semibold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="Academic Progress">Academic Progress</option>
+                <option value="Teaching Method">Teaching Method</option>
+                <option value="Attendance">Attendance</option>
+                <option value="Student Behaviour">Student Behaviour</option>
+                <option value="Homework">Homework</option>
+                <option value="General Feedback">General Feedback</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Feedback List */}
+          {loading ? (
+            <div className="p-12 text-center text-[#8D6E63] text-sm">Loading parent feedback & inquiries...</div>
+          ) : parentFeedbacks.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm space-y-2">
+              <MessageSquare className="w-8 h-8 mx-auto text-[#BCAAA4]" />
+              <p>No parent feedback found matching the selected filters.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {parentFeedbacks.map((fb) => (
+                <div
+                  key={fb.id}
+                  className="bg-white border border-[#D7CCC8] rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EFEBE9] pb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#4E342E]/10 text-[#4E342E] border border-[#D7CCC8]">
+                        {fb.category}
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          fb.status === 'RESOLVED'
+                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                            : fb.status === 'RESPONDED'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}
+                      >
+                        {fb.status === 'OPEN' ? 'Awaiting Response' : fb.status}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#8D6E63]">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>
+                        {new Intl.DateTimeFormat('en-IN', {
+                          timeZone: 'Asia/Kolkata',
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        }).format(new Date(fb.createdAt))}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-[#8D6E63]">Student:</span>{' '}
+                      <strong className="text-[#2D1E18]">
+                        {fb.student?.firstName} {fb.student?.lastName}
+                      </strong>{' '}
+                      {fb.student?.admissionNumber && (
+                        <span className="text-[11px] text-[#6D4C41]">({fb.student.admissionNumber})</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[#8D6E63]">Submitted By:</span>{' '}
+                      <strong className="text-[#2D1E18]">
+                        {fb.parent?.user?.fullName || 'Parent'}
+                      </strong>
+                      {fb.parent?.user?.phone && (
+                        <span className="text-[11px] text-[#6D4C41] ml-1">({fb.parent.user.phone})</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Feedback Text */}
+                  <div className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs text-[#2D1E18] leading-relaxed">
+                    "{fb.feedbackText}"
+                  </div>
+
+                  {/* Teacher Response Display */}
+                  {fb.teacherResponse && (
+                    <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900 mb-1">
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                          Faculty Response {fb.respondedBy?.fullName ? `(${fb.respondedBy.fullName})` : ''}:
+                        </span>
+                        {fb.respondedAt && (
+                          <span className="text-[10px] font-normal text-emerald-700">
+                            {new Intl.DateTimeFormat('en-IN', {
+                              timeZone: 'Asia/Kolkata',
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }).format(new Date(fb.respondedAt))}
+                          </span>
+                        )}
+                      </div>
+                      <p className="leading-relaxed">{fb.teacherResponse}</p>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {isStaffOrAdmin && (
+                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2 border-t border-[#EFEBE9]">
+                      {fb.status !== 'RESOLVED' && (
+                        <button
+                          onClick={() => handleStaffUpdateStatus(fb.id, 'RESOLVED')}
+                          className="px-3 py-1.5 rounded-xl border border-[#D7CCC8] text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition-all"
+                        >
+                          Mark as Resolved
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setRespondingFeedback(fb);
+                          setStaffResponseText(fb.teacherResponse || '');
+                          setStaffResponseStatus(fb.status === 'RESOLVED' ? 'RESOLVED' : 'RESPONDED');
+                        }}
+                        className="px-4 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        {fb.teacherResponse ? 'Update Response' : 'Reply to Parent'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

@@ -20,7 +20,9 @@ import reviewsRoutes from './modules/reviews/reviews.routes.js';
 import messagingRoutes from './modules/messaging/messaging.routes.js';
 import feesRoutes from './modules/fees/fees.routes.js';
 import questionGeneratorRoutes from './modules/question-generator/question-generator.routes.js';
+import feedbackRoutes from './modules/feedback/feedback.routes.js';
 import { NotificationService } from './modules/notifications/notification.service.js';
+import { demoModeMiddleware } from './middleware/demo-mode.middleware.js';
 
 const app = express();
 
@@ -57,6 +59,9 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   next();
 });
 
+// Demo Mode Middleware (active when no DATABASE_URL configured)
+app.use(demoModeMiddleware);
+
 // Mount Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/institutes', institutesRoutes);
@@ -74,6 +79,7 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/fees', feesRoutes);
 app.use('/api/question-generator', questionGeneratorRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 // Root info endpoint & health check redirects
 app.get('/', (_req: Request, res: Response) => {
