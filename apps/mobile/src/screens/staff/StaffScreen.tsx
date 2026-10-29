@@ -22,6 +22,7 @@ import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffExamGradingModal } from '../../components/StaffExamGradingModal';
 import { StaffReviewReplyModal } from '../../components/StaffReviewReplyModal';
+import { MaterialAnalyticsModal } from '../../components/MaterialAnalyticsModal';
 import { MobileButton } from '../../components/ui';
 import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 
@@ -39,6 +40,7 @@ export const StaffScreen: React.FC = () => {
   const [examsList, setExamsList] = useState<any[]>([]);
   const [gradingExam, setGradingExam] = useState<any | null>(null);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
+  const [analyticsMaterial, setAnalyticsMaterial] = useState<any | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
@@ -1093,6 +1095,30 @@ export const StaffScreen: React.FC = () => {
                         </Text>
                       </View>
                     ) : null}
+
+                    <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => setAnalyticsMaterial(mat)}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 8,
+                          backgroundColor: '#E0F2FE',
+                          borderWidth: 1,
+                          borderColor: '#BAE6FD',
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369A1' }}>
+                          📊 View Analytics
+                        </Text>
+                      </TouchableOpacity>
+
+                      <Badge
+                        label={mat.isPublished ? 'PUBLISHED' : 'DRAFT'}
+                        variant={mat.isPublished ? 'success' : 'warning'}
+                        size="sm"
+                      />
+                    </View>
                   </Card>
                 ))
               )}
@@ -1552,6 +1578,12 @@ export const StaffScreen: React.FC = () => {
       <StaffReviewReplyModal
         isOpen={showReviewsModal}
         onClose={() => setShowReviewsModal(false)}
+      />
+
+      <MaterialAnalyticsModal
+        isOpen={!!analyticsMaterial}
+        material={analyticsMaterial}
+        onClose={() => setAnalyticsMaterial(null)}
       />
     </View>
   );
