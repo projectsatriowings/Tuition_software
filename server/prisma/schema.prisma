@@ -129,6 +129,19 @@ model Institute {
   logoUrl      String?
   admissionPrefix   String?         @unique // Stable abbreviation used for automatic student admission numbers
   settingsJson Json?           // Dynamic settings like timezones, SMS templates, academic terms
+
+  // GPS Geofence & Staff Attendance Configuration
+  latitude                Float?
+  longitude               Float?
+  geofenceRadius          Float                  @default(200) // in metres
+  locationVerified        Boolean                @default(false)
+  workingDays             String                 @default("MON,TUE,WED,THU,FRI,SAT")
+  workStartTime           String                 @default("09:00")
+  workEndTime             String                 @default("18:00")
+  lateGraceMinutes        Int                    @default(15)
+  gpsAccuracyThreshold    Float                  @default(50) // Max horizontal accuracy in metres
+  requireCheckoutGeofence Boolean                @default(true)
+  timezone                String                 @default("Asia/Kolkata")
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -153,6 +166,7 @@ model Institute {
   notifications       Notification[]
   inAppNotifications  InAppNotification[]
   onlinePaymentOrders OnlinePaymentOrder[]
+  staffAttendanceSessions StaffAttendanceSession[]
 
   @@index([status])
   @@index([name])
@@ -191,6 +205,7 @@ model User {
   devicePushTokens    DevicePushToken[]
   auditLogs           AuditLog[]
   inAppNotifications  InAppNotification[]
+  correctedStaffAttendances StaffAttendanceSession[] @relation("StaffAttendanceCorrector")
 
   @@index([role])
   @@index([email])
@@ -271,6 +286,7 @@ model StaffProfile {
   qualifications  StaffQualification[]
   experiences     StaffExperience[]
   documents       StaffDocument[]
+  attendanceSessions StaffAttendanceSession[]
 
   @@unique([instituteId, employeeCode])
   @@index([instituteId])
@@ -1026,3 +1042,80 @@ model OnlinePaymentOrder {
   @@index([status])
 }
 
+
+
+// -------------------------------------------------------------
+// STAFF ATTENDANCE & GPS GEOFENCING MODELS
+// -------------------------------------------------------------
+
+enum StaffAttendanceStatus {
+  NOT_CHECKED_IN
+  CHECKED_IN
+  CHECKED_OUT
+  LATE
+  INCOMPLETE
+  ABSENT
+  ON_LEAVE
+  MANUALLY_CORRECTED
+}
+
+enum StaffAttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+  MANUAL_CORRECTION
+  SYSTEM_FLAG
+}
+
+model StaffAttendanceSession {
+  id                    String                @id @default(uuid())
+  instituteId           String
+  staffId               String
+  attendanceDate        DateTime              @db.Date
+  status                StaffAttendanceStatus @default(CHECKED_IN)
+  checkInTime           DateTime?
+  checkOutTime          DateTime?
+  workDurationMinutes   Int                   @default(0)
+  isLate                Boolean               @default(false)
+  isManuallyCorrected   Boolean               @default(false)
+  correctionReason      String?
+  correctedById         String?
+  correctedAt           DateTime?
+  notes                 String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  institute             Institute             @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  staff                 StaffProfile          @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  correctedBy           User?                 @relation("StaffAttendanceCorrector", fields: [correctedById], references: [id], onDelete: SetNull)
+  events                StaffAttendanceEvent[]
+
+  @@unique([instituteId, staffId, attendanceDate])
+  @@index([instituteId, attendanceDate])
+  @@index([staffId])
+  @@index([status])
+}
+
+model StaffAttendanceEvent {
+  id                    String                   @id @default(uuid())
+  sessionId             String
+  instituteId           String
+  staffId               String
+  eventType             StaffAttendanceEventType
+  serverTimestamp       DateTime                 @default(now())
+  latitude              Float?
+  longitude             Float?
+  accuracy              Float?
+  distanceFromCenter    Float?                   // Distance in metres from institute coordinates
+  isWithinGeofence      Boolean                  @default(false)
+  validationOutcome     String                   // e.g., "VERIFIED_INSIDE_GEOFENCE", "REJECTED_OUTSIDE_GEOFENCE", "MANUAL_ADJUSTMENT"
+  deviceInfo            String?
+  remarks               String?
+  idempotencyKey        String?                  @unique
+  createdAt             DateTime                 @default(now())
+
+  session               StaffAttendanceSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([staffId])
+  @@index([instituteId, serverTimestamp])
+}
