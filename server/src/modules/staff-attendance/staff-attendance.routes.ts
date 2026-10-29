@@ -38,3 +38,4 @@ router.post('/admin/correct', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), manu
 router.get('/admin/monthly-report', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), getAdminMonthlyReport);
 
 export default router;
+
