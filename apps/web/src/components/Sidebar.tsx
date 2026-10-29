@@ -10,6 +10,7 @@ import {
   FileText,
   Award,
   Sparkles,
+  FileQuestion,
   MessageSquare,
   CreditCard,
   Bell,
@@ -115,6 +116,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               className={navItemClass('exams')}
             >
               <Award className="w-4 h-4" /> Exams & Grading
+            </button>
+
+            <button
+              onClick={() => onSelectTab('question_generator')}
+              className={navItemClass('question_generator')}
+            >
+              <FileQuestion className="w-4 h-4 text-amber-300" /> AI Question Generator
             </button>
 
             <button
