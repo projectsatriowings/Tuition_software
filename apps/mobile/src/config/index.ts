@@ -9,13 +9,18 @@ const DEFAULT_DEV_API_URL = Platform.select({
   default: 'http://localhost:5000/api',
 });
 
-const DEFAULT_PROD_API_URL = 'https://api.tuitionos.com/api';
+const DEFAULT_STAGING_OR_PROD_URL = process.env.EXPO_PUBLIC_API_URL || 'https://staging.tuitionos.com/api';
+const DEFAULT_PROD_API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.tuitionos.com/api';
 
 export const AppConfig = {
   appName: 'TuitionOS Mobile',
   version: '1.0.0',
   isProduction,
-  defaultApiBaseUrl: isProduction ? DEFAULT_PROD_API_URL : DEFAULT_DEV_API_URL,
+  defaultApiBaseUrl: process.env.EXPO_PUBLIC_API_URL
+    ? process.env.EXPO_PUBLIC_API_URL
+    : isProduction
+    ? DEFAULT_PROD_API_URL
+    : DEFAULT_DEV_API_URL,
   presets: {
     androidEmulator: 'http://10.0.2.2:5000/api',
     localLanDefault: 'http://192.168.1.5:5000/api',
