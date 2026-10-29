@@ -614,8 +614,8 @@ export const AttendanceManagement: React.FC = () => {
       )}
 
       {/* Controls Bar: Batch & Date Picker */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-[#4E342E]">Class Batch:</span>
             <select
@@ -674,26 +674,26 @@ export const AttendanceManagement: React.FC = () => {
           </div>
         </div>
 
-        {/* Live Attendance KPIs Pill */}
-        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-          <span className="text-[#4E342E] bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1">
+        {/* Live Attendance KPIs Pill — Guaranteed single line */}
+        <div className="flex items-center gap-2 text-xs font-semibold shrink-0 whitespace-nowrap overflow-x-auto py-0.5">
+          <span className="shrink-0 whitespace-nowrap text-[#4E342E] bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1">
             <Users className="w-3.5 h-3.5 text-[#8D6E63]" />
             <span>Total: <strong>{counts.totalStudents}</strong></span>
           </span>
-          <span className="text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300">
+          <span className="shrink-0 whitespace-nowrap text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300">
             Present (Total): <strong>{counts.presentTotal ?? (counts.checkedInCount + counts.checkedOutCount)}</strong>
           </span>
-          <span className="text-teal-900 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-300">
+          <span className="shrink-0 whitespace-nowrap text-teal-900 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-300">
             In Class: <strong>{counts.checkedInCount}</strong>
           </span>
-          <span className="text-[#4E342E] bg-[#EFEBE9] px-2.5 py-1 rounded-lg border border-[#D7CCC8]">
+          <span className="shrink-0 whitespace-nowrap text-[#4E342E] bg-[#EFEBE9] px-2.5 py-1 rounded-lg border border-[#D7CCC8]">
             Checked Out: <strong>{counts.checkedOutCount}</strong>
           </span>
-          <span className="text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+          <span className="shrink-0 whitespace-nowrap text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
             Absent: <strong>{counts.absentCount}</strong>
           </span>
           {loading && (
-            <RefreshCw className="w-3.5 h-3.5 text-[#8D6E63] animate-spin ml-1" />
+            <RefreshCw className="w-3.5 h-3.5 text-[#8D6E63] animate-spin ml-1 shrink-0" />
           )}
         </div>
       </div>

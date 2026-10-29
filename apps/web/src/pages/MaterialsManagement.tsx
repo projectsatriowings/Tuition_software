@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { MaterialViewerModal } from '../components/MaterialViewerModal';
+import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch, getMaterialDownloadUrl, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -21,6 +22,16 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
+  Square,
+  Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  Users,
+  Clock,
+  BarChart2,
+  CheckCircle2,
+  EyeOff,
 } from 'lucide-react';
 
 export const MaterialsManagement: React.FC = () => {
@@ -50,7 +61,95 @@ export const MaterialsManagement: React.FC = () => {
 
   // Text Note Reader Modal
   const [readingMaterial, setReadingMaterial] = useState<any | null>(null);
+  const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Voice Recording State (Phase 3)
+  const [audioInputMode, setAudioInputMode] = useState<'UPLOAD' | 'RECORD'>('UPLOAD');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<any>(null);
+
+  // Material Analytics Modal (Phase 4)
+  const [selectedMaterialForAnalytics, setSelectedMaterialForAnalytics] = useState<any | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<any[]>([]);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+
+  async function openAnalyticsModal(mat: any) {
+    setSelectedMaterialForAnalytics(mat);
+    setLoadingAnalytics(true);
+    try {
+      const res = await apiFetch(`/materials/${mat.id}/interactions`);
+      if (res.success) {
+        setAnalyticsData(res.data.interactions || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load interactions:', err);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        setRecordedAudioUrl(audioUrl);
+        const recordedFile = new File([audioBlob], `voice-lesson-${Date.now()}.webm`, { type: 'audio/webm' });
+        setFile(recordedFile);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+      setRecordingDuration(0);
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      alert('Microphone access denied or not supported in this browser. Please allow microphone permissions.');
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    }
+  }
+
+  function discardRecording() {
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+    }
+    setRecordedAudioUrl(null);
+    setRecordingDuration(0);
+    setFile(null);
+  }
+
+  function formatDuration(seconds: number) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
 
   async function handleSaveToDevice(materialId: string, filename: string) {
     try {
@@ -197,6 +296,8 @@ export const MaterialsManagement: React.FC = () => {
     setSubjectId('');
     setIsPublished(true);
     setFile(null);
+    discardRecording();
+    setAudioInputMode('UPLOAD');
   }
 
   const filteredMaterials = materials.filter((m) => {
@@ -354,26 +455,58 @@ export const MaterialsManagement: React.FC = () => {
             <div
               key={mat.id}
               className={`p-5 rounded-2xl bg-white border shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
-                !mat.isPublished ? 'border-amber-300 bg-amber-50/20' : 'border-[#D7CCC8]'
+                !mat.isPublished ? 'border-amber-300 bg-amber-50/15' : 'border-[#D7CCC8]'
               }`}
             >
               <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9]">
-                    {getTypeIcon(mat.type)}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {!mat.isPublished && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase">
-                        Draft
+                {/* Header: Icon, Type & Status Badge (Left), Quick Action Buttons (Right) */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="p-2 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9] shrink-0 text-[#4E342E]">
+                      {getTypeIcon(mat.type)}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
+                        {mat.type}
                       </span>
-                    )}
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
-                      {mat.type}
-                    </span>
+                      {mat.isPublished ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Published
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                          <Clock className="w-3 h-3 text-amber-600" /> Draft
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Staff Management Icon Actions */}
+                  {isStaffOrAdmin && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleTogglePublish(mat)}
+                        className={`p-1.5 rounded-lg border text-xs transition-colors ${
+                          mat.isPublished
+                            ? 'border-amber-200 text-amber-800 bg-amber-50 hover:bg-amber-100'
+                            : 'border-emerald-200 text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+                        }`}
+                        title={mat.isPublished ? 'Unpublish to Draft' : 'Publish to Students'}
+                      >
+                        {mat.isPublished ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(mat.id)}
+                        className="p-1.5 rounded-lg border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
+                        title="Delete Material"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
+                {/* Title & Description */}
                 <div>
                   <h3 className="font-bold text-[#2D1E18] text-base leading-snug line-clamp-1">{mat.title}</h3>
                   {mat.description && (
@@ -386,77 +519,54 @@ export const MaterialsManagement: React.FC = () => {
                   )}
                 </div>
 
-                <div className="pt-2 flex flex-wrap gap-2 text-[11px] text-[#6D4C41]">
-                  <span className="px-2 py-0.5 rounded bg-[#F7F2EF] border border-[#D7CCC8]">
+                {/* Batch & Subject Chips */}
+                <div className="pt-1 flex flex-wrap gap-1.5 text-[11px] text-[#6D4C41]">
+                  <span className="px-2 py-0.5 rounded-md bg-[#F7F2EF] border border-[#D7CCC8] font-medium">
                     {mat.batch?.name || 'Class Batch'}
                   </span>
-                  <span className="px-2 py-0.5 rounded bg-[#F7F2EF] border border-[#D7CCC8]">
+                  <span className="px-2 py-0.5 rounded-md bg-[#F7F2EF] border border-[#D7CCC8] font-medium">
                     {mat.subject?.name ? mat.subject.name : 'Entire Batch (All Subjects)'}
                   </span>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-[#EFEBE9] flex items-center justify-between text-xs">
-                <span className="text-[11px] text-[#8D6E63]">
-                  {new Date(mat.createdAt).toLocaleDateString()}
-                </span>
-
-                <div className="flex items-center gap-1.5">
-                  {mat.content && (
+              {/* Card Footer: Date & Analytics Button (Left), Primary Actions (Right) */}
+              <div className="pt-3 border-t border-[#EFEBE9] flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#8D6E63]">
+                    {new Date(mat.createdAt).toLocaleDateString()}
+                  </span>
+                  {isStaffOrAdmin && (
                     <button
-                      onClick={() => setReadingMaterial(mat)}
-                      className="p-2 rounded-xl bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] flex items-center gap-1 transition-colors font-medium text-xs"
-                      title="Read Study Notes"
+                      onClick={() => openAnalyticsModal(mat)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-medium text-[11px] transition-colors"
+                      title="View student engagement & interaction analytics"
                     >
-                      <Eye className="w-3.5 h-3.5" /> Read
+                      <BarChart2 className="w-3 h-3 text-sky-600" />
+                      <span>{mat._count?.interactions !== undefined ? `${mat._count.interactions} views` : 'Analytics'}</span>
                     </button>
                   )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setPreviewMaterial(mat)}
+                    className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] text-[#4E342E] border border-[#D7CCC8] flex items-center gap-1 transition-colors font-medium text-xs"
+                    title="Open in-page modal preview"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Preview
+                  </button>
 
                   {mat.fileUrl && (
-                    <>
-                      <a
-                        href={getMaterialDownloadUrl(mat.id, false)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-2 rounded-xl bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] flex items-center gap-1 transition-colors font-medium text-xs"
-                        title="Open and preview in new tab"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" /> View
-                      </a>
-                      <button
-                        onClick={() => handleSaveToDevice(mat.id, mat.fileName || `${mat.title}.${(mat.type || 'bin').toLowerCase()}`)}
-                        disabled={downloadingId === mat.id}
-                        className="p-2 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white border border-[#4E342E] flex items-center gap-1 transition-colors font-medium text-xs shadow-sm disabled:opacity-50"
-                        title="Download and save directly to your device"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        {downloadingId === mat.id ? 'Saving...' : 'Download'}
-                      </button>
-                    </>
-                  )}
-
-                  {isStaffOrAdmin && (
-                    <>
-                      <button
-                        onClick={() => handleTogglePublish(mat)}
-                        className={`p-2 rounded-xl border text-[11px] font-semibold transition-colors ${
-                          mat.isPublished
-                            ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                            : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                        }`}
-                        title={mat.isPublished ? 'Unpublish to Draft' : 'Publish to Students'}
-                      >
-                        {mat.isPublished ? 'Draft' : 'Publish'}
-                      </button>
-
-                      <button
-                        onClick={() => handleDelete(mat.id)}
-                        className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
-                        title="Delete Material"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </>
+                    <button
+                      onClick={() => handleSaveToDevice(mat.id, mat.fileName || `${mat.title}.${(mat.type || 'bin').toLowerCase()}`)}
+                      disabled={downloadingId === mat.id}
+                      className="px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white border border-[#4E342E] flex items-center gap-1 transition-colors font-medium text-xs shadow-sm disabled:opacity-50"
+                      title="Download and save directly to your device"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {downloadingId === mat.id ? 'Saving...' : 'Download'}
+                    </button>
                   )}
                 </div>
               </div>
@@ -466,6 +576,13 @@ export const MaterialsManagement: React.FC = () => {
       )}
 
       {/* Text Note Full Reader Modal */}
+      {previewMaterial && (
+        <MaterialViewerModal
+          material={previewMaterial}
+          onClose={() => setPreviewMaterial(null)}
+        />
+      )}
+
       {readingMaterial && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl">
@@ -640,7 +757,120 @@ export const MaterialsManagement: React.FC = () => {
                 </div>
               )}
 
-              {type !== 'TEXT' && (
+              {type !== 'TEXT' && (type === 'AUDIO' || type === 'VOICE_NOTE') && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-[#4E342E]">
+                      Audio Input Method *
+                    </label>
+                    <div className="flex items-center gap-1 bg-[#F7F2EF] p-1 rounded-xl border border-[#D7CCC8]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAudioInputMode('UPLOAD');
+                          discardRecording();
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                          audioInputMode === 'UPLOAD'
+                            ? 'bg-[#4E342E] text-white shadow-sm'
+                            : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                        }`}
+                      >
+                        Upload Audio File
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAudioInputMode('RECORD');
+                          setFile(null);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                          audioInputMode === 'RECORD'
+                            ? 'bg-rose-600 text-white shadow-sm'
+                            : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                        }`}
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                        Record with Mic
+                      </button>
+                    </div>
+                  </div>
+
+                  {audioInputMode === 'RECORD' ? (
+                    <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-3">
+                      {!isRecording && !recordedAudioUrl && (
+                        <div className="text-center py-4 space-y-3">
+                          <p className="text-xs text-[#6D4C41]">
+                            Click the button below to start recording your voice lesson directly from your microphone.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={startRecording}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs shadow transition-all"
+                          >
+                            <Mic className="w-4 h-4 animate-bounce" />
+                            Start Recording
+                          </button>
+                        </div>
+                      )}
+
+                      {isRecording && (
+                        <div className="text-center py-4 space-y-3">
+                          <div className="flex items-center justify-center gap-3">
+                            <span className="w-3 h-3 rounded-full bg-rose-600 animate-ping"></span>
+                            <span className="text-sm font-bold text-rose-700 font-mono tracking-wider">
+                              Recording: {formatDuration(recordingDuration)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#8D6E63]">Speak clearly into your microphone...</p>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl font-semibold text-xs shadow transition-all"
+                          >
+                            <Square className="w-3.5 h-3.5 fill-current" />
+                            Stop Recording
+                          </button>
+                        </div>
+                      )}
+
+                      {recordedAudioUrl && !isRecording && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                            <span className="flex items-center gap-1.5">
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
+                              Voice Recording Complete ({formatDuration(recordingDuration)})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={discardRecording}
+                              className="text-rose-600 hover:underline flex items-center gap-1 font-medium text-xs"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" /> Discard & Re-record
+                            </button>
+                          </div>
+                          <audio controls src={recordedAudioUrl} className="w-full h-10 rounded-xl" />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        type="file"
+                        required={!file}
+                        accept="audio/*"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                        className="w-full text-xs text-[#6D4C41] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#4E342E] file:text-white hover:file:bg-[#3E2723]"
+                      />
+                      <p className="text-[11px] text-[#8D6E63] mt-1">
+                        Upload MP3, WAV, AAC, or M4A audio files up to 25MB.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {type !== 'TEXT' && type !== 'AUDIO' && type !== 'VOICE_NOTE' && (
                 <div>
                   <label className="block text-xs font-semibold text-[#4E342E] mb-1">
                     Attachment File {type === 'ANNOUNCEMENT' ? '(Optional)' : '*'}
@@ -653,15 +883,13 @@ export const MaterialsManagement: React.FC = () => {
                         ? 'application/pdf'
                         : type === 'IMAGE'
                         ? 'image/*'
-                        : type === 'AUDIO' || type === 'VOICE_NOTE'
-                        ? 'audio/*'
                         : '*/*'
                     }
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                     className="w-full text-xs text-[#6D4C41] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#4E342E] file:text-white hover:file:bg-[#3E2723]"
                   />
                   <p className="text-[11px] text-[#8D6E63] mt-1">
-                    Supports PDFs, PNG, JPG, WebP images, MP3 and WAV audio up to 25MB.
+                    Supports PDFs, PNG, JPG, WebP images up to 25MB.
                   </p>
                 </div>
               )}
@@ -684,6 +912,148 @@ export const MaterialsManagement: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Student Engagement & Views Analytics Modal (Phase 4) */}
+      {selectedMaterialForAnalytics && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[85vh] flex flex-col space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
+                    {selectedMaterialForAnalytics.type}
+                  </span>
+                  <h2 className="text-xl font-bold text-[#2D1E18]">
+                    {selectedMaterialForAnalytics.title} — Analytics
+                  </h2>
+                </div>
+                <p className="text-xs text-[#6D4C41] mt-1">
+                  Batch: {selectedMaterialForAnalytics.batch?.name} • Subject: {selectedMaterialForAnalytics.subject?.name || 'All Batch Subjects'}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedMaterialForAnalytics(null)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-lg hover:bg-[#F7F2EF]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-xs text-sky-900 flex items-center gap-2.5">
+              <BarChart2 className="w-4 h-4 shrink-0 text-sky-700" />
+              <span>
+                <strong>Student Engagement Tracking:</strong>{' '}
+                {selectedMaterialForAnalytics?.type === 'VOICE_NOTE'
+                  ? 'Monitors student interaction — view who opened this audio lesson, tracked listening progress, and verified completion.'
+                  : 'Monitors student interaction — view who opened, viewed, and completed this learning material.'}
+              </span>
+            </div>
+
+            {loadingAnalytics ? (
+              <div className="py-12 text-center text-[#8D6E63] text-sm flex items-center justify-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-[#6D4C41] animate-ping"></div>
+                <span>Loading engagement analytics...</span>
+              </div>
+            ) : (
+              <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                {/* KPI Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                    <span className="text-[11px] font-semibold text-[#6D4C41]">Unique Student Views</span>
+                    <p className="text-2xl font-bold text-[#2D1E18] mt-1">
+                      {new Set(analyticsData.map((i: any) => i.studentId)).size}
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+                    <span className="text-[11px] font-semibold text-emerald-800">Completed / Fully Read</span>
+                    <p className="text-2xl font-bold text-emerald-900 mt-1">
+                      {analyticsData.filter((i: any) => i.interactionType === 'AUDIO_COMPLETED' || i.isCompleted).length}
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 col-span-2 sm:col-span-1">
+                    <span className="text-[11px] font-semibold text-sky-800">Total Interactions</span>
+                    <p className="text-2xl font-bold text-sky-900 mt-1">
+                      {analyticsData.length}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Student Interaction Roster */}
+                <div>
+                  <h3 className="text-xs font-bold text-[#4E342E] uppercase tracking-wider mb-2">
+                    Student Interaction Breakdown
+                  </h3>
+                  {analyticsData.length === 0 ? (
+                    <div className="p-8 text-center rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-[#8D6E63] text-xs">
+                      No student views or interactions recorded for this material yet.
+                    </div>
+                  ) : (
+                    <div className="border border-[#D7CCC8] rounded-2xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#F7F2EF] border-b border-[#D7CCC8] text-[#4E342E] font-semibold">
+                          <tr>
+                            <th className="p-3">Student Name</th>
+                            <th className="p-3">Admission No</th>
+                            <th className="p-3">Interaction Type</th>
+                            <th className="p-3">
+                              {selectedMaterialForAnalytics?.type === 'VOICE_NOTE'
+                                ? 'Audio Progress'
+                                : 'Study Progress'}
+                            </th>
+                            <th className="p-3">Timestamp</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EFEBE9]">
+                          {analyticsData.map((interaction: any) => (
+                            <tr key={interaction.id} className="hover:bg-[#FAF7F5]">
+                              <td className="p-3 font-medium text-[#2D1E18]">
+                                {interaction.student?.firstName} {interaction.student?.lastName}
+                              </td>
+                              <td className="p-3 text-[#6D4C41] font-mono">
+                                {interaction.student?.admissionNumber || '—'}
+                              </td>
+                              <td className="p-3">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  interaction.interactionType === 'AUDIO_COMPLETED' || interaction.isCompleted
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : interaction.interactionType === 'AUDIO_PLAYING'
+                                    ? 'bg-sky-100 text-sky-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {interaction.interactionType}
+                                </span>
+                              </td>
+                              <td className="p-3 text-[#6D4C41]">
+                                {interaction.progressPercent !== null && interaction.progressPercent !== undefined
+                                  ? `${Math.round(interaction.progressPercent)}%`
+                                  : interaction.isCompleted
+                                  ? '100%'
+                                  : '—'}
+                              </td>
+                              <td className="p-3 text-[#8D6E63]">
+                                {new Date(interaction.updatedAt || interaction.createdAt).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end border-t border-[#EFEBE9]">
+              <button
+                onClick={() => setSelectedMaterialForAnalytics(null)}
+                className="px-5 py-2 rounded-xl bg-[#4E342E] text-white text-xs font-semibold hover:bg-[#3E2723]"
+              >
+                Close Analytics
+              </button>
+            </div>
           </div>
         </div>
       )}
