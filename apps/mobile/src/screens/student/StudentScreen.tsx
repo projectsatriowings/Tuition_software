@@ -19,6 +19,8 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { NotificationModal } from '../../components/NotificationModal';
+import { MaterialViewerModal } from '../../components/MaterialViewerModal';
+import { QuizTakerModal } from '../../components/QuizTakerModal';
 import { PushNotificationService } from '../../services/pushNotification.service';
 import { themeTokens } from '@tuition/shared';
 
@@ -33,7 +35,9 @@ export const StudentScreen: React.FC = () => {
   const [studentProfile, setStudentProfile] = useState<any>(null);
   const [materials, setMaterials] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
+  const [quizzes, setQuizzes] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
+  const [progressFeedbacks, setProgressFeedbacks] = useState<any[]>([]);
   const [attendanceEvents, setAttendanceEvents] = useState<any[]>([]);
   const [feeStatement, setFeeStatement] = useState<any>(null);
 
@@ -47,6 +51,8 @@ export const StudentScreen: React.FC = () => {
   const [submissionLoading, setSubmissionLoading] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
+  const [activeTakingQuiz, setActiveTakingQuiz] = useState<any | null>(null);
 
   const formatKolkataTime = (isoString?: string | null) => {
     if (!isoString) return 'Not available';
@@ -96,10 +102,22 @@ export const StudentScreen: React.FC = () => {
         setHomeworkList(Array.isArray(hwRes.data) ? hwRes.data : hwRes.data.homework || []);
       }
 
-      // 4. Fetch Exams
+      // 4. Fetch Quizzes
+      const quizRes = await mobileApiFetch('/quizzes');
+      if (quizRes.success && quizRes.data) {
+        setQuizzes(Array.isArray(quizRes.data) ? quizRes.data : quizRes.data.quizzes || []);
+      }
+
+      // 5. Fetch Exams
       const examRes = await mobileApiFetch('/exams');
       if (examRes.success && examRes.data) {
         setExams(Array.isArray(examRes.data) ? examRes.data : examRes.data.exams || []);
+      }
+
+      // 6. Fetch Progress Reports
+      const progRes = await mobileApiFetch('/progress');
+      if (progRes.success && progRes.data) {
+        setProgressFeedbacks(Array.isArray(progRes.data) ? progRes.data : progRes.data.feedbacks || []);
       }
     } catch (e) {
       console.warn('Error loading student mobile data:', e);
@@ -160,32 +178,8 @@ export const StudentScreen: React.FC = () => {
     }
   };
 
-  const handleDownloadMaterial = async (mat: any) => {
-    if (mat.content && !mat.fileUrl) {
-      Alert.alert(
-        mat.title,
-        `Topic / Subject: ${mat.subject?.name || 'General'}\n\n${mat.content}`,
-        [{ text: 'Close' }]
-      );
-      return;
-    }
-
-    const downloadUrl = await buildAuthenticatedDownloadUrl(`/materials/${mat.id}/download`);
-    Alert.alert(
-      'Material Access',
-      `Title: ${mat.title}\nType: ${mat.type}\nFile: ${mat.fileName || 'Online resource'}\n\nWould you like to open this study material?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Open Material',
-          onPress: () => {
-            Linking.openURL(downloadUrl).catch(() => {
-              Alert.alert('Notice', `Material download link ready: ${downloadUrl}`);
-            });
-          },
-        },
-      ]
-    );
+  const handleDownloadMaterial = (mat: any) => {
+    setPreviewMaterial(mat);
   };
 
   const handleMarkCompleted = (hw: any) => {
@@ -481,6 +475,62 @@ export const StudentScreen: React.FC = () => {
                 ))
               )}
 
+              {/* Quizzes & Assessments Section (Phase 6 & 9) */}
+              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
+                <Text style={styles.sectionTitle}>🎯 Quizzes & Assessments</Text>
+                <Text style={styles.sectionCount}>{quizzes.length} available</Text>
+              </View>
+
+              {quizzes.length === 0 ? (
+                <Card>
+                  <Text style={styles.emptyText}>No quizzes available at the moment.</Text>
+                </Card>
+              ) : (
+                quizzes.map((quiz) => (
+                  <Card key={quiz.id}>
+                    <View style={styles.hwHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.hwTitle}>{quiz.title}</Text>
+                        <Text style={styles.hwSubject}>
+                          {quiz.subject?.name || 'Curriculum'} • {quiz.durationMinutes ? `${quiz.durationMinutes} mins` : 'Untimed'}
+                        </Text>
+                      </View>
+                      <Badge
+                        label={quiz.myAttempt ? `${quiz.myAttempt.score}/${quiz.myAttempt.totalMarks}` : 'AVAILABLE'}
+                        variant={quiz.myAttempt ? 'success' : 'info'}
+                      />
+                    </View>
+                    {quiz.instructions ? (
+                      <Text style={[styles.hwDescription, { marginTop: 6 }]} numberOfLines={2}>
+                        {quiz.instructions}
+                      </Text>
+                    ) : null}
+                    <View style={[styles.hwFooter, { marginTop: 8 }]}>
+                      <Text style={styles.hwDueDate}>
+                        Questions: {quiz._count?.questions || 0}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (quiz.myAttempt) {
+                            Alert.alert(
+                              quiz.title,
+                              `Your Score: ${quiz.myAttempt.score}/${quiz.myAttempt.totalMarks} (${quiz.myAttempt.percentage}%)\n\nSubmitted at: ${formatKolkataTime(quiz.myAttempt.submittedAt)}`
+                            );
+                          } else {
+                            setActiveTakingQuiz(quiz);
+                          }
+                        }}
+                        style={[styles.submitHwBtn, { backgroundColor: quiz.myAttempt ? themeTokens.colors.success : themeTokens.colors.primary }]}
+                      >
+                        <Text style={styles.submitHwBtnText}>
+                          {quiz.myAttempt ? 'View Score' : 'Take Quiz'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </Card>
+                ))
+              )}
+
               {/* Exams Section */}
               <View style={[styles.sectionHeader, { marginTop: 16 }]}>
                 <Text style={styles.sectionTitle}>🏆 Examinations & Results</Text>
@@ -492,22 +542,115 @@ export const StudentScreen: React.FC = () => {
                   <Text style={styles.emptyText}>No published examinations yet.</Text>
                 </Card>
               ) : (
-                exams.map((exam) => (
-                  <Card key={exam.id}>
-                    <View style={styles.examRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.examTitle}>{exam.name}</Text>
-                        <Text style={styles.examSubject}>
-                          {exam.subject?.name || 'General'} &bull; Max Marks: {exam.totalMarks || 100}
+                exams.map((exam) => {
+                  const mark = exam.studentMark;
+                  const isResultsPub = exam.isResultsPublished;
+
+                  return (
+                    <Card key={exam.id}>
+                      <View style={styles.examRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.examTitle}>{exam.title || exam.name}</Text>
+                          <Text style={styles.examSubject}>
+                            {exam.subject?.name || 'General'} &bull; Max Marks: {exam.totalMarks || 100}
+                          </Text>
+                        </View>
+                        <Badge
+                          label={isResultsPub ? (mark?.status || 'RESULTS') : 'SCHEDULED'}
+                          variant={isResultsPub ? (mark?.isPassed ? 'success' : 'danger') : 'info'}
+                          size="sm"
+                        />
+                      </View>
+
+                      <View style={styles.examDateRow}>
+                        <Text style={styles.examDateText}>
+                          Date: {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Scheduled'}
+                          {exam.startTime ? ` (${exam.startTime}${exam.endTime ? ' - ' + exam.endTime : ''})` : ''}
                         </Text>
                       </View>
-                      <Badge label="PUBLISHED" variant="info" size="sm" />
+
+                      {isResultsPub && mark ? (
+                        <View style={{ marginTop: 8, padding: 8, backgroundColor: mark.isPassed ? '#E8F5E9' : '#FFEBEE', borderRadius: 8 }}>
+                          <Text style={{ fontSize: 13, fontWeight: 'bold', color: mark.isPassed ? '#2E7D32' : '#C62828' }}>
+                            Score: {mark.marksObtained} / {exam.totalMarks} ({mark.percentage}%) &bull; {mark.status}
+                          </Text>
+                          {mark.remarks ? (
+                            <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#4E342E', marginTop: 2 }}>
+                              "{mark.remarks}"
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : (
+                        <View style={{ marginTop: 6 }}>
+                          <Text style={{ fontSize: 11, color: '#8D6E63', fontStyle: 'italic' }}>
+                            Official results pending evaluation.
+                          </Text>
+                        </View>
+                      )}
+                    </Card>
+                  );
+                })
+              )}
+
+              {/* Progress Reports Section */}
+              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
+                <Text style={styles.sectionTitle}>✨ Faculty Progress Reports</Text>
+                <Text style={styles.sectionCount}>{progressFeedbacks.length} reports</Text>
+              </View>
+
+              {progressFeedbacks.length === 0 ? (
+                <Card>
+                  <Text style={styles.emptyText}>No academic progress reports published yet.</Text>
+                </Card>
+              ) : (
+                progressFeedbacks.map((fb) => (
+                  <Card key={fb.id}>
+                    <View style={styles.examRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.examTitle}>{fb.termName}</Text>
+                        <Text style={styles.examSubject}>
+                          Evaluated by {fb.staff?.fullName || 'Faculty'} &bull; {fb.periodType || 'TERM'}
+                        </Text>
+                      </View>
+                      <Badge label={`${fb.rating || 5}/5 ★`} variant="info" size="sm" />
                     </View>
-                    <View style={styles.examDateRow}>
-                      <Text style={styles.examDateText}>
-                        Conducted: {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Scheduled'}
-                      </Text>
-                    </View>
+
+                    {(fb.attendanceRate !== null || fb.homeworkRate !== null || fb.examAverage !== null) && (
+                      <View style={{ flexDirection: 'row', backgroundColor: '#F7F2EF', padding: 8, borderRadius: 8, marginTop: 8, justifyContent: 'space-around' }}>
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>ATTENDANCE</Text>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{fb.attendanceRate !== null ? `${Number(fb.attendanceRate)}%` : 'N/A'}</Text>
+                        </View>
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>HOMEWORK</Text>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{fb.homeworkRate !== null ? `${Number(fb.homeworkRate)}%` : 'N/A'}</Text>
+                        </View>
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>TEST AVG</Text>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{fb.examAverage !== null ? `${Number(fb.examAverage)}%` : 'N/A'}</Text>
+                        </View>
+                      </View>
+                    )}
+
+                    <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#2D1E18', marginTop: 8, backgroundColor: '#F7F2EF', padding: 8, borderRadius: 8 }}>
+                      "{fb.remarks}"
+                    </Text>
+
+                    {fb.strengths ? (
+                      <View style={{ marginTop: 6, padding: 6, backgroundColor: '#E8F5E9', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#2E7D32' }}>STRENGTHS: {fb.strengths}</Text>
+                      </View>
+                    ) : null}
+                    {fb.improvements ? (
+                      <View style={{ marginTop: 4, padding: 6, backgroundColor: '#FFF3E0', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#E65100' }}>GROWTH AREAS: {fb.improvements}</Text>
+                      </View>
+                    ) : null}
+                    {fb.recommendations ? (
+                      <View style={{ marginTop: 4, padding: 6, backgroundColor: '#E1F5FE', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#0277BD' }}>ACTIONS: {fb.recommendations}</Text>
+                      </View>
+                    ) : null}
                   </Card>
                 ))
               )}
@@ -566,6 +709,21 @@ export const StudentScreen: React.FC = () => {
         onClose={() => setShowNotificationModal(false)}
         onUnreadCountChange={setUnreadNotifCount}
       />
+      <MaterialViewerModal
+        visible={!!previewMaterial}
+        material={previewMaterial}
+        onClose={() => setPreviewMaterial(null)}
+      />
+      {activeTakingQuiz && (
+        <QuizTakerModal
+          isOpen={!!activeTakingQuiz}
+          quiz={activeTakingQuiz}
+          onClose={() => setActiveTakingQuiz(null)}
+          onSubmitted={() => {
+            fetchStudentData();
+          }}
+        />
+      )}
     </View>
   );
 };

@@ -20,19 +20,25 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
+import { StaffExamGradingModal } from '../../components/StaffExamGradingModal';
+import { StaffReviewReplyModal } from '../../components/StaffReviewReplyModal';
+import { MobileButton } from '../../components/ui';
 import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 
 export const StaffScreen: React.FC = () => {
   const { user } = useMobileAuth();
   const { showToast } = useMobileToast();
 
-  const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'materials' | 'messages'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'exams' | 'materials' | 'messages'>('attendance');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Staff Data
   const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [examsList, setExamsList] = useState<any[]>([]);
+  const [gradingExam, setGradingExam] = useState<any | null>(null);
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
@@ -55,6 +61,11 @@ export const StaffScreen: React.FC = () => {
   const [matContent, setMatContent] = useState('');
   const [matSubmitting, setMatSubmitting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [activeConversation, setActiveConversation] = useState<any>(null);
+  const [activeMessages, setActiveMessages] = useState<any[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [newStaffMessage, setNewStaffMessage] = useState('');
+  const [sendingStaffMessage, setSendingStaffMessage] = useState(false);
 
   // Modals & Student Management
   const [showAdmitModal, setShowAdmitModal] = useState(false);
@@ -116,6 +127,12 @@ export const StaffScreen: React.FC = () => {
       const convRes = await mobileApiFetch('/messaging/conversations');
       if (convRes.success && convRes.data) {
         setConversations(Array.isArray(convRes.data) ? convRes.data : convRes.data.conversations || []);
+      }
+
+      // 4. Fetch Exams for Staff
+      const examRes = await mobileApiFetch('/exams');
+      if (examRes.success && examRes.data) {
+        setExamsList(Array.isArray(examRes.data) ? examRes.data : examRes.data.exams || []);
       }
     } catch (e) {
       console.warn('Error loading staff mobile data:', e);
@@ -438,6 +455,41 @@ export const StaffScreen: React.FC = () => {
     }
   };
 
+  const openStaffConversation = async (conv: any) => {
+    setActiveConversation(conv);
+    try {
+      setLoadingMessages(true);
+      const res = await mobileApiFetch(`/messaging/conversations/${conv.id}/messages`);
+      if (res.success && res.data) {
+        setActiveMessages(Array.isArray(res.data) ? res.data : res.data.messages || []);
+      }
+    } catch {
+      showToast('Could not load messages', 'error');
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const handleSendStaffMessage = async () => {
+    if (!newStaffMessage.trim() || !activeConversation || sendingStaffMessage) return;
+    const bodyToSend = newStaffMessage.trim();
+    try {
+      setSendingStaffMessage(true);
+      const res = await mobileApiFetch(`/messaging/conversations/${activeConversation.id}/messages`, {
+        method: 'POST',
+        body: { body: bodyToSend },
+      });
+      if (res.success && res.data?.message) {
+        setActiveMessages((prev) => [...prev, res.data.message]);
+        setNewStaffMessage('');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Failed to send message', 'error');
+    } finally {
+      setSendingStaffMessage(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Header
@@ -506,47 +558,61 @@ export const StaffScreen: React.FC = () => {
       )}
 
       {/* Tabs */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          onPress={() => setActiveTab('attendance')}
-          style={[styles.tabItem, activeTab === 'attendance' && styles.activeTabItem]}
+      <View style={styles.tabBarWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabBarScroll}
         >
-          <Text style={[styles.tabText, activeTab === 'attendance' && styles.activeTabText]}>
-            Attendance
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('batches')}
-          style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
-            Students ({students.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('homework')}
-          style={[styles.tabItem, activeTab === 'homework' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'homework' && styles.activeTabText]}>
-            Homework
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('materials')}
-          style={[styles.tabItem, activeTab === 'materials' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'materials' && styles.activeTabText]}>
-            Materials
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('messages')}
-          style={[styles.tabItem, activeTab === 'messages' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'messages' && styles.activeTabText]}>
-            Parent Chat
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('attendance')}
+            style={[styles.tabItem, activeTab === 'attendance' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'attendance' && styles.activeTabText]}>
+              Attendance
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('batches')}
+            style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
+              Students ({students.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('homework')}
+            style={[styles.tabItem, activeTab === 'homework' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'homework' && styles.activeTabText]}>
+              Homework
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('exams')}
+            style={[styles.tabItem, activeTab === 'exams' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'exams' && styles.activeTabText]}>
+              Exams ({examsList.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('materials')}
+            style={[styles.tabItem, activeTab === 'materials' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'materials' && styles.activeTabText]}>
+              Materials
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('messages')}
+            style={[styles.tabItem, activeTab === 'messages' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'messages' && styles.activeTabText]}>
+              Parent Chat
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {loading ? (
@@ -932,6 +998,66 @@ export const StaffScreen: React.FC = () => {
             </View>
           )}
 
+          {/* TAB: EXAMS & GRADING ROSTER */}
+          {activeTab === 'exams' && (
+            <View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>🏆 Examinations & Grading ({examsList.length})</Text>
+              </View>
+
+              {examsList.length === 0 ? (
+                <Card>
+                  <Text style={styles.emptyText}>No examinations scheduled for your assigned batches.</Text>
+                </Card>
+              ) : (
+                examsList.map((exam) => (
+                  <Card key={exam.id} style={{ marginBottom: 12 }}>
+                    <View style={styles.hwStaffRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.hwTitle}>{exam.title}</Text>
+                        <Text style={styles.hwBatchName}>
+                          {exam.batch?.name || 'Class Batch'} • {exam.subject?.name || 'All Subjects'}
+                        </Text>
+                      </View>
+                      <Badge
+                        label={
+                          exam.isResultsPublished
+                            ? 'RESULTS PUBLISHED'
+                            : exam.isSchedulePublished
+                            ? 'SCHEDULE PUBLISHED'
+                            : 'DRAFT'
+                        }
+                        variant={exam.isResultsPublished ? 'success' : exam.isSchedulePublished ? 'info' : 'warning'}
+                      />
+                    </View>
+
+                    {exam.description ? (
+                      <Text style={[styles.hwDesc, { marginTop: 6 }]}>{exam.description}</Text>
+                    ) : null}
+
+                    <View style={{ marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, color: themeTokens.colors.textMuted }}>
+                        Max: {exam.totalMarks || 100} marks • Pass: {exam.passingMarks || 40}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: themeTokens.colors.textSubtle }}>
+                        {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Date TBD'}
+                      </Text>
+                    </View>
+
+                    <MobileButton
+                      title={exam.isResultsPublished ? 'View Grade Roster →' : 'Enter Marks & Grade →'}
+                      onPress={() => setGradingExam(exam)}
+                      variant="primary"
+                      size="sm"
+                      fullWidth
+                      style={{ marginTop: 12 }}
+                    />
+                  </Card>
+                ))
+              )}
+            </View>
+          )}
+
           {/* TAB: MATERIALS MANAGEMENT */}
           {activeTab === 'materials' && (
             <View>
@@ -976,19 +1102,177 @@ export const StaffScreen: React.FC = () => {
           {/* TAB 4: PARENT CHAT */}
           {activeTab === 'messages' && (
             <View>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>💬 Parent Conversations</Text>
-              </View>
+              {activeConversation ? (
+                <View>
+                  <TouchableOpacity
+                    onPress={() => setActiveConversation(null)}
+                    style={{ paddingVertical: 10, marginBottom: 8 }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: themeTokens.colors.espresso }}>
+                      ← Back to all conversations
+                    </Text>
+                  </TouchableOpacity>
 
-              {conversations.length === 0 ? (
-                <Card><Text style={styles.emptyText}>No parent conversation threads.</Text></Card>
-              ) : (
-                conversations.map((c) => (
-                  <Card key={c.id}>
-                    <Text style={styles.convTitle}>{c.title || 'Parent Message'}</Text>
-                    <Text style={styles.convSub}>Authorized parent-staff communication thread</Text>
+                  <Card>
+                    <Text style={styles.convTitle}>
+                      {activeConversation.parent?.fullName || activeConversation.title || 'Parent Message'}
+                    </Text>
+                    {activeConversation.student && (
+                      <Text style={styles.convSub}>
+                        Student: {activeConversation.student.fullName} ({activeConversation.student.admissionNumber})
+                      </Text>
+                    )}
                   </Card>
-                ))
+
+                  {/* Messages container */}
+                  <View style={{ marginVertical: 12, gap: 10 }}>
+                    {loadingMessages ? (
+                      <Card><Text style={styles.emptyText}>Loading message history...</Text></Card>
+                    ) : activeMessages.length === 0 ? (
+                      <Card><Text style={styles.emptyText}>No messages in this conversation yet.</Text></Card>
+                    ) : (
+                      activeMessages.map((m) => {
+                        const isMine = m.senderId === user?.id || m.isMine;
+                        return (
+                          <View
+                            key={m.id}
+                            style={{
+                              alignSelf: isMine ? 'flex-end' : 'flex-start',
+                              maxWidth: '85%',
+                              backgroundColor: isMine ? themeTokens.colors.espresso : '#ffffff',
+                              borderRadius: 14,
+                              padding: 10,
+                              borderWidth: isMine ? 0 : 1,
+                              borderColor: themeTokens.colors.border,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 10,
+                                fontWeight: '700',
+                                color: isMine ? '#d7ccc8' : themeTokens.colors.mocha,
+                                marginBottom: 2,
+                              }}
+                            >
+                              {isMine ? 'You' : m.sender?.fullName || 'Parent'}
+                            </Text>
+                            {m.attachmentType === 'AUDIO' && (
+                              <Text style={{ fontSize: 12, color: isMine ? '#fff' : '#2d1e18', fontStyle: 'italic' }}>
+                                🎤 Voice message
+                              </Text>
+                            )}
+                            {m.attachmentType === 'IMAGE' && (
+                              <Text style={{ fontSize: 12, color: isMine ? '#fff' : '#2d1e18', fontStyle: 'italic' }}>
+                                📷 Photo attachment
+                              </Text>
+                            )}
+                            {m.attachmentType === 'DOCUMENT' && (
+                              <Text style={{ fontSize: 12, color: isMine ? '#fff' : '#2d1e18', fontStyle: 'italic' }}>
+                                📄 {m.attachmentName || 'Document.pdf'}
+                              </Text>
+                            )}
+                            {Boolean(m.body || m.content) && (
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  color: isMine ? '#ffffff' : themeTokens.colors.textPrimary,
+                                  lineHeight: 18,
+                                }}
+                              >
+                                {m.body || m.content}
+                              </Text>
+                            )}
+                            <Text
+                              style={{
+                                fontSize: 9,
+                                color: isMine ? '#d7ccc8' : themeTokens.colors.textMuted,
+                                alignSelf: 'flex-end',
+                                marginTop: 4,
+                              }}
+                            >
+                              {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+
+                  {/* Reply Input Bar */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <TextInput
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#ffffff',
+                        borderWidth: 1,
+                        borderColor: themeTokens.colors.border,
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 13,
+                        color: themeTokens.colors.textPrimary,
+                      }}
+                      placeholder="Write reply to parent..."
+                      placeholderTextColor="#94a3b8"
+                      value={newStaffMessage}
+                      onChangeText={setNewStaffMessage}
+                    />
+                    <TouchableOpacity
+                      onPress={handleSendStaffMessage}
+                      disabled={!newStaffMessage.trim() || sendingStaffMessage}
+                      style={{
+                        backgroundColor: themeTokens.colors.espresso,
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        opacity: !newStaffMessage.trim() || sendingStaffMessage ? 0.5 : 1,
+                      }}
+                    >
+                      <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }}>Send</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>💬 Parent Conversations</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowReviewsModal(true)}
+                      style={[styles.addHwBtn, { backgroundColor: '#F59E0B' }]}
+                    >
+                      <Text style={styles.addHwBtnText}>⭐ Reviews</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {conversations.length === 0 ? (
+                    <Card><Text style={styles.emptyText}>No parent conversation threads.</Text></Card>
+                  ) : (
+                    conversations.map((c) => (
+                      <Card key={c.id} onPress={() => openStaffConversation(c)}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={styles.convTitle}>{c.parent?.fullName || c.title || 'Parent Message'}</Text>
+                            {c.student && (
+                              <Text style={[styles.convSub, { color: themeTokens.colors.mocha, fontWeight: '600' }]}>
+                                Student: {c.student.fullName} ({c.student.admissionNumber})
+                              </Text>
+                            )}
+                            {c.lastMessage && (
+                              <Text style={styles.convSub} numberOfLines={1}>
+                                {c.lastMessage.body || (c.lastMessage.attachmentType ? `[${c.lastMessage.attachmentType}]` : 'Sent a message')}
+                              </Text>
+                            )}
+                          </View>
+                          {c.unreadCount > 0 ? (
+                            <Badge label={`${c.unreadCount} NEW`} variant="warning" size="sm" />
+                          ) : (
+                            <Badge label="OPEN" variant="info" size="sm" />
+                          )}
+                        </View>
+                      </Card>
+                    ))
+                  )}
+                </View>
               )}
             </View>
           )}
@@ -1255,6 +1539,20 @@ export const StaffScreen: React.FC = () => {
         onConfirm={handleConfirmStatusChange}
         onCancel={() => setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })}
       />
+
+      {gradingExam && (
+        <StaffExamGradingModal
+          isOpen={!!gradingExam}
+          exam={gradingExam}
+          onClose={() => setGradingExam(null)}
+          onUpdated={fetchStaffData}
+        />
+      )}
+
+      <StaffReviewReplyModal
+        isOpen={showReviewsModal}
+        onClose={() => setShowReviewsModal(false)}
+      />
     </View>
   );
 };
@@ -1302,15 +1600,18 @@ const styles = StyleSheet.create({
     color: themeTokens.colors.textLight,
     fontWeight: '700',
   },
-  tabBar: {
-    flexDirection: 'row',
+  tabBarWrapper: {
     backgroundColor: themeTokens.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: themeTokens.colors.border,
   },
+  tabBarScroll: {
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+  },
   tabItem: {
-    flex: 1,
     paddingVertical: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
