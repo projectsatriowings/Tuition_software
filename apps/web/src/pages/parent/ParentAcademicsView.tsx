@@ -194,7 +194,12 @@ export const ParentAcademicsView: React.FC<ParentAcademicsViewProps> = ({ studen
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <span className="font-bold text-[#2D1E18] text-sm">{f.termName}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#2D1E18] text-sm">{f.termName}</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E]">
+                            {f.periodType || 'TERM'}
+                          </span>
+                        </div>
                         <span className="text-[#8D6E63] text-[11px] block mt-0.5">
                           Assessed by {f.teacher} &bull;{' '}
                           {new Date(f.date).toLocaleDateString('en-IN', {
@@ -219,21 +224,53 @@ export const ParentAcademicsView: React.FC<ParentAcademicsViewProps> = ({ studen
                       )}
                     </div>
 
+                    {/* Auto-Calculated Metrics Bar */}
+                    {(f.attendanceRate !== null || f.homeworkRate !== null || f.examAverage !== null) && (
+                      <div className="grid grid-cols-3 gap-2 bg-white p-2.5 rounded-xl border border-[#D7CCC8]/60 text-center">
+                        <div>
+                          <span className="block text-[9px] uppercase font-bold text-[#8D6E63]">Attendance</span>
+                          <strong className="text-xs font-black text-[#2D1E18]">
+                            {f.attendanceRate !== null ? `${f.attendanceRate}%` : 'N/A'}
+                          </strong>
+                        </div>
+                        <div className="border-x border-[#D7CCC8]/60">
+                          <span className="block text-[9px] uppercase font-bold text-[#8D6E63]">Homework</span>
+                          <strong className="text-xs font-black text-[#2D1E18]">
+                            {f.homeworkRate !== null ? `${f.homeworkRate}%` : 'N/A'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="block text-[9px] uppercase font-bold text-[#8D6E63]">Test Average</span>
+                          <strong className="text-xs font-black text-[#2D1E18]">
+                            {f.examAverage !== null ? `${f.examAverage}%` : 'N/A'}
+                          </strong>
+                        </div>
+                      </div>
+                    )}
+
                     <p className="text-[#2D1E18] leading-relaxed italic bg-white p-3 rounded-xl border border-[#D7CCC8]/60">
                       "{f.remarks}"
                     </p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                      {f.strengths && (
-                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-                          <strong className="block text-emerald-800 uppercase text-[10px]">Key Strengths:</strong>
-                          <span className="mt-0.5 block">{f.strengths}</span>
-                        </div>
-                      )}
-                      {f.improvements && (
-                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                          <strong className="block text-amber-800 uppercase text-[10px]">Areas to Improve:</strong>
-                          <span className="mt-0.5 block">{f.improvements}</span>
+                    <div className="space-y-2 text-[11px]">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {f.strengths && (
+                          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
+                            <strong className="block text-emerald-800 uppercase text-[10px]">Key Strengths:</strong>
+                            <span className="mt-0.5 block">{f.strengths}</span>
+                          </div>
+                        )}
+                        {f.improvements && (
+                          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                            <strong className="block text-amber-800 uppercase text-[10px]">Areas to Improve:</strong>
+                            <span className="mt-0.5 block">{f.improvements}</span>
+                          </div>
+                        )}
+                      </div>
+                      {f.recommendations && (
+                        <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900">
+                          <strong className="block text-sky-800 uppercase text-[10px]">Recommended Actions:</strong>
+                          <span className="mt-0.5 block">{f.recommendations}</span>
                         </div>
                       )}
                     </div>

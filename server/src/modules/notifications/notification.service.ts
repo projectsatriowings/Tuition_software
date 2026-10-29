@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { getSmsProvider, getSmsProviderStatus } from './sms.provider.js';
-
-const prisma = new PrismaClient();
 
 export class NotificationService {
   private static workerTimer: NodeJS.Timeout | null = null;

@@ -109,3 +109,4 @@ Place in secure CI build runner and configure environment variables:
 cd apps/mobile
 EXPO_PUBLIC_API_URL="https://api.tuitionos.com/api" npx eas-cli build --platform android --profile production
 ```
+

@@ -9,6 +9,11 @@ import {
   Users, 
   Sparkles,
   X,
+  BookOpen,
+  FileText,
+  HelpCircle,
+  Headphones,
+  ArrowRight,
 } from 'lucide-react';
 
 export const StudentPortal: React.FC = () => {
@@ -30,17 +35,37 @@ export const StudentPortal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('ALL');
+  const [recentMaterials, setRecentMaterials] = useState<any[]>([]);
+  const [recentHomework, setRecentHomework] = useState<any[]>([]);
+  const [recentQuizzes, setRecentQuizzes] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadStudentData() {
       try {
         setLoading(true);
-        const res = await apiFetch('/students/my/profile');
-        if (res.success && res.data?.student) {
-          const s = res.data.student;
-          setStudent(s);
+        const [profRes, matRes, hwRes, quizRes] = await Promise.allSettled([
+          apiFetch('/students/my/profile'),
+          apiFetch('/materials'),
+          apiFetch('/homework'),
+          apiFetch('/quizzes'),
+        ]);
+
+        if (profRes.status === 'fulfilled' && profRes.value.success && profRes.value.data?.student) {
+          setStudent(profRes.value.data.student);
         } else {
-          setError(res.error || 'Student record not found');
+          setError('Student record not found');
+        }
+
+        if (matRes.status === 'fulfilled' && matRes.value.success) {
+          setRecentMaterials((matRes.value.data?.materials || []).slice(0, 3));
+        }
+
+        if (hwRes.status === 'fulfilled' && hwRes.value.success) {
+          setRecentHomework((hwRes.value.data?.homework || []).slice(0, 3));
+        }
+
+        if (quizRes.status === 'fulfilled' && quizRes.value.success) {
+          setRecentQuizzes((quizRes.value.data?.quizzes || []).slice(0, 3));
         }
       } catch (err: any) {
         setError(err.message || 'Failed to load profile');
@@ -145,7 +170,94 @@ export const StudentPortal: React.FC = () => {
         </div>
       </div>
 
-      {/* Academic & Attendance & Fees Overview */}
+      {/* Actionable Recent Curriculum & Activity (Phase 7) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Recent Materials & Audio Lessons */}
+        <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[#4E342E] flex items-center gap-1.5 uppercase tracking-wider">
+              <BookOpen className="w-4 h-4 text-[#6D4C41]" /> Recent Study Materials
+            </span>
+          </div>
+          {recentMaterials.length === 0 ? (
+            <p className="text-xs text-[#8D6E63] italic py-3 text-center">No materials published yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentMaterials.map((m: any) => (
+                <div key={m.id} className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9] flex items-center justify-between text-xs">
+                  <div className="min-w-0 pr-2">
+                    <p className="font-bold text-[#2D1E18] truncate">{m.title}</p>
+                    <span className="text-[10px] text-[#8D6E63]">{m.batch?.name} • {m.type}</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-[#4E342E] border border-[#D7CCC8] shrink-0">
+                    {m.type}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Pending Homework */}
+        <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[#4E342E] flex items-center gap-1.5 uppercase tracking-wider">
+              <FileText className="w-4 h-4 text-amber-700" /> Pending Homework
+            </span>
+          </div>
+          {recentHomework.length === 0 ? (
+            <p className="text-xs text-[#8D6E63] italic py-3 text-center">No assignments due.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentHomework.map((hw: any) => (
+                <div key={hw.id} className="p-2.5 rounded-xl bg-amber-50/50 border border-amber-200/60 flex items-center justify-between text-xs">
+                  <div className="min-w-0 pr-2">
+                    <p className="font-bold text-[#2D1E18] truncate">{hw.title}</p>
+                    <span className="text-[10px] text-amber-800">
+                      Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString() : 'No date'}
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
+                    hw.isSubmitted ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                  }`}>
+                    {hw.isSubmitted ? 'Done' : 'Pending'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Available Quizzes */}
+        <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[#4E342E] flex items-center gap-1.5 uppercase tracking-wider">
+              <HelpCircle className="w-4 h-4 text-indigo-700" /> Available Quizzes
+            </span>
+          </div>
+          {recentQuizzes.length === 0 ? (
+            <p className="text-xs text-[#8D6E63] italic py-3 text-center">No active quizzes.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentQuizzes.map((q: any) => (
+                <div key={q.id} className="p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-200/60 flex items-center justify-between text-xs">
+                  <div className="min-w-0 pr-2">
+                    <p className="font-bold text-[#2D1E18] truncate">{q.title}</p>
+                    <span className="text-[10px] text-indigo-800">
+                      {q.durationMinutes ? `${q.durationMinutes} mins • ` : ''}{q._count?.questions || 0} Questions
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-300 shrink-0">
+                    {q.myAttempt ? 'Completed' : 'Available'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Academic & Attendance Overview */}
       <div className="space-y-6">
           <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
             <div className="flex items-center justify-between">

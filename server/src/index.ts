@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import { config } from './config/index.js';
+import { config, validateProductionConfig } from './config/index.js';
 import { checkDatabaseHealth } from './config/db.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
@@ -44,11 +44,18 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      // In development, allow localhost and any local network origins
-      if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      // In development, allow localhost, local network, and non-browser clients (mobile apps, curl, server-to-server)
+      if (!origin || config.nodeEnv !== 'production') {
         return callback(null, true);
       }
-      return callback(null, true); // adjust for production domain whitelist
+      // In production, validate against configured whitelist
+      const allowedOrigins = config.corsOrigins.length > 0
+        ? config.corsOrigins
+        : ['https://app.tuitionos.com', 'https://admin.tuitionos.com'];
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
   })
@@ -164,6 +171,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server if run directly
 const isMain = process.argv[1] && process.argv[1].endsWith('index.ts');
 if (isMain || process.env.NODE_ENV === 'production') {
+  validateProductionConfig();
   const server = app.listen(config.port, config.host, () => {
     console.log(`[TuitionOS API Server] listening on http://${config.host}:${config.port}`);
     console.log(`[TuitionOS API Server] Health check available at http://${config.host}:${config.port}/api/health`);

@@ -1,10 +1,8 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { verifyPassword, hashPassword, generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../utils/security.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-
-const prisma = new PrismaClient();
 
 const loginSchema = z.object({
   identifier: z.string().min(1, 'Email or Phone is required'),

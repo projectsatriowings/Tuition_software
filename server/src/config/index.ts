@@ -23,6 +23,10 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   nodeEnv: process.env.NODE_ENV || 'development',
   apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:5000/api',
+  corsOrigins: (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   databaseUrl: process.env.DATABASE_URL || '',
   jwt: {
     secret: process.env.JWT_SECRET || 'fallback-jwt-secret-dev-only-32-chars-long',
@@ -43,3 +47,24 @@ export const config = {
     name: process.env.SUPER_ADMIN_NAME || 'Platform Administrator',
   },
 };
+
+/**
+ * Validates that critical secrets are properly configured in production
+ */
+export function validateProductionConfig() {
+  if (config.nodeEnv === 'production') {
+    const errors: string[] = [];
+    if (!config.databaseUrl) {
+      errors.push('DATABASE_URL must be defined in production.');
+    }
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'fallback-jwt-secret-dev-only-32-chars-long') {
+      errors.push('JWT_SECRET must be explicitly set to a cryptographically secure key in production.');
+    }
+    if (!process.env.REFRESH_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET === 'fallback-refresh-secret-dev-only-32') {
+      errors.push('REFRESH_TOKEN_SECRET must be explicitly set in production.');
+    }
+    if (errors.length > 0) {
+      throw new Error(`[Production Security Validation Failed]:\n- ${errors.join('\n- ')}`);
+    }
+  }
+}

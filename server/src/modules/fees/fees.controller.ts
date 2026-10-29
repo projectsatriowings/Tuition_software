@@ -1,11 +1,10 @@
 import { Response } from 'express';
 import crypto from 'crypto';
-import { PrismaClient, Prisma, FeeFrequency, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { Prisma, FeeFrequency, PaymentMethod, PaymentStatus  } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { isStudentAuthorized } from '../students/student-authorization.service.js';
-
-const prisma = new PrismaClient();
 
 // ============================================================================
 // VALIDATION SCHEMAS
