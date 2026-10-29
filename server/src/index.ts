@@ -74,7 +74,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     }
     if (!SILENT_POLL_PATHS.has(req.path)) {
       const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] ${req.method} ${req.originalUrl || req.url} ${res.statusCode} ${durationMs}ms`);
+      const sanitizedUrl = (req.originalUrl || req.url).replace(/([?&](token|t|password|secret)=)[^&]+/gi, '$1[REDACTED]');
+      console.log(`[${timestamp}] ${req.method} ${sanitizedUrl} ${res.statusCode} ${durationMs}ms`);
     }
     return originalEnd.call(this, chunk, encoding, callback);
   };
