@@ -391,14 +391,15 @@ export const StaffManagement: React.FC = () => {
                 </tr>
               ) : (
                 staff.map((item) => (
-                  <tr key={item.id} className="hover:bg-[#FDFBF7] transition-colors">
+                  <tr
+                    key={item.id}
+                    onClick={() => setSelectedStaffId(item.id)}
+                    className="hover:bg-[#FAF8F5] cursor-pointer transition-colors group"
+                  >
                     <td className="py-3.5 px-4">
-                      <button
-                        onClick={() => setSelectedStaffId(item.id)}
-                        className="font-bold text-[#2D1E18] text-sm hover:underline hover:text-[#4E342E] text-left block"
-                      >
+                      <div className="font-bold text-[#2D1E18] text-sm group-hover:underline group-hover:text-[#4E342E] text-left transition-colors">
                         {item.user.fullName}
-                      </button>
+                      </div>
                       <div className="text-[11px] text-[#6D4C41] flex items-center gap-2 mt-0.5">
                         <span className="flex items-center gap-1">
                           <Mail className="w-3 h-3 text-[#8D6E63]" /> {item.user.email}
@@ -467,7 +468,10 @@ export const StaffManagement: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-2">
                         <button
-                          onClick={() => setSelectedStaffId(item.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedStaffId(item.id);
+                          }}
                           className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4E342E] bg-[#4E342E] text-white hover:bg-[#3E2723] transition shadow-sm"
                           title="Open complete staff profile"
                         >
@@ -475,7 +479,10 @@ export const StaffManagement: React.FC = () => {
                           <span>Profile</span>
                         </button>
                         <button
-                          onClick={() => handleOpenAssignmentModal(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAssignmentModal(item);
+                          }}
                           className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
                           title="Assign batches and subjects taught by this staff member"
                         >
@@ -483,7 +490,10 @@ export const StaffManagement: React.FC = () => {
                           <span>Batches</span>
                         </button>
                         <button
-                          onClick={() => handleOpenCredentialsModal(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenCredentialsModal(item);
+                          }}
                           className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
                           title="View or change staff login and password"
                         >
@@ -491,7 +501,10 @@ export const StaffManagement: React.FC = () => {
                           <span>Credentials</span>
                         </button>
                         <button
-                          onClick={() => handleToggleStatus(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleStatus(item);
+                          }}
                           className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
                             item.user.isActive
                               ? 'border-rose-300 text-rose-800 hover:bg-rose-50'

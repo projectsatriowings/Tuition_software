@@ -681,24 +681,24 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
                 className="w-20 h-20 rounded-2xl bg-[#4E342E] text-[#F7F2EF] flex items-center justify-center font-bold text-2xl border-2 border-white shadow-md overflow-hidden cursor-pointer relative group"
                 title="Click to change profile picture"
               >
-                {staff.avatarUrl ? (
+                {/* Fallback initials always rendered underneath */}
+                <span className="select-none">
+                  {staff.user.fullName
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </span>
+                {staff.avatarUrl && (
                   <img
-                    src={`/api/staff/${staff.id}/photo?t=${Date.now()}`}
+                    src={`/api/staff/${staff.id}/photo?v=${Date.now()}`}
                     alt={staff.user.fullName}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover absolute inset-0"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
-                ) : (
-                  <span>
-                    {staff.user.fullName
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
                 )}
                 {/* Overlay icon */}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">

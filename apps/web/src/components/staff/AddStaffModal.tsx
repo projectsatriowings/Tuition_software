@@ -84,8 +84,9 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   const fetchNextCode = async () => {
     try {
       const res = await apiFetch('/staff/next-code');
-      if (res.success && res.data?.nextCode) {
-        setEmployeeCode(res.data.nextCode);
+      const code = res.data?.employeeCode || res.data?.nextCode;
+      if (res.success && code) {
+        setEmployeeCode(code);
       }
     } catch (e) {
       // Fallback
@@ -239,8 +240,27 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         body: JSON.stringify(payload),
       });
 
-      if (res.success && res.data?.staff) {
-        const createdStaff: StaffMember = res.data.staff;
+      const staffObj = res.data?.staff;
+      const staffId = staffObj?.id || res.data?.staffId;
+      if (res.success && (staffObj || staffId)) {
+        const createdStaff: StaffMember = staffObj || {
+          id: staffId,
+          instituteId: res.data?.institute?.id || '',
+          userId: res.data?.user?.id || '',
+          employeeCode: res.data?.employeeCode || employeeCode,
+          designation,
+          qualification: qualificationDegree || null,
+          createdAt: new Date().toISOString(),
+          user: res.data?.user || {
+            id: res.data?.user?.id || '',
+            fullName,
+            email: loginEmail,
+            phone: phone || null,
+            role: 'STAFF',
+            isActive: true,
+            mustChangePassword: false,
+          },
+        };
 
         // If qualification details provided, save them
         if (qualificationDegree.trim() && qualificationInstitution.trim()) {
@@ -301,7 +321,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           instituteCode: activeInstituteCode,
         });
       } else {
-        setError(res.error || 'Failed to create staff member');
+        setError(res.error || res.message || 'Failed to create staff member');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create staff member');
@@ -473,7 +493,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                 <input
                   type="text"
                   required
-                  value={employeeCode}
+                  value={employeeCode || 'Auto-generated on save'}
                   onChange={(e) => setEmployeeCode(e.target.value)}
                   placeholder="e.g. APEX-EMP-001"
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"

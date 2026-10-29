@@ -219,7 +219,7 @@ export async function getNextEmployeeCodeHandler(req: AuthenticatedRequest, res:
     const employeeCode = await generateNextEmployeeCode(prisma, instituteId);
     return res.json({
       success: true,
-      data: { employeeCode },
+      data: { employeeCode, nextCode: employeeCode },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to generate next employee code' });
@@ -439,6 +439,17 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         institute: institute || null,
         permanentPassword,
         temporaryPassword: permanentPassword,
+        staff: {
+          id: result.staffProfile.id,
+          instituteId,
+          userId: result.user.id,
+          employeeCode: result.staffProfile.employeeCode,
+          designation: result.staffProfile.designation,
+          qualification: result.staffProfile.qualification,
+          department: result.staffProfile.department,
+          employmentType: result.staffProfile.employmentType,
+          user: result.user,
+        },
       },
     });
   } catch (err: any) {

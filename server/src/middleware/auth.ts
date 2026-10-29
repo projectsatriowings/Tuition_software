@@ -14,8 +14,8 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   let token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
   // Also accept token from query parameter (for media/image streaming where browsers and <img> tags cannot attach Authorization headers)
-  if (!token && (req.query.token || req.query.t)) {
-    token = (req.query.token || req.query.t) as string;
+  if (!token && req.query.token) {
+    token = req.query.token as string;
   }
 
   if (!token) {

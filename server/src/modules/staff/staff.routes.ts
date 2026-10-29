@@ -25,6 +25,10 @@ import { photoUpload, fileUpload } from '../../utils/storage.js';
 
 const router = Router();
 
+// Staff photo streaming (accessible to browser <img> tags without header requirements)
+router.get('/:id/photo', getStaffPhoto);
+
+// Authenticated endpoints
 router.use(authenticateToken);
 router.use(requireInstituteContext);
 
@@ -38,14 +42,13 @@ router.patch('/:id/status', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), update
 router.post('/:id/assignments', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), assignStaffBatches);
 router.post('/:id/reset-password', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), resetStaffPassword);
 
-// Staff Photo
+// Staff Photo Upload
 router.post(
   '/:id/photo',
   requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
   photoUpload.single('photo'),
   uploadStaffPhoto
 );
-router.get('/:id/photo', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getStaffPhoto);
 
 // Qualifications
 router.post('/:id/qualifications', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), addStaffQualification);
