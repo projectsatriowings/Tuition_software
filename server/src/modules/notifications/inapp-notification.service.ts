@@ -1,7 +1,6 @@
-import { PrismaClient, UserRole, AttendanceType } from '@prisma/client';
+import { UserRole, AttendanceType  } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { Response } from 'express';
-
-const prisma = new PrismaClient();
 
 // In-memory active SSE subscriber connections: userId -> Set<Response>
 const activeSseClients = new Map<string, Set<Response>>();
@@ -199,13 +198,14 @@ export class InAppNotificationService {
           userId: recipient.userId,
           role: recipient.role,
           title,
-          message,
+          message: recipient.role === 'PARENT' ? `Your child (${student.firstName}) ${eventType === 'CHECK_IN' ? 'checked in' : 'checked out'} at ${timeStr}.` : message,
           type: 'ATTENDANCE',
           studentId,
           attendanceEventId,
           eventType: eventType as AttendanceType,
           eventTime,
           isRead: false,
+          link: '/attendance',
           pushStatus,
           pushError,
           idempotencyKey,
@@ -245,4 +245,619 @@ export class InAppNotificationService {
 
     return createdNotifications;
   }
+
+  /**
+   * Send in-app notification when an examination schedule is published or rescheduled.
+   * Targets all enrolled students in the batch/subject and their linked parents.
+   */
+  static async notifyExamScheduled(examId: string, isReschedule = false) {
+    const exam = await prisma.examination.findUnique({
+      where: { id: examId },
+      include: {
+        batch: { select: { id: true, name: true } },
+        subject: { select: { id: true, name: true, code: true } },
+      },
+    });
+    if (!exam) return [];
+
+    const examDateStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(exam.examDate));
+
+    const timeStr = exam.startTime ? ` (${exam.startTime}${exam.endTime ? ' - ' + exam.endTime : ''})` : '';
+    const title = isReschedule ? `Exam Rescheduled: ${exam.title}` : `New Exam Scheduled: ${exam.title}`;
+    const message = `${exam.title} for ${exam.subject.name} in batch ${exam.batch.name} is scheduled on ${examDateStr}${timeStr}. Max Marks: ${Number(exam.totalMarks)}.`;
+
+    const enrollments = await prisma.studentEnrollment.findMany({
+      where: {
+        batchId: exam.batchId,
+        isActive: true,
+        ...(exam.subjectId ? { OR: [{ subjectId: null }, { subjectId: exam.subjectId }] } : {}),
+      },
+      include: {
+        student: {
+          include: {
+            user: { select: { id: true, fullName: true } },
+            parentRelations: {
+              include: {
+                parent: {
+                  include: {
+                    user: { select: { id: true, fullName: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const notifications = [];
+    const notifPrefix = isReschedule ? `EXAM_RESCHED_${exam.id}_${Date.now()}` : `EXAM_SCHED_${exam.id}`;
+
+    for (const e of enrollments) {
+      const student = e.student;
+      if (student.userId) {
+        const idempotencyKey = `${notifPrefix}_STU_${student.userId}`;
+        const existing = await prisma.notification.findUnique({ where: { idempotencyKey } });
+        if (!existing) {
+          const notif = await prisma.notification.create({
+            data: {
+              instituteId: exam.instituteId,
+              userId: student.userId,
+              role: 'STUDENT',
+              title,
+              message,
+              type: 'ACADEMIC',
+              studentId: student.id,
+              link: '/exams',
+              idempotencyKey,
+            },
+          });
+          notifications.push(notif);
+          this.broadcastToUser(student.userId, { type: 'NOTIFICATION_CREATED', data: notif });
+        }
+      }
+
+      for (const pr of student.parentRelations) {
+        const parentUser = pr.parent?.user;
+        if (parentUser?.id) {
+          const idempotencyKey = `${notifPrefix}_PAR_${parentUser.id}_STU_${student.id}`;
+          const existing = await prisma.notification.findUnique({ where: { idempotencyKey } });
+          if (!existing) {
+            const notif = await prisma.notification.create({
+              data: {
+                instituteId: exam.instituteId,
+                userId: parentUser.id,
+                role: 'PARENT',
+                title,
+                message: `${student.firstName}'s ${exam.title} (${exam.subject.name}) is scheduled on ${examDateStr}${timeStr}.`,
+                type: 'ACADEMIC',
+                studentId: student.id,
+                link: '/exams',
+                idempotencyKey,
+              },
+            });
+            notifications.push(notif);
+            this.broadcastToUser(parentUser.id, { type: 'NOTIFICATION_CREATED', data: notif });
+          }
+        }
+      }
+    }
+    return notifications;
+  }
+
+  /**
+   * Send in-app notification when results are officially published for an examination.
+   */
+  static async notifyExamResultsPublished(examId: string) {
+    const exam = await prisma.examination.findUnique({
+      where: { id: examId },
+      include: {
+        batch: { select: { id: true, name: true } },
+        subject: { select: { id: true, name: true } },
+        marks: {
+          include: {
+            student: {
+              include: {
+                user: { select: { id: true } },
+                parentRelations: {
+                  include: {
+                    parent: {
+                      include: {
+                        user: { select: { id: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!exam) return [];
+
+    const notifications = [];
+    const maxMarks = Number(exam.totalMarks);
+
+    for (const mark of exam.marks) {
+      const student = mark.student;
+      const scoreText = mark.isAbsent
+        ? 'Absent'
+        : `${Number(mark.marksObtained)} / ${maxMarks} (${Math.round((Number(mark.marksObtained) / maxMarks) * 100)}%)`;
+      const title = `Exam Results Published: ${exam.title}`;
+      const studentMsg = `Results for ${exam.title} (${exam.subject.name}) have been published. Your score: ${scoreText}.`;
+      const parentMsg = `Results for ${student.firstName}'s ${exam.title} (${exam.subject.name}) have been published. Score: ${scoreText}.`;
+
+      if (student.userId) {
+        const idempotencyKey = `EXAM_RES_${exam.id}_STU_${student.userId}`;
+        const existing = await prisma.notification.findUnique({ where: { idempotencyKey } });
+        if (!existing) {
+          const notif = await prisma.notification.create({
+            data: {
+              instituteId: exam.instituteId,
+              userId: student.userId,
+              role: 'STUDENT',
+              title,
+              message: studentMsg,
+              type: 'ACADEMIC',
+              studentId: student.id,
+              link: '/exams',
+              idempotencyKey,
+            },
+          });
+          notifications.push(notif);
+          this.broadcastToUser(student.userId, { type: 'NOTIFICATION_CREATED', data: notif });
+        }
+      }
+
+      for (const pr of student.parentRelations) {
+        const parentUser = pr.parent?.user;
+        if (parentUser?.id) {
+          const idempotencyKey = `EXAM_RES_${exam.id}_PAR_${parentUser.id}_STU_${student.id}`;
+          const existing = await prisma.notification.findUnique({ where: { idempotencyKey } });
+          if (!existing) {
+            const notif = await prisma.notification.create({
+              data: {
+                instituteId: exam.instituteId,
+                userId: parentUser.id,
+                role: 'PARENT',
+                title,
+                message: parentMsg,
+                type: 'ACADEMIC',
+                studentId: student.id,
+                link: '/exams',
+                idempotencyKey,
+              },
+            });
+            notifications.push(notif);
+            this.broadcastToUser(parentUser.id, { type: 'NOTIFICATION_CREATED', data: notif });
+          }
+        }
+      }
+    }
+    return notifications;
+  }
+
+  /**
+   * Send in-app notification when an academic progress report is published.
+   */
+  static async notifyProgressReportPublished(feedbackId: string, isUpdate = false) {
+    const feedback = await prisma.progressFeedback.findUnique({
+      where: { id: feedbackId },
+      include: {
+        batch: { select: { id: true, name: true } },
+        subject: { select: { id: true, name: true } },
+        staff: { select: { id: true, fullName: true } },
+        student: {
+          include: {
+            user: { select: { id: true } },
+            parentRelations: {
+              include: {
+                parent: {
+                  include: {
+                    user: { select: { id: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!feedback) return [];
+
+    const notifications = [];
+    const student = feedback.student;
+    const subjectName = feedback.subject?.name ? ` - ${feedback.subject.name}` : '';
+    const title = isUpdate
+      ? `Progress Report Updated: ${feedback.termName}`
+      : `New Progress Report: ${feedback.termName}`;
+
+    const studentMsg = `Your academic progress report for ${feedback.termName}${subjectName} is now available. Evaluated by ${feedback.staff.fullName}.`;
+    const parentMsg = `Academic progress report for ${student.firstName} (${feedback.termName}${subjectName}) has been published by ${feedback.staff.fullName}.`;
+    const notifPrefix = isUpdate ? `PROG_REP_${feedback.id}_${Date.now()}` : `PROG_REP_${feedback.id}`;
+
+    // 1. Notify Student
+    if (student.userId) {
+      const idempotencyKey = `${notifPrefix}_STU_${student.userId}`;
+      const existing = await prisma.notification.findUnique({ where: { idempotencyKey } });
+      if (!existing) {
+        const notif = await prisma.notification.create({
+          data: {
+            instituteId: feedback.instituteId,
+            userId: student.userId,
+            role: 'STUDENT',
+            title,
+            message: studentMsg,
+            type: 'ACADEMIC',
+            studentId: student.id,
+            link: '/progress_reviews',
+            idempotencyKey,
+          },
+        });
+        notifications.push(notif);
+        this.broadcastToUser(student.userId, { type: 'NOTIFICATION_CREATED', data: notif });
+      }
+    }
+
+    // 2. Notify linked Parents
+    for (const pr of student.parentRelations) {
+      const parentUser = pr.parent?.user;
+      if (parentUser?.id) {
+        const idempotencyKey = `${notifPrefix}_PAR_${parentUser.id}_STU_${student.id}`;
+        const existing = await prisma.notification.findUnique({ where: { idempotencyKey } });
+        if (!existing) {
+          const notif = await prisma.notification.create({
+            data: {
+              instituteId: feedback.instituteId,
+              userId: parentUser.id,
+              role: 'PARENT',
+              title,
+              message: parentMsg,
+              type: 'ACADEMIC',
+              studentId: student.id,
+              link: '/parent_academics',
+              idempotencyKey,
+            },
+          });
+          notifications.push(notif);
+          this.broadcastToUser(parentUser.id, { type: 'NOTIFICATION_CREATED', data: notif });
+        }
+      }
+    }
+
+    return notifications;
+  }
+
+  /**
+   * Send notification to parent when staff replies to their feedback
+   */
+  static async notifyParentFeedbackReplied(reviewId: string) {
+    const review = await prisma.parentReview.findUnique({
+      where: { id: reviewId },
+      include: {
+        parent: { include: { user: { select: { id: true, fullName: true } } } },
+        student: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    if (!review || !review.parent?.user?.id) return null;
+
+    const parentUserId = review.parent.user.id;
+    const title = `Reply to Your Feedback: ${review.subject || 'Faculty Response'}`;
+    const preview = (review.replyText || '').slice(0, 100);
+    const message = `Faculty / Administration replied: "${preview}${review.replyText && review.replyText.length > 100 ? '...' : ''}"`;
+    const idempotencyKey = `FEEDBACK_REPLY_${review.id}_${Date.now()}`;
+
+    const notif = await prisma.notification.create({
+      data: {
+        instituteId: review.instituteId,
+        userId: parentUserId,
+        role: 'PARENT',
+        title,
+        message,
+        type: 'GENERAL',
+        studentId: review.studentId || null,
+        link: '/progress_reviews',
+        idempotencyKey,
+      },
+    });
+
+    this.broadcastToUser(parentUserId, { type: 'NOTIFICATION_CREATED', data: notif });
+    return notif;
+  }
+
+  /**
+   * Dispatch in-app notification and SSE alert for new chat message
+   */
+  static async notifyNewChatMessage(params: {
+    conversationId: string;
+    messageId: string;
+    senderId: string;
+    senderName: string;
+    recipientUserId: string;
+    recipientRole: UserRole;
+    instituteId: string;
+    studentId?: string | null;
+    body: string;
+    attachmentType?: string | null;
+  }) {
+    try {
+      const {
+        conversationId,
+        messageId,
+        senderId,
+        senderName,
+        recipientUserId,
+        recipientRole,
+        instituteId,
+        studentId,
+        body,
+        attachmentType,
+      } = params;
+
+      if (!recipientUserId || recipientUserId === senderId) return null;
+
+      let preview = body ? (body.length > 80 ? body.slice(0, 80) + '...' : body) : '';
+      if (!preview) {
+        if (attachmentType === 'AUDIO') preview = '🎤 Sent a voice message';
+        else if (attachmentType === 'IMAGE') preview = '📷 Sent an image attachment';
+        else if (attachmentType === 'DOCUMENT') preview = '📄 Sent a document attachment';
+        else preview = 'Sent an attachment';
+      }
+
+      const title = `Message from ${senderName}`;
+      const idempotencyKey = `CHAT_MSG_${messageId}_RECIPIENT_${recipientUserId}`;
+
+      const notif = await prisma.notification.upsert({
+        where: { idempotencyKey },
+        create: {
+          instituteId,
+          userId: recipientUserId,
+          role: recipientRole,
+          title,
+          message: preview,
+          type: 'MESSAGE',
+          studentId: studentId || null,
+          link: `/messaging?conversationId=${conversationId}`,
+          idempotencyKey,
+        },
+        update: {},
+      });
+
+      this.broadcastToUser(recipientUserId, {
+        type: 'NEW_CHAT_MESSAGE',
+        conversationId,
+        notification: notif,
+        messageId,
+      });
+
+      return notif;
+    } catch (err) {
+      console.warn('[notifyNewChatMessage Warning]', err);
+      return null;
+    }
+  }
+
+  /**
+   * Dispatch in-app notification when a student submits homework
+   */
+  static async notifyHomeworkSubmitted(submissionId: string) {
+    try {
+      const sub = await prisma.homeworkSubmission.findUnique({
+        where: { id: submissionId },
+        include: {
+          material: {
+            include: {
+              batch: { select: { id: true, name: true } },
+              uploader: { select: { id: true, role: true } },
+            },
+          },
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              admissionNumber: true,
+              instituteId: true,
+            },
+          },
+        },
+      });
+
+      if (!sub || !sub.material.uploaderId) return null;
+
+      const teacherUserId = sub.material.uploaderId;
+      const teacherRole = sub.material.uploader?.role || 'STAFF';
+      const studentName = `${sub.student.firstName} ${sub.student.lastName}`.trim();
+      const idempotencyKey = `hw_sub_${sub.id}`;
+
+      const notif = await prisma.notification.upsert({
+        where: { idempotencyKey },
+        create: {
+          instituteId: sub.student.instituteId,
+          userId: teacherUserId,
+          role: teacherRole as UserRole,
+          title: `Homework Submitted: ${sub.material.title}`,
+          message: `${studentName} submitted work for ${sub.material.title} (${sub.material.batch?.name || 'Batch'}).`,
+          type: 'ACADEMIC',
+          studentId: sub.student.id,
+          link: '/homework',
+          idempotencyKey,
+        },
+        update: {},
+      });
+
+      this.broadcastToUser(teacherUserId, {
+        type: 'NOTIFICATION_RECEIVED',
+        notification: notif,
+      });
+
+      return notif;
+    } catch (err) {
+      console.warn('[notifyHomeworkSubmitted Warning]', err);
+      return null;
+    }
+  }
+
+  /**
+   * Dispatch in-app notifications to student and linked parents when homework is graded
+   */
+  static async notifyHomeworkGraded(submissionId: string) {
+    try {
+      const sub = await prisma.homeworkSubmission.findUnique({
+        where: { id: submissionId },
+        include: {
+          material: { select: { id: true, title: true, instituteId: true } },
+          student: {
+            include: {
+              user: { select: { id: true, role: true } },
+              parentRelations: {
+                include: {
+                  parent: { include: { user: { select: { id: true, role: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!sub) return null;
+
+      const studentName = `${sub.student.firstName} ${sub.student.lastName}`.trim();
+      const gradeText = sub.grade ? `Grade: ${sub.grade}` : 'Completed';
+      const feedbackText = sub.feedback ? ` • "${sub.feedback}"` : '';
+
+      // 1. Notify Student
+      if (sub.student.userId) {
+        const studentKey = `hw_grade_${sub.id}_student`;
+        const studentNotif = await prisma.notification.upsert({
+          where: { idempotencyKey: studentKey },
+          create: {
+            instituteId: sub.student.instituteId,
+            userId: sub.student.userId,
+            role: 'STUDENT',
+            title: `Homework Graded: ${sub.material.title}`,
+            message: `Your assignment has been graded. ${gradeText}${feedbackText}`,
+            type: 'ACADEMIC',
+            studentId: sub.student.id,
+            link: '/homework',
+            idempotencyKey: studentKey,
+          },
+          update: {},
+        });
+
+        this.broadcastToUser(sub.student.userId, {
+          type: 'NOTIFICATION_RECEIVED',
+          notification: studentNotif,
+        });
+      }
+
+      // 2. Notify Linked Parents
+      for (const rel of sub.student.parentRelations) {
+        const parentUserId = rel.parent?.userId;
+        if (!parentUserId) continue;
+
+        const parentKey = `hw_grade_${sub.id}_parent_${parentUserId}`;
+        const parentNotif = await prisma.notification.upsert({
+          where: { idempotencyKey: parentKey },
+          create: {
+            instituteId: sub.student.instituteId,
+            userId: parentUserId,
+            role: 'PARENT',
+            title: `Homework Graded: ${sub.material.title}`,
+            message: `${studentName}'s assignment was graded. ${gradeText}${feedbackText}`,
+            type: 'ACADEMIC',
+            studentId: sub.student.id,
+            link: '/parent_academics',
+            idempotencyKey: parentKey,
+          },
+          update: {},
+        });
+
+        this.broadcastToUser(parentUserId, {
+          type: 'NOTIFICATION_RECEIVED',
+          notification: parentNotif,
+        });
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[notifyHomeworkGraded Warning]', err);
+      return null;
+    }
+  }
+
+  /**
+   * Dispatch in-app notification when a fee payment is recorded
+   */
+  static async notifyFeePaymentRecorded(paymentId: string) {
+    try {
+      const payment = await prisma.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+          feeAssignment: {
+            include: {
+              feeStructure: { select: { name: true } },
+            },
+          },
+          student: {
+            include: {
+              user: { select: { id: true, role: true } },
+              parentRelations: {
+                include: {
+                  parent: { include: { user: { select: { id: true, role: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!payment) return null;
+
+      const student = payment.student;
+      const feeName = payment.feeAssignment.feeStructure.name;
+      const amountStr = Number(payment.amountPaid).toLocaleString('en-IN');
+      const studentName = `${student.firstName} ${student.lastName}`.trim();
+
+      // Notify Linked Parents
+      for (const rel of student.parentRelations) {
+        const parentUserId = rel.parent?.userId;
+        if (!parentUserId) continue;
+
+        const parentKey = `fee_pay_${payment.id}_parent_${parentUserId}`;
+        const parentNotif = await prisma.notification.upsert({
+          where: { idempotencyKey: parentKey },
+          create: {
+            instituteId: student.instituteId,
+            userId: parentUserId,
+            role: 'PARENT',
+            title: `Fee Payment Recorded: ₹${amountStr}`,
+            message: `Payment of ₹${amountStr} for ${feeName} (${studentName}) was recorded successfully. Receipt #${payment.receiptNumber || payment.id.slice(0, 8)}.`,
+            type: 'GENERAL',
+            studentId: student.id,
+            link: '/parent_fees',
+            idempotencyKey: parentKey,
+          },
+          update: {},
+        });
+
+        this.broadcastToUser(parentUserId, {
+          type: 'NOTIFICATION_RECEIVED',
+          notification: parentNotif,
+        });
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[notifyFeePaymentRecorded Warning]', err);
+      return null;
+    }
+  }
+
 }

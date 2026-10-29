@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
@@ -7,8 +7,6 @@ import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
 import { generateNextEmployeeCode } from './staff-code.service.js';
 import { resolveAbsolutePath, getRelativeStorageKey } from '../../utils/storage.js';
-
-const prisma = new PrismaClient();
 
 export const createStaffSchema = z.object({
   fullName: z.string().min(2, 'Staff full name is required'),

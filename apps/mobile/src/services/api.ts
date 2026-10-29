@@ -169,6 +169,19 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
   }
 }
 
+const mobileInFlight = new Map<string, Promise<MobileApiResponse<any>>>();
+const mobileCache = new Map<string, { res: MobileApiResponse<any>; expiry: number }>();
+
+export function invalidateMobileCache(pattern?: string) {
+  if (!pattern) {
+    mobileCache.clear();
+    return;
+  }
+  for (const k of mobileCache.keys()) {
+    if (k.includes(pattern)) mobileCache.delete(k);
+  }
+}
+
 export async function mobileApiFetch<T = any>(
   endpoint: string,
   options: {
@@ -178,8 +191,14 @@ export async function mobileApiFetch<T = any>(
     idempotencyKey?: string;
     isRetry?: boolean;
     timeoutMs?: number;
+    skipCache?: boolean;
+    cacheTtlMs?: number;
   } = {}
 ): Promise<MobileApiResponse<T>> {
+  const method = options.method || 'GET';
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    invalidateMobileCache();
+  }
   // Check custom URL in storage if not initialized
   const storedUrl = await MobileStorage.getItem(AppConfig.storageKeys.customApiUrl);
   if (storedUrl) {
@@ -198,6 +217,19 @@ export async function mobileApiFetch<T = any>(
       }
     } else {
       resolvedInstituteId = storedInstitute;
+    }
+  }
+
+  const isCacheable = method === 'GET' && !options.skipCache && !endpoint.includes('/auth/login');
+  const cacheKey = `${token ? token.slice(-8) : 'anon'}:${resolvedInstituteId || 'global'}:${endpoint}`;
+
+  if (isCacheable) {
+    const cached = mobileCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.res as MobileApiResponse<T>;
+    }
+    if (mobileInFlight.has(cacheKey)) {
+      return mobileInFlight.get(cacheKey) as Promise<MobileApiResponse<T>>;
     }
   }
 
@@ -319,6 +351,11 @@ export async function mobileApiFetch<T = any>(
         data: json.data,
         timestamp: new Date().toISOString(),
       };
+    }
+
+    if (isCacheable) {
+      const ttl = options.cacheTtlMs ?? (endpoint.includes('/batches') ? 20000 : 8000);
+      mobileCache.set(cacheKey, { res: json, expiry: Date.now() + ttl });
     }
 
     return json;

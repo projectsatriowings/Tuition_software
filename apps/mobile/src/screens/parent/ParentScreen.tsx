@@ -39,6 +39,9 @@ export const ParentScreen: React.FC = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [reviews, setReviews] = useState<any[]>([]);
+  const [childExams, setChildExams] = useState<any[]>([]);
+  const [childReportCard, setChildReportCard] = useState<any>(null);
+  const [childProgressReports, setChildProgressReports] = useState<any[]>([]);
 
   // Receipt Modal
   const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
@@ -134,6 +137,21 @@ export const ParentScreen: React.FC = () => {
       if (hwRes.success && hwRes.data) {
         setHomeworkList(Array.isArray(hwRes.data) ? hwRes.data : hwRes.data.homework || []);
       }
+
+      const [exRes, rcRes, acadRes] = await Promise.all([
+        mobileApiFetch('/exams?status=PUBLISHED'),
+        mobileApiFetch(`/exams/students/${childStudentId}/report-card`),
+        mobileApiFetch(`/parents/students/${childStudentId}/academics`),
+      ]);
+      if (exRes.success && exRes.data) {
+        setChildExams(Array.isArray(exRes.data) ? exRes.data : exRes.data.exams || []);
+      }
+      if (rcRes.success && rcRes.data) {
+        setChildReportCard(rcRes.data);
+      }
+      if (acadRes.success && acadRes.data?.feedbacks) {
+        setChildProgressReports(acadRes.data.feedbacks);
+      }
     } catch (e) {
       console.warn('Error loading child details:', e);
     }
@@ -187,7 +205,7 @@ export const ParentScreen: React.FC = () => {
     try {
       const res = await mobileApiFetch(`/messaging/conversations/${activeConversation.id}/messages`, {
         method: 'POST',
-        body: { content: newMessage.trim() },
+        body: { body: newMessage.trim() },
       });
       if (res.success) {
         setNewMessage('');
@@ -463,6 +481,145 @@ export const ParentScreen: React.FC = () => {
                   </Card>
                 ))
               )}
+
+              {/* SECTION: EXAMINATIONS & TEST RESULTS */}
+              <View style={[styles.sectionHeader, { marginTop: 18 }]}>
+                <Text style={styles.sectionTitle}>🏆 Examinations & Test Results</Text>
+                <Text style={styles.sectionCount}>{childExams.length} tests</Text>
+              </View>
+
+              {/* Cumulative Progress Summary Card */}
+              {childReportCard?.summary && childReportCard.summary.totalExams > 0 ? (
+                <Card>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#6D4C41', textTransform: 'uppercase' }}>
+                        Cumulative Score
+                      </Text>
+                      <Text style={{ fontSize: 20, fontWeight: '900', color: '#2D1E18', marginTop: 2 }}>
+                        {childReportCard.summary.cumulativePercentage}%
+                      </Text>
+                    </View>
+                    <Badge
+                      label={childReportCard.summary.status}
+                      variant={childReportCard.summary.status === 'DISTINCTION' ? 'success' : 'info'}
+                      size="sm"
+                    />
+                  </View>
+                  <Text style={{ fontSize: 11, color: '#8D6E63', marginTop: 4 }}>
+                    Tests Cleared: {childReportCard.summary.totalPassed} of {childReportCard.summary.totalExams} &bull; Total Points: {childReportCard.summary.totalMarksObtained}/{childReportCard.summary.totalMaxMarks}
+                  </Text>
+                </Card>
+              ) : null}
+
+              {childExams.length === 0 ? (
+                <Card><Text style={styles.emptyText}>No scheduled exams or published test results yet.</Text></Card>
+              ) : (
+                childExams.map((ex: any) => {
+                  const mark = childReportCard?.marks?.find((m: any) => m.examId === ex.id);
+                  const isResultsPub = ex.isResultsPublished || !!mark;
+
+                  return (
+                    <Card key={ex.id}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#2D1E18' }}>{ex.title}</Text>
+                          <Text style={{ fontSize: 11, color: '#6D4C41', marginTop: 2 }}>
+                            {ex.subject?.name} &bull; Max: {ex.totalMarks} pts
+                          </Text>
+                        </View>
+                        <Badge
+                          label={isResultsPub ? (mark?.isPassed ? 'CLEARED' : mark?.isAbsent ? 'ABSENT' : 'RESULT') : 'SCHEDULED'}
+                          variant={isResultsPub ? (mark?.isPassed ? 'success' : 'danger') : 'info'}
+                          size="sm"
+                        />
+                      </View>
+
+                      <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#EFEBE9' }}>
+                        <Text style={{ fontSize: 11, color: '#8D6E63' }}>
+                          Date: {new Date(ex.examDate).toLocaleDateString('en-IN')}
+                          {ex.startTime ? ` (${ex.startTime}${ex.endTime ? ' - ' + ex.endTime : ''})` : ''}
+                        </Text>
+                      </View>
+
+                      {mark ? (
+                        <View style={{ marginTop: 6, padding: 8, backgroundColor: mark.isPassed ? '#E8F5E9' : '#FFEBEE', borderRadius: 8 }}>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: mark.isPassed ? '#2E7D32' : '#C62828' }}>
+                            Score: {mark.marksObtained} / {mark.maxMarks} ({mark.percentage}%) &bull; Grade: {mark.grade}
+                          </Text>
+                          {mark.remarks ? (
+                            <Text style={{ fontSize: 11, color: '#4E342E', fontStyle: 'italic', marginTop: 2 }}>
+                              "{mark.remarks}"
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : null}
+                    </Card>
+                  );
+                })
+              )}
+
+              {/* SECTION: ACADEMIC PROGRESS REPORTS */}
+              <View style={[styles.sectionHeader, { marginTop: 18 }]}>
+                <Text style={styles.sectionTitle}>✨ Academic Progress Reports</Text>
+                <Text style={styles.sectionCount}>{childProgressReports.length} reports</Text>
+              </View>
+
+              {childProgressReports.length === 0 ? (
+                <Card><Text style={styles.emptyText}>No teacher progress reports published for this term yet.</Text></Card>
+              ) : (
+                childProgressReports.map((pr: any) => (
+                  <Card key={pr.id}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#2D1E18' }}>{pr.termName}</Text>
+                        <Text style={{ fontSize: 11, color: '#6D4C41', marginTop: 2 }}>
+                          Faculty: {pr.teacher || 'Assigned Staff'} &bull; {pr.periodType || 'TERM'}
+                        </Text>
+                      </View>
+                      <Badge label={`${pr.rating || 5}/5 ★`} variant="info" size="sm" />
+                    </View>
+
+                    {/* Auto-Calculated Indicators */}
+                    {(pr.attendanceRate !== null || pr.homeworkRate !== null || pr.examAverage !== null) ? (
+                      <View style={{ flexDirection: 'row', backgroundColor: '#F7F2EF', padding: 8, borderRadius: 8, marginTop: 8, justifyContent: 'space-around' }}>
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>ATTENDANCE</Text>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{pr.attendanceRate !== null ? `${pr.attendanceRate}%` : 'N/A'}</Text>
+                        </View>
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>HOMEWORK</Text>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{pr.homeworkRate !== null ? `${pr.homeworkRate}%` : 'N/A'}</Text>
+                        </View>
+                        <View style={{ alignItems: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>TEST AVG</Text>
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{pr.examAverage !== null ? `${pr.examAverage}%` : 'N/A'}</Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#2D1E18', marginTop: 8, backgroundColor: '#F7F2EF', padding: 8, borderRadius: 8 }}>
+                      "{pr.remarks}"
+                    </Text>
+
+                    {pr.strengths ? (
+                      <View style={{ marginTop: 6, padding: 6, backgroundColor: '#E8F5E9', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#2E7D32' }}>STRENGTHS: {pr.strengths}</Text>
+                      </View>
+                    ) : null}
+                    {pr.improvements ? (
+                      <View style={{ marginTop: 4, padding: 6, backgroundColor: '#FFF3E0', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#E65100' }}>AREAS TO IMPROVE: {pr.improvements}</Text>
+                      </View>
+                    ) : null}
+                    {pr.recommendations ? (
+                      <View style={{ marginTop: 4, padding: 6, backgroundColor: '#E1F5FE', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#0277BD' }}>ACTIONS: {pr.recommendations}</Text>
+                      </View>
+                    ) : null}
+                  </Card>
+                ))
+              )}
             </View>
           )}
 
@@ -559,7 +716,18 @@ export const ParentScreen: React.FC = () => {
                             <Text style={styles.msgSender}>
                               {isMine ? 'You' : m.sender?.fullName || 'Teacher'}
                             </Text>
-                            <Text style={styles.msgBody}>{m.content}</Text>
+                            {m.attachmentType === 'AUDIO' && (
+                              <Text style={[styles.msgBody, { fontStyle: 'italic' }]}>🎤 Voice message</Text>
+                            )}
+                            {m.attachmentType === 'IMAGE' && (
+                              <Text style={[styles.msgBody, { fontStyle: 'italic' }]}>📷 Photo attachment</Text>
+                            )}
+                            {m.attachmentType === 'DOCUMENT' && (
+                              <Text style={[styles.msgBody, { fontStyle: 'italic' }]}>📄 {m.attachmentName || 'Document'}</Text>
+                            )}
+                            {Boolean(m.body || m.content) && (
+                              <Text style={styles.msgBody}>{m.body || m.content}</Text>
+                            )}
                             <Text style={styles.msgTime}>
                               {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </Text>
@@ -628,18 +796,26 @@ export const ParentScreen: React.FC = () => {
                 reviews.map((rev) => (
                   <Card key={rev.id}>
                     <View style={styles.revHeader}>
-                      <Text style={styles.revRating}>{'★'.repeat(rev.rating || 5)}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.revRating}>{'★'.repeat(rev.rating || 5)}</Text>
+                        <Badge label={rev.status || 'NEW'} variant={rev.status === 'RESOLVED' ? 'info' : rev.status === 'REPLIED' ? 'success' : 'warning'} size="sm" />
+                      </View>
                       <Text style={styles.revDate}>
                         {new Date(rev.createdAt).toLocaleDateString('en-IN')}
                       </Text>
                     </View>
-                    <Text style={styles.revComment}>{rev.comment}</Text>
-                    {rev.response && (
+                    {rev.subject ? (
+                      <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#2D1E18', marginTop: 4 }}>
+                        {rev.subject}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.revComment}>{rev.reviewText || rev.comment}</Text>
+                    {(rev.replyText || rev.response) ? (
                       <View style={styles.revResponseBox}>
                         <Text style={styles.revResponseTitle}>Institute Reply:</Text>
-                        <Text style={styles.revResponseText}>{rev.response}</Text>
+                        <Text style={styles.revResponseText}>{rev.replyText || rev.response}</Text>
                       </View>
-                    )}
+                    ) : null}
                   </Card>
                 ))
               )}

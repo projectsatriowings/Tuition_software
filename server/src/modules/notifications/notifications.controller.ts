@@ -1,10 +1,8 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { InAppNotificationService } from './inapp-notification.service.js';
 import { NotificationService } from './notification.service.js';
-
-const prisma = new PrismaClient();
 
 /**
  * List unified notifications for the authenticated user

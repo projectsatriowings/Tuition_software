@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
@@ -10,8 +10,6 @@ import {
   isStaffAssignedToBatchSubject,
   getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
-
-const prisma = new PrismaClient();
 
 export const createMaterialSchema = z.object({
   batchId: z.string().uuid('Valid Batch ID required'),
@@ -190,10 +188,15 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
       where.batchId = batchId;
     }
     if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { content: { contains: search, mode: 'insensitive' } },
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+            { content: { contains: search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
@@ -202,16 +205,33 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
       const staffAssignments = await getAuthorizedStaffAssignments(req, prisma);
       const allowedBatchIds = staffAssignments.authorizedBatchIds;
 
-      if (allowedBatchIds.length === 0) {
-        return res.json({ success: true, data: { materials: [] } });
-      }
+      // Staff can see:
+      // 1. Any materials they personally created (uploaderId: req.user.userId)
+      // 2. OR materials in batches they are assigned to (batchId: { in: allowedBatchIds })
+      const uploaderOrBatchCondition = allowedBatchIds.length > 0
+        ? {
+            OR: [
+              { uploaderId: req.user.userId },
+              { batchId: { in: allowedBatchIds } },
+            ],
+          }
+        : { uploaderId: req.user.userId };
 
       if (where.batchId) {
+        // If staff explicitly selected a batch: ensure they are assigned or uploaded to it
         if (!allowedBatchIds.includes(where.batchId)) {
-          return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+          const uploadedInBatchCount = await prisma.learningMaterial.count({
+            where: { batchId: where.batchId, uploaderId: req.user.userId, instituteId },
+          });
+          if (uploadedInBatchCount === 0) {
+            return res.status(403).json({ success: false, error: 'Forbidden: You are not assigned to this batch' });
+          }
         }
       } else {
-        where.batchId = { in: allowedBatchIds };
+        where.AND = [
+          ...(where.AND || []),
+          uploaderOrBatchCondition,
+        ];
       }
 
       // Staff sees published materials for assigned batches, plus their own drafts
@@ -246,24 +266,61 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
       });
 
       const allowedBatchIds = Array.from(new Set(enrollments.map((e) => e.batchId)));
-      const allowedSubjectIds = Array.from(new Set(enrollments.map((e) => e.subjectId).filter(Boolean) as string[]));
-
       if (allowedBatchIds.length === 0) {
         return res.json({ success: true, data: { materials: [] } });
       }
 
-      where.batchId = { in: allowedBatchIds };
+      // Determine which batches have full batch-level enrollment (subjectId is null)
+      const fullBatchEnrollmentIds = new Set(
+        enrollments.filter((e) => !e.subjectId).map((e) => e.batchId)
+      );
 
-      // Material must be batch-wide (subjectId: null) OR belong to an allocated subject for this student
-      if (allowedSubjectIds.length > 0) {
+      // Map of subject-specific enrollments for batches without full batch enrollment
+      const specificSubjectsByBatch = new Map<string, string[]>();
+      for (const e of enrollments) {
+        if (e.subjectId && !fullBatchEnrollmentIds.has(e.batchId)) {
+          const arr = specificSubjectsByBatch.get(e.batchId) || [];
+          arr.push(e.subjectId);
+          specificSubjectsByBatch.set(e.batchId, arr);
+        }
+      }
+
+      if (where.batchId) {
+        if (!allowedBatchIds.includes(where.batchId)) {
+          return res.status(403).json({ success: false, error: 'Forbidden: You are not enrolled in this batch' });
+        }
+        if (!fullBatchEnrollmentIds.has(where.batchId)) {
+          const allowedSubs = specificSubjectsByBatch.get(where.batchId) || [];
+          where.AND = [
+            ...(where.AND || []),
+            {
+              OR: [
+                { subjectId: null },
+                { subjectId: { in: allowedSubs } },
+              ],
+            },
+          ];
+        }
+      } else {
+        const batchConditions: any[] = [];
+        for (const bId of allowedBatchIds) {
+          if (fullBatchEnrollmentIds.has(bId)) {
+            batchConditions.push({ batchId: bId });
+          } else {
+            const allowedSubs = specificSubjectsByBatch.get(bId) || [];
+            batchConditions.push({
+              batchId: bId,
+              OR: [
+                { subjectId: null },
+                { subjectId: { in: allowedSubs } },
+              ],
+            });
+          }
+        }
+
         where.AND = [
           ...(where.AND || []),
-          {
-            OR: [
-              { subjectId: null },
-              { subjectId: { in: allowedSubjectIds } },
-            ],
-          },
+          { OR: batchConditions },
         ];
       }
     } else if (req.user?.role === 'PARENT') {
@@ -317,7 +374,7 @@ export async function listMaterials(req: AuthenticatedRequest, res: Response) {
         batch: { select: { id: true, name: true } },
         subject: { select: { id: true, name: true, code: true } },
         uploader: { select: { id: true, fullName: true, role: true } },
-        _count: { select: { submissions: true } },
+        _count: { select: { submissions: true, interactions: true } },
       },
     });
 
@@ -581,12 +638,150 @@ export async function downloadMaterial(req: AuthenticatedRequest, res: Response)
     const dispositionType = isDownload ? 'attachment' : 'inline';
     const filename = material.fileName || 'material';
 
-    res.setHeader('Content-Type', material.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Type', material.mimeType || 'application/pdf');
     res.setHeader('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Accept-Ranges', 'bytes');
 
-    const stream = fs.createReadStream(absPath);
-    return stream.pipe(res);
+    return res.sendFile(path.resolve(absPath), {
+      acceptRanges: true,
+      maxAge: 0,
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to stream file' });
+  }
+}
+
+/**
+ * Track student interaction with learning material (Modal Open, Audio Progress, Audio Completion)
+ * Preserves requirement: Opening preview does NOT mark audio completion.
+ */
+export async function trackMaterialInteraction(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { id: materialId } = req.params;
+    const { eventType, progressPercent, durationSeconds, lastPositionSec } = req.body;
+
+    if (!eventType) {
+      return res.status(400).json({ success: false, error: 'eventType is required (OPENED, AUDIO_PLAYING, AUDIO_COMPLETED, DOWNLOADED)' });
+    }
+
+    const material = await prisma.learningMaterial.findUnique({
+      where: { id: materialId },
+    });
+    if (!material) {
+      return res.status(404).json({ success: false, error: 'Material not found' });
+    }
+
+    // Identify student
+    let studentId: string | null = null;
+    if (req.user?.role === 'STUDENT') {
+      const student = await prisma.student.findFirst({
+        where: { userId: req.user.userId },
+      });
+      if (!student) {
+        return res.status(403).json({ success: false, error: 'Student profile not found' });
+      }
+      studentId = student.id;
+    } else if (req.body.studentId) {
+      studentId = req.body.studentId;
+    }
+
+    if (!studentId) {
+      // For staff previewing, just acknowledge success
+      return res.json({ success: true, message: 'Interaction acknowledged for staff/preview' });
+    }
+
+    // Guard: Prevent audio tracking telemetry on non-audio materials (e.g. PDF, Image)
+    const isAudioMaterial = material.type === 'VOICE_NOTE';
+    if ((eventType === 'AUDIO_PLAYING' || eventType === 'AUDIO_COMPLETED') && !isAudioMaterial) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot record audio playback telemetry for non-audio material (material type is '${material.type}')`,
+      });
+    }
+
+    // Determine completion state
+    let isCompleted = false;
+    let validInteractionType = eventType;
+
+    if (eventType === 'AUDIO_COMPLETED') {
+      isCompleted = true;
+      validInteractionType = 'AUDIO_COMPLETED';
+    } else if (eventType === 'OPENED') {
+      // For non-audio materials, viewing/opening marks completed
+      isCompleted = !isAudioMaterial;
+      validInteractionType = 'OPENED';
+    } else if (eventType === 'AUDIO_PLAYING') {
+      isCompleted = (progressPercent || 0) >= 95;
+      validInteractionType = 'AUDIO_PLAYING';
+    }
+
+    const interaction = await prisma.materialInteraction.upsert({
+      where: {
+        materialId_studentId_interactionType: {
+          materialId,
+          studentId,
+          interactionType: validInteractionType,
+        },
+      },
+      update: {
+        progressPercent: progressPercent !== undefined ? Number(progressPercent) : undefined,
+        durationSeconds: durationSeconds !== undefined ? Number(durationSeconds) : undefined,
+        lastPositionSec: lastPositionSec !== undefined ? Number(lastPositionSec) : undefined,
+        isCompleted: isCompleted,
+      },
+      create: {
+        materialId,
+        studentId,
+        interactionType: validInteractionType,
+        progressPercent: progressPercent !== undefined ? Number(progressPercent) : null,
+        durationSeconds: durationSeconds !== undefined ? Number(durationSeconds) : null,
+        lastPositionSec: lastPositionSec !== undefined ? Number(lastPositionSec) : null,
+        isCompleted: isCompleted,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Interaction recorded successfully',
+      data: { interaction },
+    });
+  } catch (err: any) {
+    console.error('[Track Material Interaction Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to record interaction' });
+  }
+}
+
+/**
+ * Get student interactions for a material (Staff / Admin / Student)
+ */
+export async function getMaterialInteractions(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id: materialId } = req.params;
+    const material = await prisma.learningMaterial.findUnique({ where: { id: materialId } });
+    if (!material) return res.status(404).json({ success: false, error: 'Material not found' });
+
+    let where: any = { materialId };
+    if (req.user?.role === 'STUDENT') {
+      const student = await prisma.student.findFirst({ where: { userId: req.user.userId } });
+      if (student) where.studentId = student.id;
+    }
+
+    const interactions = await prisma.materialInteraction.findMany({
+      where,
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, admissionNumber: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return res.json({
+      success: true,
+      data: { interactions },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Failed to fetch interactions' });
   }
 }

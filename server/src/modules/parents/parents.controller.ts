@@ -1,11 +1,9 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
 import { isStudentAuthorized } from '../students/student-authorization.service.js';
-
-const prisma = new PrismaClient();
 
 export const createParentSchema = z.object({
   fullName: z.string().min(2, 'Full name is required'),
@@ -1458,12 +1456,16 @@ export async function getParentStudentAcademics(req: AuthenticatedRequest, res: 
     const formattedFeedbacks = feedbacks.map((f) => ({
       id: f.id,
       termName: f.termName,
+      periodType: f.periodType || 'TERM',
       teacher: f.staff.fullName,
       remarks: f.remarks,
       rating: f.rating,
       strengths: f.strengths,
       improvements: f.improvements,
       recommendations: f.recommendations,
+      attendanceRate: f.attendanceRate !== null ? Number(f.attendanceRate) : null,
+      homeworkRate: f.homeworkRate !== null ? Number(f.homeworkRate) : null,
+      examAverage: f.examAverage !== null ? Number(f.examAverage) : null,
       date: f.createdAt,
     }));
 

@@ -1,7 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { config } from './config/index.js';
+import compression from 'compression';
+import { config, validateProductionConfig } from './config/index.js';
 import { checkDatabaseHealth } from './config/db.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
@@ -14,6 +15,7 @@ import attendanceRoutes from './modules/attendance/attendance.routes.js';
 import notificationsRoutes from './modules/notifications/notifications.routes.js';
 import materialsRoutes from './modules/materials/materials.routes.js';
 import homeworkRoutes from './modules/homework/homework.routes.js';
+import quizRoutes from './modules/quiz/quiz.routes.js';
 import examsRoutes from './modules/exams/exams.routes.js';
 import progressRoutes from './modules/progress/progress.routes.js';
 import reviewsRoutes from './modules/reviews/reviews.routes.js';
@@ -24,16 +26,37 @@ import { NotificationService } from './modules/notifications/notification.servic
 
 const app = express();
 
-// Security Middlewares
+// Security & Performance Middlewares
 app.use(helmet());
+app.use(
+  compression({
+    filter: (req: Request, res: Response) => {
+      // Never compress range requests or binary file downloads (allows Chrome/PDF viewers to stream pages)
+      if (req.headers.range) {
+        return false;
+      }
+      if (req.path.includes('/download') || req.path.includes('/photo')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 app.use(
   cors({
     origin: (origin, callback) => {
-      // In development, allow localhost and any local network origins
-      if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      // In development, allow localhost, local network, and non-browser clients (mobile apps, curl, server-to-server)
+      if (!origin || config.nodeEnv !== 'production') {
         return callback(null, true);
       }
-      return callback(null, true); // adjust for production domain whitelist
+      // In production, validate against configured whitelist
+      const allowedOrigins = config.corsOrigins.length > 0
+        ? config.corsOrigins
+        : ['https://app.tuitionos.com', 'https://admin.tuitionos.com'];
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
   })
@@ -48,12 +71,22 @@ const SILENT_POLL_PATHS = new Set([
   '/api/health',
 ]);
 
-// Request logging (sanitized, non-sensitive)
-app.use((req: Request, _res: Response, next: NextFunction) => {
-  if (!SILENT_POLL_PATHS.has(req.path)) {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] ${req.method} ${req.path}`);
-  }
+// Request performance timing & logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const start = performance.now();
+  const originalEnd = res.end;
+  (res as any).end = function (chunk?: any, encoding?: any, callback?: any) {
+    const durationMs = (performance.now() - start).toFixed(1);
+    if (!res.headersSent) {
+      res.setHeader('X-Response-Time', `${durationMs}ms`);
+    }
+    if (!SILENT_POLL_PATHS.has(req.path)) {
+      const timestamp = new Date().toISOString();
+      const sanitizedUrl = (req.originalUrl || req.url).replace(/([?&](token|t|password|secret)=)[^&]+/gi, '$1[REDACTED]');
+      console.log(`[${timestamp}] ${req.method} ${sanitizedUrl} ${res.statusCode} ${durationMs}ms`);
+    }
+    return originalEnd.call(this, chunk, encoding, callback);
+  };
   next();
 });
 
@@ -68,6 +101,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/materials', materialsRoutes);
 app.use('/api/homework', homeworkRoutes);
+app.use('/api/quizzes', quizRoutes);
 app.use('/api/exams', examsRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/reviews', reviewsRoutes);
@@ -139,6 +173,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server if run directly
 const isMain = process.argv[1] && process.argv[1].endsWith('index.ts');
 if (isMain || process.env.NODE_ENV === 'production') {
+  validateProductionConfig();
   const server = app.listen(config.port, config.host, () => {
     console.log(`[TuitionOS API Server] listening on http://${config.host}:${config.port}`);
     console.log(`[TuitionOS API Server] Health check available at http://${config.host}:${config.port}/api/health`);

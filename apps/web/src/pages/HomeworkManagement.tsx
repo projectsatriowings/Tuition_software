@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetch, getMaterialDownloadUrl, getSubmissionDownloadUrl, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { QuizManager } from '../components/QuizManager';
 import {
   FileText,
   Clock,
@@ -21,12 +22,18 @@ import {
   FileCheck,
   Send,
   ExternalLink,
+  HelpCircle,
+  ChevronDown,
 } from 'lucide-react';
+import { MaterialViewerModal } from '../components/MaterialViewerModal';
 
 export const HomeworkManagement: React.FC = () => {
   const { user } = useAuth();
   const isStaffOrAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ACADEMIC_ADMIN' || user?.role === 'STAFF';
   const isStudent = user?.role === 'STUDENT';
+
+  // Section switcher: Homework vs Quizzes (Phase 6)
+  const [activeSection, setActiveSection] = useState<'HOMEWORK' | 'QUIZZES'>('HOMEWORK');
 
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
@@ -60,12 +67,16 @@ export const HomeworkManagement: React.FC = () => {
   // Staff completion monitoring drawer/modal
   const [selectedHwForReview, setSelectedHwForReview] = useState<any>(null);
   const [reviewData, setReviewData] = useState<{
+    homework?: any;
     summary?: any;
     roster?: any[];
     submissions?: any[];
   } | null>(null);
   const [loadingReview, setLoadingReview] = useState(false);
   const [evaluatingSubId, setEvaluatingSubId] = useState<string | null>(null);
+  const [rosterFilter, setRosterFilter] = useState<'ALL' | 'COMPLETED' | 'AWAITING_REVIEW' | 'SUBMITTED' | 'NOT_COMPLETED' | 'OVERDUE'>('ALL');
+  const [rosterSearch, setRosterSearch] = useState<string>('');
+  const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
   const [gradeInput, setGradeInput] = useState('');
   const [feedbackInput, setFeedbackInput] = useState('');
 
@@ -75,6 +86,44 @@ export const HomeworkManagement: React.FC = () => {
       loadBatches();
     }
   }, []);
+
+  // Lock background page scrolling when completion review modal is open and handle Escape key safely
+  useEffect(() => {
+    if (!selectedHwForReview && !previewMaterial) return;
+
+    // Save previous overflow values
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const mainEl = document.querySelector('main');
+    const prevMainOverflow = mainEl ? mainEl.style.overflow : '';
+
+    // Lock scrolling on document and main container
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    if (mainEl) {
+      mainEl.style.overflow = 'hidden';
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (previewMaterial) {
+          setPreviewMaterial(null);
+        } else if (selectedHwForReview) {
+          setSelectedHwForReview(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      if (mainEl) {
+        mainEl.style.overflow = prevMainOverflow;
+      }
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedHwForReview, previewMaterial]);
 
   async function loadHomework() {
     try {
@@ -232,6 +281,8 @@ export const HomeworkManagement: React.FC = () => {
     setSelectedHwForReview(hw);
     setReviewData(null);
     setLoadingReview(true);
+    setRosterFilter('ALL');
+    setRosterSearch('');
     try {
       const res = await apiFetch(`/homework/${hw.id}/submissions`);
       if (res.success) {
@@ -284,8 +335,40 @@ export const HomeworkManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Module Navigation Tabs (Phase 5 vs Phase 6) */}
+      <div className="flex items-center gap-2 border-b border-[#D7CCC8] pb-3">
+        <button
+          onClick={() => setActiveSection('HOMEWORK')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeSection === 'HOMEWORK'
+              ? 'bg-[#4E342E] text-white shadow-sm'
+              : 'bg-white text-[#6D4C41] border border-[#D7CCC8] hover:bg-[#F7F2EF]'
+          }`}
+        >
+          <FileText className="w-4 h-4" /> Homework & Tasks
+        </button>
+        <button
+          onClick={() => setActiveSection('QUIZZES')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeSection === 'QUIZZES'
+              ? 'bg-[#4E342E] text-white shadow-sm'
+              : 'bg-white text-[#6D4C41] border border-[#D7CCC8] hover:bg-[#F7F2EF]'
+          }`}
+        >
+          <HelpCircle className="w-4 h-4" /> Interactive Quizzes & Assessments
+        </button>
+      </div>
+
+      {activeSection === 'QUIZZES' ? (
+        <QuizManager
+          isStaffOrAdmin={isStaffOrAdmin}
+          isStudent={isStudent}
+          batches={batches}
+        />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-[#2D1E18] flex items-center gap-2.5">
             <FileText className="w-7 h-7 text-[#6D4C41]" />
@@ -470,7 +553,11 @@ export const HomeworkManagement: React.FC = () => {
                           <div className="flex items-center justify-between font-semibold">
                             <span className="flex items-center gap-1.5">
                               <CheckCircle className="w-4 h-4 text-emerald-600" />
-                              {subStatus === 'COMPLETED' ? 'Completed' : 'Submitted'}
+                              {subStatus === 'GRADED' || hw.mySubmission?.grade
+                                ? `Graded${hw.mySubmission.grade ? ` (${hw.mySubmission.grade})` : ''}`
+                                : subStatus === 'COMPLETED'
+                                ? 'Completed'
+                                : 'Submitted (Awaiting Review)'}
                             </span>
                             {isLate && <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">Late</span>}
                           </div>
@@ -564,138 +651,264 @@ export const HomeworkManagement: React.FC = () => {
 
       {/* Staff Completion Monitoring & Grading Drawer/Modal */}
       {selectedHwForReview && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[90vh] flex flex-col space-y-4 shadow-2xl my-6">
-            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
-                  <FileCheck className="w-5 h-5 text-[#6D4C41]" />
-                  <span>Completion Progress: {selectedHwForReview.title}</span>
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-hidden"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedHwForReview(null);
+          }}
+          onWheel={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onTouchMove={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+        >
+          <div
+            className="bg-white border border-[#D7CCC8] rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden min-w-0"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="completion-progress-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3 mb-3 shrink-0 min-w-0">
+              <div className="min-w-0 pr-3">
+                <h2 id="completion-progress-title" className="text-lg sm:text-xl font-bold text-[#2D1E18] flex items-center gap-2 truncate">
+                  <FileCheck className="w-5 h-5 text-[#6D4C41] shrink-0" />
+                  <span className="truncate">Completion Progress: {selectedHwForReview.title}</span>
                 </h2>
-                <div className="flex items-center gap-2 text-xs text-[#6D4C41] mt-1">
-                  <span>Batch: {selectedHwForReview.batch?.name}</span>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#6D4C41] mt-1">
+                  <span className="font-semibold">Batch: {selectedHwForReview.batch?.name}</span>
                   <span>&bull;</span>
                   <span>Due: {new Date(selectedHwForReview.dueDate).toLocaleString()}</span>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedHwForReview(null)}
-                className="text-[#8D6E63] hover:text-[#2D1E18]"
+                className="p-1.5 rounded-xl text-[#8D6E63] hover:text-[#2D1E18] hover:bg-[#F7F2EF] transition-colors shrink-0"
+                title="Close (Esc)"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {loadingReview ? (
-              <div className="p-12 text-center text-[#8D6E63] text-sm">Loading student completion data...</div>
+              <div className="p-12 text-center text-[#8D6E63] text-sm flex-1 flex items-center justify-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-3.5 h-3.5 rounded-full bg-[#6D4C41] animate-ping" />
+                  <span>Loading student completion data...</span>
+                </div>
+              </div>
             ) : reviewData ? (
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                {/* Summary Badges Bar */}
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                {/* Summary Metric Badges (Informative counts, TuitionOS neutral palette) */}
                 {reviewData.summary && (
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
-                    <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
-                      <span className="text-[10px] uppercase font-bold text-[#8D6E63] block">Total Enrolled</span>
-                      <strong className="text-sm font-bold text-[#2D1E18]">{reviewData.summary.totalEligible}</strong>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-center mb-3 shrink-0 min-w-0">
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EFEBE9]">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-[#8D6E63] block truncate">Enrolled</span>
+                      <strong className="text-sm font-bold text-[#2D1E18]">{reviewData.summary.totalEligible ?? 0}</strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
-                      <span className="text-[10px] uppercase font-bold text-emerald-800 block">Submitted</span>
-                      <strong className="text-sm font-bold text-emerald-800">
-                        {reviewData.summary.submittedCount + reviewData.summary.completedCount}
-                      </strong>
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 block truncate">Completed</span>
+                      <strong className="text-sm font-bold text-emerald-800">{reviewData.summary.completedCount ?? 0}</strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200">
-                      <span className="text-[10px] uppercase font-bold text-indigo-800 block">Graded</span>
-                      <strong className="text-sm font-bold text-indigo-800">{reviewData.summary.gradedCount}</strong>
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9]">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-[#6D4C41] block truncate">Not Started</span>
+                      <strong className="text-sm font-bold text-[#6D4C41]">{reviewData.summary.notCompletedCount ?? reviewData.summary.notStartedCount ?? 0}</strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                      <span className="text-[10px] uppercase font-bold text-amber-800 block">Not Started</span>
-                      <strong className="text-sm font-bold text-amber-800">{reviewData.summary.notStartedCount}</strong>
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-800 block truncate">Submitted</span>
+                      <strong className="text-sm font-bold text-indigo-800">{reviewData.summary.submittedCount ?? 0}</strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
-                      <span className="text-[10px] uppercase font-bold text-rose-800 block">Overdue</span>
-                      <strong className="text-sm font-bold text-rose-800">{reviewData.summary.overdueCount}</strong>
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-blue-50/60 border border-blue-100">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-blue-800 block truncate">Awaiting Review</span>
+                      <strong className="text-sm font-bold text-blue-800">{reviewData.summary.awaitingReviewCount ?? 0}</strong>
+                    </div>
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-rose-50/60 border border-rose-100">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-rose-800 block truncate">Overdue</span>
+                      <strong className="text-sm font-bold text-rose-800">{reviewData.summary.overdueCount ?? 0}</strong>
                     </div>
                   </div>
                 )}
 
-                {/* Student-wise Completion Roster */}
-                <div className="space-y-3">
-                  <h3 className="font-bold text-sm text-[#2D1E18]">Enrolled Students Completion Roster</h3>
-
-                  {reviewData.roster?.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-[#8D6E63] bg-[#F7F2EF] rounded-xl border border-[#D7CCC8]">
-                      No students are actively enrolled in this batch.
+                {/* Compact Filter Dropdown & Search Toolbar */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mb-3 shrink-0 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <label htmlFor="roster-status-filter" className="text-xs font-semibold text-[#6D4C41] shrink-0">
+                      Filter:
+                    </label>
+                    <div className="relative min-w-[170px] sm:min-w-[210px]">
+                      <select
+                        id="roster-status-filter"
+                        value={rosterFilter}
+                        onChange={(e) => setRosterFilter(e.target.value as any)}
+                        className="w-full pl-3 pr-8 py-1.5 text-xs bg-white border border-[#D7CCC8] rounded-xl text-[#2D1E18] font-semibold focus:ring-1 focus:ring-[#8D6E63] focus:border-[#6D4C41] focus:outline-none transition-colors cursor-pointer appearance-none shadow-xs"
+                      >
+                        <option value="ALL">All Students ({reviewData.summary?.totalEligible ?? 0})</option>
+                        <option value="COMPLETED">Completed ({reviewData.summary?.completedCount ?? 0})</option>
+                        <option value="NOT_COMPLETED">Not Started ({reviewData.summary?.notCompletedCount ?? reviewData.summary?.notStartedCount ?? 0})</option>
+                        <option value="SUBMITTED">Submitted ({reviewData.summary?.submittedCount ?? 0})</option>
+                        <option value="AWAITING_REVIEW">Awaiting Review ({reviewData.summary?.awaitingReviewCount ?? 0})</option>
+                        <option value="OVERDUE">Overdue ({reviewData.summary?.overdueCount ?? 0})</option>
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[#8D6E63]">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
                     </div>
-                  ) : (
-                    reviewData.roster?.map((r: any) => {
+                  </div>
+
+                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#8D6E63]" />
+                    <input
+                      type="text"
+                      placeholder="Search student or admission no..."
+                      value={rosterSearch}
+                      onChange={(e) => setRosterSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-[#D7CCC8] rounded-xl focus:ring-1 focus:ring-[#8D6E63] focus:border-[#6D4C41] text-[#2D1E18] focus:outline-none placeholder-[#8D6E63]/60 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Student-wise Completion Roster - only this scrolls vertically */}
+                <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 space-y-3 pr-1">
+                  {(() => {
+                    let items = reviewData.roster || [];
+                    if (rosterFilter !== 'ALL') {
+                      if (rosterFilter === 'COMPLETED') {
+                        items = items.filter((r: any) => r.status === 'GRADED' || r.status === 'SELF_COMPLETED' || r.status === 'COMPLETED');
+                      } else if (rosterFilter === 'NOT_COMPLETED') {
+                        items = items.filter((r: any) => !r.isSubmitted && !r.submission);
+                      } else if (rosterFilter === 'SUBMITTED') {
+                        items = items.filter((r: any) => r.isSubmitted || r.submission);
+                      } else if (rosterFilter === 'AWAITING_REVIEW') {
+                        items = items.filter((r: any) => r.isAwaitingReview || r.status === 'AWAITING_REVIEW');
+                      } else if (rosterFilter === 'OVERDUE') {
+                        items = items.filter((r: any) => (!r.isSubmitted && !r.submission) && r.isOverdue);
+                      }
+                    }
+
+                    if (rosterSearch.trim()) {
+                      const q = rosterSearch.toLowerCase();
+                      items = items.filter((r: any) =>
+                        r.student?.firstName?.toLowerCase().includes(q) ||
+                        r.student?.lastName?.toLowerCase().includes(q) ||
+                        r.student?.admissionNumber?.toLowerCase().includes(q)
+                      );
+                    }
+
+                    if (items.length === 0) {
+                      return (
+                        <div className="p-8 text-center text-xs text-[#8D6E63] bg-[#F7F2EF] rounded-xl border border-[#D7CCC8]">
+                          No students match the selected filter criteria.
+                        </div>
+                      );
+                    }
+
+                    return items.map((r: any) => {
                       const st = r.student;
                       const sub = r.submission;
+
+                      const isGraded = r.status === 'GRADED' || sub?.status === 'GRADED';
+                      const isSelfComplete = r.status === 'SELF_COMPLETED' || (sub?.status === 'COMPLETED' && !sub?.fileUrl);
+                      const isAwaiting = r.status === 'AWAITING_REVIEW' || r.isAwaitingReview;
+                      const isOverdue = r.isOverdue && !sub;
 
                       return (
                         <div
                           key={st.id}
-                          className="p-4 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3"
+                          className="p-3.5 sm:p-4 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3 min-w-0"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-[#6D4C41] text-white flex items-center justify-center font-bold text-sm">
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-full bg-[#6D4C41] text-white flex items-center justify-center font-bold text-sm shrink-0">
                                 {st.firstName?.[0] || 'S'}
                               </div>
-                              <div>
-                                <span className="font-bold text-[#2D1E18] text-sm block">
+                              <div className="min-w-0">
+                                <span className="font-bold text-[#2D1E18] text-sm block truncate">
                                   {st.firstName} {st.lastName}
                                 </span>
-                                <span className="text-xs text-[#6D4C41] font-mono">
+                                <span className="text-xs text-[#6D4C41] font-mono block truncate">
                                   Adm: {st.admissionNumber}
                                 </span>
                               </div>
                             </div>
 
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                r.status === 'COMPLETED' || r.status === 'GRADED'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : r.status === 'SUBMITTED'
-                                  ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                                  : r.status === 'LATE'
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                  : r.isOverdue
-                                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                  : 'bg-gray-100 text-gray-700 border border-gray-300'
-                              }`}
-                            >
-                              {r.status === 'NOT_STARTED' && r.isOverdue ? 'OVERDUE' : r.status}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                              {r.submissionType && r.submissionType !== 'NONE' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white border border-[#D7CCC8] text-[#6D4C41]">
+                                  {r.submissionType === 'FILE_UPLOAD' ? 'File Upload' : r.submissionType === 'TEXT_SUBMISSION' ? 'Text Response' : 'Self-Marked'}
+                                </span>
+                              )}
+
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  isGraded
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : isSelfComplete
+                                    ? 'bg-teal-100 text-teal-800 border border-teal-300'
+                                    : isAwaiting
+                                    ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                    : isOverdue
+                                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                    : 'bg-gray-100 text-gray-700 border border-gray-300'
+                                }`}
+                              >
+                                {isGraded ? 'Graded' : isSelfComplete ? 'Self-Completed' : isAwaiting ? 'Awaiting Review' : isOverdue ? 'Overdue' : 'Not Submitted'}
+                              </span>
+                            </div>
                           </div>
 
                           {sub && (
-                            <div className="space-y-2 pt-2 border-t border-[#D7CCC8]/60 text-xs">
-                              <div className="flex items-center justify-between text-[#8D6E63] text-[11px]">
+                            <div className="space-y-2 pt-2 border-t border-[#D7CCC8]/60 text-xs min-w-0">
+                              <div className="flex flex-wrap items-center justify-between text-[#8D6E63] text-[11px] gap-1">
                                 <span>Submitted: {new Date(sub.submittedAt).toLocaleString()}</span>
-                                {sub.isLate && <strong className="text-amber-800">Late Submission</strong>}
+                                {sub.isLate && <strong className="text-rose-800">Late Submission</strong>}
                               </div>
 
                               {sub.studentNotes && (
-                                <p className="text-xs text-[#2D1E18] bg-white p-2.5 rounded-lg border border-[#D7CCC8]">
+                                <p className="text-xs text-[#2D1E18] bg-white p-2.5 rounded-lg border border-[#D7CCC8] break-words">
                                   "{sub.studentNotes}"
                                 </p>
                               )}
 
                               {sub.fileUrl && (
-                                <a
-                                  href={getSubmissionDownloadUrl(sub.id)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
-                                >
-                                  <Download className="w-3.5 h-3.5" /> Download Student Submission File
-                                </a>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewMaterial({
+                                      id: sub.materialId,
+                                      title: `${st.firstName}'s Submission - ${reviewData.homework?.title}`,
+                                      fileUrl: sub.fileUrl,
+                                      fileName: sub.fileName,
+                                      mimeType: sub.mimeType,
+                                      type: 'DOCUMENT',
+                                    })}
+                                    className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" /> Preview Submission File
+                                  </button>
+                                  <a
+                                    href={getSubmissionDownloadUrl(sub.id)}
+                                    download={sub.fileName || 'submission'}
+                                    className="inline-flex items-center gap-1 text-xs text-[#6D4C41] hover:underline"
+                                  >
+                                    <Download className="w-3 h-3" /> Save File
+                                  </a>
+                                </div>
                               )}
 
                               {/* Grading input */}
                               {evaluatingSubId === sub.id ? (
-                                <div className="pt-2 space-y-2 bg-white p-3 rounded-xl border border-[#D7CCC8]">
-                                  <div className="grid grid-cols-3 gap-2">
+                                <div className="pt-2 space-y-2 bg-white p-3 rounded-xl border border-[#D7CCC8] min-w-0">
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     <input
                                       type="text"
                                       placeholder="Grade (e.g. A+ or 18/20)"
@@ -708,17 +921,19 @@ export const HomeworkManagement: React.FC = () => {
                                       placeholder="Feedback / Remarks"
                                       value={feedbackInput}
                                       onChange={(e) => setFeedbackInput(e.target.value)}
-                                      className="col-span-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                                      className="sm:col-span-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
                                     />
                                   </div>
                                   <div className="flex justify-end gap-2 pt-1">
                                     <button
+                                      type="button"
                                       onClick={() => setEvaluatingSubId(null)}
-                                      className="px-2.5 py-1 text-xs text-[#8D6E63]"
+                                      className="px-2.5 py-1 text-xs text-[#8D6E63] hover:text-[#2D1E18]"
                                     >
                                       Cancel
                                     </button>
                                     <button
+                                      type="button"
                                       onClick={() => handleGradeSubmission(sub.id)}
                                       className="px-3 py-1 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-lg text-xs font-semibold"
                                     >
@@ -727,18 +942,19 @@ export const HomeworkManagement: React.FC = () => {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="flex items-center justify-between pt-1">
-                                  <span className="text-[#2D1E18]">
-                                    Grade: <strong className="text-amber-800">{sub.grade || 'Not Graded Yet'}</strong>
-                                    {sub.feedback && <span className="ml-2 text-[#6D4C41] italic">"{sub.feedback}"</span>}
+                                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 min-w-0">
+                                  <span className="text-[#2D1E18] text-xs">
+                                    Grade: <strong className="text-[#6D4C41]">{sub.grade || 'Not Graded Yet'}</strong>
+                                    {sub.feedback && <span className="ml-2 text-[#8D6E63] italic">"{sub.feedback}"</span>}
                                   </span>
                                   <button
+                                    type="button"
                                     onClick={() => {
                                       setEvaluatingSubId(sub.id);
                                       setGradeInput(sub.grade || '');
                                       setFeedbackInput(sub.feedback || '');
                                     }}
-                                    className="px-2.5 py-1 rounded-lg bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] text-xs font-medium transition-colors"
+                                    className="px-2.5 py-1 rounded-lg bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] text-xs font-medium transition-colors shrink-0"
                                   >
                                     {sub.grade ? 'Edit Grade' : 'Assign Grade'}
                                   </button>
@@ -748,8 +964,8 @@ export const HomeworkManagement: React.FC = () => {
                           )}
                         </div>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </div>
               </div>
             ) : null}
@@ -1008,6 +1224,15 @@ export const HomeworkManagement: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+      {/* Learning Material / Submission Preview Modal */}
+      {previewMaterial && (
+        <MaterialViewerModal
+          material={previewMaterial}
+          onClose={() => setPreviewMaterial(null)}
+        />
+      )}
+        </>
       )}
     </div>
   );

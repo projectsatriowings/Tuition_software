@@ -11,6 +11,15 @@ import {
   AlertCircle,
   Search,
   BookOpen,
+  Image as ImageIcon,
+  Paperclip,
+  Mic,
+  Square,
+  Volume2,
+  FileText,
+  Download,
+  Loader2,
+  X,
 } from 'lucide-react';
 
 interface ParentCommunicationViewProps {
@@ -28,6 +37,21 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
   const [newMessage, setNewMessage] = useState<string>('');
   const [sending, setSending] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // File & Voice attachments
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+
+  // Lightbox for full image view
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -60,16 +84,27 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Clean up audio recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
+
   const handleSelectTeacher = async (teacher: any) => {
     setSelectedTeacher(teacher);
     setError(null);
     try {
       setLoadingMessages(true);
-      // Retrieve or start conversation with teacher
+      // Retrieve or start conversation with teacher associated with student
       const convRes = await apiFetch('/messaging/conversations', {
         method: 'POST',
         body: JSON.stringify({
           recipientUserId: teacher.userId,
+          studentId: student?.id,
           title: `Discussion regarding ${student?.firstName} (${teacher.subjects?.join(', ') || 'Class'})`,
         }),
       });
@@ -92,29 +127,135 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newMessage.trim() || !activeConversation?.id || sending) return;
+
+    const textToSend = newMessage.trim();
+    setNewMessage('');
 
     try {
       setSending(true);
       const res = await apiFetch(`/messaging/conversations/${activeConversation.id}/messages`, {
         method: 'POST',
         body: JSON.stringify({
-          body: newMessage.trim(),
+          body: textToSend,
         }),
       });
 
       if (res.success && res.data?.message) {
         setMessages((prev) => [...prev, res.data.message]);
-        setNewMessage('');
       }
     } catch (err: any) {
       console.error('[Send Message Error]', err);
       setError('Failed to deliver message. Please retry.');
+      setNewMessage(textToSend);
     } finally {
       setSending(false);
     }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!activeConversation?.id) return;
+
+    try {
+      setUploadingAttachment(true);
+      setError(null);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadRes = await apiFetch(
+        `/messaging/conversations/${activeConversation.id}/attachments`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!uploadRes.success || !uploadRes.data) {
+        throw new Error(uploadRes.error || 'Failed to upload attachment');
+      }
+
+      const att = uploadRes.data;
+
+      const msgRes = await apiFetch(
+        `/messaging/conversations/${activeConversation.id}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: newMessage.trim() || (att.attachmentType === 'AUDIO' ? 'Voice Message' : att.fileName),
+            attachmentUrl: att.fileUrl,
+            attachmentType: att.attachmentType,
+            attachmentName: att.fileName,
+            attachmentSize: att.fileSize,
+          }),
+        }
+      );
+
+      if (msgRes.success && msgRes.data?.message) {
+        setMessages((prev) => [...prev, msgRes.data.message]);
+        setNewMessage('');
+      }
+    } catch (err: any) {
+      console.error('[Upload File Error]', err);
+      setError(err.message || 'Failed to send attachment.');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, {
+            type: 'audio/webm',
+          });
+          await handleFileUpload(audioFile);
+        }
+      };
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      alert('Microphone permission denied. Please allow microphone access.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+    setRecordingSeconds(0);
   };
 
   const formatMessageTime = (dateStr: string) => {
@@ -144,27 +285,30 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
       </div>
 
       {error && (
-        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[600px]">
-        {/* Left: Class Faculty Directory */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[640px]">
+        {/* Left: Faculty Directory */}
         <div className="bg-white rounded-3xl border border-[#D7CCC8] shadow-sm flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-[#EFEBE9]">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#6D4C41]">
-              Assigned Faculty Teachers ({teachers.length})
+          <div className="p-4 border-b border-[#EFEBE9] bg-[#F7F2EF]/60">
+            <h3 className="text-xs font-bold text-[#4E342E] uppercase tracking-wider">
+              Assigned Teachers
             </h3>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-[#EFEBE9]">
             {loadingTeachers ? (
-              <div className="p-8 text-center text-xs text-[#8D6E63]">Loading faculty list...</div>
+              <div className="p-8 text-center text-xs text-[#8D6E63] flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-[#6D4C41]" />
+                <span>Loading teachers...</span>
+              </div>
             ) : teachers.length === 0 ? (
               <div className="p-8 text-center text-xs text-[#8D6E63]">
-                No teachers are currently assigned to this student's class batch.
+                No teachers currently assigned to {student?.firstName}'s batch.
               </div>
             ) : (
               teachers.map((t) => {
@@ -225,8 +369,9 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
               {/* Chat Messages Log */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#FAF8F6]">
                 {loadingMessages ? (
-                  <div className="p-12 text-center text-xs text-[#8D6E63]">
-                    Loading message history...
+                  <div className="p-12 text-center text-xs text-[#8D6E63] flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#6D4C41]" />
+                    <span>Loading message history...</span>
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="p-12 text-center text-xs text-[#8D6E63] space-y-2">
@@ -242,15 +387,48 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
                         className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                       >
                         <div
-                          className={`max-w-[80%] p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                          className={`max-w-[80%] p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm space-y-2 ${
                             isMe
                               ? 'bg-[#4E342E] text-white rounded-tr-none'
                               : 'bg-white text-[#2D1E18] border border-[#D7CCC8] rounded-tl-none'
                           }`}
                         >
-                          <p className="whitespace-pre-wrap">{m.body}</p>
+                          {/* Image Attachment */}
+                          {m.attachmentType === 'IMAGE' && m.attachmentUrl && (
+                            <img
+                              src={m.attachmentUrl}
+                              alt="Attachment"
+                              onClick={() => setLightboxImg(m.attachmentUrl)}
+                              className="max-h-48 rounded-xl object-cover cursor-pointer hover:opacity-90"
+                            />
+                          )}
+
+                          {/* Audio Voice Note */}
+                          {m.attachmentType === 'AUDIO' && m.attachmentUrl && (
+                            <div className="flex items-center gap-2 p-2 bg-black/10 rounded-xl">
+                              <Volume2 className="w-4 h-4 shrink-0" />
+                              <audio controls src={m.attachmentUrl} className="w-full h-7" preload="metadata" />
+                            </div>
+                          )}
+
+                          {/* Document Attachment */}
+                          {m.attachmentType === 'DOCUMENT' && m.attachmentUrl && (
+                            <a
+                              href={`${m.attachmentUrl}?download=true`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-2 p-2 bg-black/10 rounded-xl hover:bg-black/15 transition-colors"
+                            >
+                              <FileText className="w-4 h-4 shrink-0" />
+                              <span className="truncate flex-1 text-[11px] font-semibold">{m.attachmentName || 'Document.pdf'}</span>
+                              <Download className="w-3.5 h-3.5 shrink-0" />
+                            </a>
+                          )}
+
+                          {m.body && <p className="whitespace-pre-wrap">{m.body}</p>}
+
                           <div
-                            className={`mt-1.5 flex items-center justify-end gap-1 text-[10px] ${
+                            className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
                               isMe ? 'text-[#D7CCC8]' : 'text-[#8D6E63]'
                             }`}
                           >
@@ -265,23 +443,105 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Chat Input */}
-              <form onSubmit={handleSendMessage} className="p-3 border-t border-[#EFEBE9] bg-white flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder={`Write message to ${selectedTeacher.fullName}...`}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-[#D7CCC8] text-xs focus:outline-none focus:ring-2 focus:ring-[#4E342E]"
-                />
-                <button
-                  type="submit"
-                  disabled={!newMessage.trim() || sending}
-                  className="p-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] disabled:opacity-50 text-white transition-colors shadow-sm flex items-center justify-center shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
+              {/* Uploading progress indicator */}
+              {uploadingAttachment && (
+                <div className="px-4 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-800 text-[11px] flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                  <span>Sending attachment...</span>
+                </div>
+              )}
+
+              {/* Voice Recording Active Bar */}
+              {isRecording ? (
+                <div className="p-3 border-t border-[#EFEBE9] bg-rose-50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
+                    <span className="text-xs font-bold text-rose-800">
+                      Recording: {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={cancelRecording} className="px-2.5 py-1 text-xs text-[#6D4C41]">
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="px-3 py-1.5 bg-rose-600 text-white rounded-xl text-xs font-bold"
+                    >
+                      Send Voice Note
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Chat Input Form */
+                <form onSubmit={handleSendMessage} className="p-3 border-t border-[#EFEBE9] bg-white flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={imageInputRef}
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        handleFileUpload(e.target.files[0]);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        handleFileUpload(e.target.files[0]);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    title="Attach Image"
+                    className="p-2 text-[#8D6E63] hover:text-[#4E342E] rounded-xl hover:bg-[#F7F2EF]"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Attach Document"
+                    className="p-2 text-[#8D6E63] hover:text-[#4E342E] rounded-xl hover:bg-[#F7F2EF]"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    title="Record Voice Note"
+                    className="p-2 text-[#8D6E63] hover:text-rose-600 rounded-xl hover:bg-[#F7F2EF]"
+                  >
+                    <Mic className="w-4 h-4" />
+                  </button>
+
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder={`Write message to ${selectedTeacher.fullName}...`}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-[#D7CCC8] text-xs focus:outline-none focus:ring-2 focus:ring-[#4E342E]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newMessage.trim() || sending}
+                    className="p-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] disabled:opacity-50 text-white transition-colors shadow-sm flex items-center justify-center shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+              )}
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#8D6E63] text-xs space-y-2">
@@ -291,6 +551,24 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
           )}
         </div>
       </div>
+
+      {/* Lightbox Modal */}
+      {lightboxImg && (
+        <div
+          onClick={() => setLightboxImg(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm"
+        >
+          <div className="relative max-w-3xl max-h-[90vh]">
+            <img src={lightboxImg} alt="Preview" className="max-w-full max-h-[90vh] rounded-2xl object-contain shadow-2xl" />
+            <button
+              onClick={() => setLightboxImg(null)}
+              className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full text-black shadow-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

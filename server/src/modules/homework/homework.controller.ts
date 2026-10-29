@@ -1,7 +1,8 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import fs from 'fs';
+import path from 'path';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { resolveAbsolutePath, getRelativeStorageKey } from '../../utils/storage.js';
 import {
@@ -9,8 +10,78 @@ import {
   isStaffAssignedToBatchSubject,
   getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
+import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
 
-const prisma = new PrismaClient();
+/**
+ * Canonical helper to derive student assignment status
+ */
+export function getCanonicalStudentHomeworkStatus(
+  dueDate: Date | string | null | undefined,
+  submission?: { status: string; grade?: string | null } | null
+) {
+  const isPastDue = dueDate ? new Date(dueDate) < new Date() : false;
+
+  if (submission) {
+    const isGraded = submission.status === 'GRADED' || Boolean(submission.grade);
+    const isCompleted = submission.status === 'COMPLETED' || isGraded;
+
+    if (isGraded) {
+      return {
+        studentStatus: 'GRADED' as const,
+        displayStatus: submission.grade ? `Graded (${submission.grade})` : 'Graded',
+        isSubmitted: true,
+        isGraded: true,
+        isCompleted: true,
+        isOverdue: false,
+        isPending: false,
+      };
+    }
+
+    if (submission.status === 'COMPLETED') {
+      return {
+        studentStatus: 'COMPLETED' as const,
+        displayStatus: 'Completed',
+        isSubmitted: true,
+        isGraded: false,
+        isCompleted: true,
+        isOverdue: false,
+        isPending: false,
+      };
+    }
+
+    return {
+      studentStatus: 'AWAITING_REVIEW' as const,
+      displayStatus: 'Awaiting Review',
+      isSubmitted: true,
+      isGraded: false,
+      isCompleted: false,
+      isOverdue: false,
+      isPending: false,
+    };
+  }
+
+  if (isPastDue) {
+    return {
+      studentStatus: 'OVERDUE' as const,
+      displayStatus: 'Overdue',
+      isSubmitted: false,
+      isGraded: false,
+      isCompleted: false,
+      isOverdue: true,
+      isPending: true,
+    };
+  }
+
+  return {
+    studentStatus: 'NOT_STARTED' as const,
+    displayStatus: 'Not Started',
+    isSubmitted: false,
+    isGraded: false,
+    isCompleted: false,
+    isOverdue: false,
+    isPending: true,
+  };
+}
 
 export const createHomeworkSchema = z.object({
   batchId: z.string().uuid('Valid Batch ID required'),
@@ -284,34 +355,38 @@ export async function listHomework(req: AuthenticatedRequest, res: Response) {
         },
         subject: { select: { id: true, name: true, code: true } },
         uploader: { select: { id: true, fullName: true, role: true } },
-        submissions: {
-          include: {
-            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
-          },
-        },
+        submissions: studentProfileId
+          ? {
+              where: { studentId: studentProfileId },
+              include: {
+                student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
+              },
+            }
+          : {
+              include: {
+                student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
+              },
+            },
       },
     });
 
     const now = new Date();
 
     const formatted = homeworkList.map((hw) => {
-      const isPastDue = hw.dueDate ? new Date(hw.dueDate) < now : false;
-
       // For student caller: find caller's specific submission
       let mySubmission: any = null;
-      let studentStatus = 'NOT_STARTED';
 
       if (studentProfileId) {
         const found = hw.submissions.find((s) => s.studentId === studentProfileId);
         if (found) {
           mySubmission = found;
-          studentStatus = found.status;
-        } else if (isPastDue) {
-          studentStatus = 'OVERDUE';
         }
       }
 
+      const canonical = getCanonicalStudentHomeworkStatus(hw.dueDate, mySubmission);
+
       // Summary metrics for staff / admin
+      const isPastDue = hw.dueDate ? new Date(hw.dueDate) < now : false;
       const totalEligible = hw.batch?._count?.enrollments || 0;
       const submittedCount = hw.submissions.filter((s) => s.status === 'SUBMITTED' || s.status === 'LATE').length;
       const completedCount = hw.submissions.filter((s) => s.status === 'COMPLETED' || s.status === 'GRADED').length;
@@ -320,9 +395,11 @@ export async function listHomework(req: AuthenticatedRequest, res: Response) {
 
       return {
         ...hw,
-        isOverdue: isPastDue && (!mySubmission || mySubmission.status === 'PENDING'),
+        ...canonical,
         mySubmission,
-        studentStatus,
+        grade: mySubmission?.grade || null,
+        feedback: mySubmission?.feedback || null,
+        submittedAt: mySubmission?.submittedAt || null,
         summary: {
           totalEligible,
           submittedCount,
@@ -439,6 +516,9 @@ export async function submitHomework(req: AuthenticatedRequest, res: Response) {
       },
     });
 
+    // Notify faculty of new student submission
+    InAppNotificationService.notifyHomeworkSubmitted(submission.id).catch(() => {});
+
     return res.status(201).json({
       success: true,
       message: submissionStatus === 'COMPLETED'
@@ -540,29 +620,87 @@ export async function getSubmissions(req: AuthenticatedRequest, res: Response) {
     // 3. Construct unified student completion roster
     const roster = eligibleStudents.map((st) => {
       const sub = submissionByStudentId.get(st.id);
-      let status: 'NOT_STARTED' | 'SUBMITTED' | 'COMPLETED' | 'LATE' | 'GRADED' = 'NOT_STARTED';
+      
+      let submissionType: 'FILE_UPLOAD' | 'TEXT_SUBMISSION' | 'SELF_MARKED' | 'NONE' = 'NONE';
+      if (sub?.fileUrl) {
+        submissionType = 'FILE_UPLOAD';
+      } else if (sub?.studentNotes) {
+        submissionType = 'TEXT_SUBMISSION';
+      } else if (sub?.status === 'COMPLETED') {
+        submissionType = 'SELF_MARKED';
+      }
+
+      let status: 'GRADED' | 'AWAITING_REVIEW' | 'SUBMITTED' | 'SELF_COMPLETED' | 'OVERDUE' | 'NOT_COMPLETED' = 'NOT_COMPLETED';
+      const isOverdue = !sub ? isPastDue : (sub.isLate || false);
 
       if (sub) {
-        status = sub.status;
+        if (sub.status === 'GRADED' || sub.gradedAt) {
+          status = 'GRADED';
+        } else if (sub.status === 'COMPLETED') {
+          status = 'SELF_COMPLETED';
+        } else if (sub.status === 'SUBMITTED' || sub.status === 'LATE') {
+          status = 'AWAITING_REVIEW';
+        } else {
+          status = 'SUBMITTED';
+        }
       } else if (isPastDue) {
-        status = 'NOT_STARTED'; // With isOverdue: true
+        status = 'OVERDUE';
+      } else {
+        status = 'NOT_COMPLETED';
       }
 
       return {
         student: st,
         status,
-        isOverdue: !sub && isPastDue,
+        rawStatus: sub?.status || 'PENDING',
+        submissionType,
+        isSelfMarked: submissionType === 'SELF_MARKED',
+        isOverdue,
+        isSubmitted: !!sub,
+        isGraded: !!sub?.gradedAt,
+        isAwaitingReview: status === 'AWAITING_REVIEW',
+        dueDate: material.dueDate,
+        submittedAt: sub?.submittedAt || null,
         submission: sub || null,
       };
     });
 
-    // 4. Calculate summary metrics
+    // 4. Calculate accurate database-derived counts
     const totalEligible = eligibleStudents.length;
-    const completedCount = roster.filter((r) => r.status === 'COMPLETED' || r.status === 'GRADED').length;
-    const submittedCount = roster.filter((r) => r.status === 'SUBMITTED' || r.status === 'LATE').length;
-    const gradedCount = roster.filter((r) => r.status === 'GRADED').length;
-    const notStartedCount = roster.filter((r) => r.status === 'NOT_STARTED' && !r.isOverdue).length;
-    const overdueCount = roster.filter((r) => r.isOverdue).length;
+    const completedCount = roster.filter((r) => r.status === 'GRADED' || r.status === 'SELF_COMPLETED').length;
+    const submittedCount = roster.filter((r) => r.isSubmitted).length;
+    const awaitingReviewCount = roster.filter((r) => r.isAwaitingReview).length;
+    const gradedCount = roster.filter((r) => r.isGraded).length;
+    const notCompletedCount = roster.filter((r) => !r.isSubmitted).length;
+    const overdueCount = roster.filter((r) => !r.isSubmitted && r.isOverdue).length;
+
+    // Optional query filtering for API consumer convenience
+    let filteredRoster = roster;
+    const filterStatus = (req.query.status as string || '').toUpperCase();
+    if (filterStatus && filterStatus !== 'ALL') {
+      if (filterStatus === 'COMPLETED') {
+        filteredRoster = filteredRoster.filter((r) => r.status === 'GRADED' || r.status === 'SELF_COMPLETED');
+      } else if (filterStatus === 'NOT_COMPLETED') {
+        filteredRoster = filteredRoster.filter((r) => !r.isSubmitted);
+      } else if (filterStatus === 'AWAITING_REVIEW') {
+        filteredRoster = filteredRoster.filter((r) => r.isAwaitingReview);
+      } else if (filterStatus === 'SUBMITTED') {
+        filteredRoster = filteredRoster.filter((r) => r.isSubmitted);
+      } else if (filterStatus === 'OVERDUE') {
+        filteredRoster = filteredRoster.filter((r) => !r.isSubmitted && r.isOverdue);
+      } else if (filterStatus === 'IN_PROGRESS') {
+        filteredRoster = filteredRoster.filter((r) => r.status === 'SUBMITTED' || r.isAwaitingReview);
+      }
+    }
+
+    const searchQuery = (req.query.search as string || '').trim().toLowerCase();
+    if (searchQuery) {
+      filteredRoster = filteredRoster.filter((r) =>
+        r.student.firstName.toLowerCase().includes(searchQuery) ||
+        r.student.lastName.toLowerCase().includes(searchQuery) ||
+        r.student.admissionNumber.toLowerCase().includes(searchQuery)
+      );
+    }
 
     return res.json({
       success: true,
@@ -572,11 +710,13 @@ export async function getSubmissions(req: AuthenticatedRequest, res: Response) {
           totalEligible,
           completedCount,
           submittedCount,
+          awaitingReviewCount,
           gradedCount,
-          notStartedCount,
+          notCompletedCount,
           overdueCount,
         },
-        roster,
+        roster: filteredRoster,
+        allRoster: roster,
         submissions,
       },
     });
@@ -628,6 +768,9 @@ export async function gradeSubmission(req: AuthenticatedRequest, res: Response) 
         gradedBy: { select: { id: true, fullName: true } },
       },
     });
+
+    // Notify student & linked parents of graded homework
+    InAppNotificationService.notifyHomeworkGraded(updated.id).catch(() => {});
 
     return res.json({
       success: true,
@@ -697,9 +840,12 @@ export async function downloadSubmission(req: AuthenticatedRequest, res: Respons
 
     res.setHeader('Content-Type', submission.mimeType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Accept-Ranges', 'bytes');
 
-    const stream = fs.createReadStream(absPath);
-    return stream.pipe(res);
+    return res.sendFile(path.resolve(absPath), {
+      acceptRanges: true,
+      maxAge: 0,
+    });
   } catch (err: any) {
     console.error('[Download Submission Error]', err);
     return res.status(500).json({ success: false, error: 'Failed to stream submission file' });

@@ -17,26 +17,33 @@ interface ParentTestResultsViewProps {
 
 export const ParentTestResultsView: React.FC<ParentTestResultsViewProps> = ({ student }) => {
   const [reportCard, setReportCard] = useState<any>(null);
+  const [upcomingExams, setUpcomingExams] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
 
   useEffect(() => {
-    async function loadReportCard() {
+    async function loadData() {
       if (!student?.id) return;
       try {
         setLoading(true);
-        const res = await apiFetch(`/exams/students/${student.id}/report-card`);
-        if (res.success && res.data) {
-          setReportCard(res.data);
+        const [rcRes, exRes] = await Promise.all([
+          apiFetch(`/exams/students/${student.id}/report-card`),
+          apiFetch('/exams?status=PUBLISHED'),
+        ]);
+        if (rcRes.success && rcRes.data) {
+          setReportCard(rcRes.data);
+        }
+        if (exRes.success && exRes.data?.exams) {
+          setUpcomingExams(exRes.data.exams.filter((e: any) => !e.isResultsPublished));
         }
       } catch (err) {
-        console.error('[Load Report Card Error]', err);
+        console.error('[Load Report Card / Exams Error]', err);
       } finally {
         setLoading(false);
       }
     }
 
-    loadReportCard();
+    loadData();
   }, [student?.id]);
 
   const allMarks = reportCard?.marks || [];
@@ -95,6 +102,38 @@ export const ParentTestResultsView: React.FC<ParentTestResultsViewProps> = ({ st
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Upcoming Examination Timetable (Scheduled) */}
+          {upcomingExams.length > 0 && (
+            <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-[#2D1E18] flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#6D4C41]" /> Upcoming Scheduled Examinations ({upcomingExams.length})
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {upcomingExams.map((ex: any) => (
+                  <div key={ex.id} className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-xs text-[#2D1E18]">{ex.title}</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Scheduled
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[#6D4C41] flex items-center gap-2">
+                      <span>{ex.subject?.name}</span>
+                      <span>&bull;</span>
+                      <span>{ex.batch?.name}</span>
+                    </div>
+                    <div className="text-xs text-[#2D1E18] flex items-center justify-between pt-1 border-t border-[#D7CCC8]/50">
+                      <span>Date: <strong>{new Date(ex.examDate).toLocaleDateString('en-IN')}</strong></span>
+                      {(ex.startTime || ex.endTime) && (
+                        <span className="text-[#6D4C41] font-mono">{ex.startTime || ''} - {ex.endTime || ''}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Cumulative Performance Analytics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm text-center">

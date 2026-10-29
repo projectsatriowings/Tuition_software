@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
@@ -50,8 +50,6 @@ import {
   getAuthorizedStaffAssignments,
 } from './student-authorization.service.js';
 import { getRelativeStorageKey, resolveAbsolutePath } from '../../utils/storage.js';
-
-const prisma = new PrismaClient();
 
 export const studentAdmissionSchema = z.object({
   admissionNumber: z.string().optional(), // Automatically generated on server
@@ -225,9 +223,13 @@ export async function listStudents(req: AuthenticatedRequest, res: Response) {
             select: { id: true, fullName: true, email: true, phone: true, isActive: true, mustChangePassword: true },
           },
           parentRelations: {
-            include: {
+            select: {
+              id: true,
+              relation: true,
+              isPrimaryContact: true,
               parent: {
-                include: {
+                select: {
+                  id: true,
                   user: {
                     select: { id: true, fullName: true, phone: true, email: true },
                   },

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -8,8 +8,6 @@ import {
   isStaffAssignedToBatchSubject,
   getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
-
-const prisma = new PrismaClient();
 
 export const createBatchSchema = z.object({
   name: z.string().min(2, 'Batch name is required'),
@@ -98,27 +96,13 @@ export async function listBatches(req: AuthenticatedRequest, res: Response) {
       orderBy: { createdAt: 'desc' },
       include: {
         batchSubjects: {
-          include: {
+          select: {
+            id: true,
+            batchId: true,
+            subjectId: true,
+            staffProfileId: true,
             subject: {
               select: { id: true, name: true, code: true },
-            },
-            staffProfile: {
-              include: {
-                user: {
-                  select: { id: true, fullName: true, email: true, phone: true },
-                },
-              },
-            },
-          },
-        },
-        staffAssignments: {
-          include: {
-            staffProfile: {
-              include: {
-                user: {
-                  select: { id: true, fullName: true, email: true, phone: true },
-                },
-              },
             },
           },
         },

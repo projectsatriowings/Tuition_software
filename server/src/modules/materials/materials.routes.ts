@@ -6,6 +6,8 @@ import {
   updateMaterial,
   deleteMaterial,
   downloadMaterial,
+  trackMaterialInteraction,
+  getMaterialInteractions,
 } from './materials.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 import { fileUpload } from '../../utils/storage.js';
@@ -31,9 +33,14 @@ router.patch(
 );
 router.delete(
   '/:id',
-  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'),
   deleteMaterial
 );
 router.get('/:id/download', downloadMaterial);
+
+router.post('/:id/track', trackMaterialInteraction);
+router.post('/:id/interactions', trackMaterialInteraction);
+router.get('/:id/interactions', getMaterialInteractions);
+
 
 export default router;
