@@ -20,6 +20,7 @@ import reviewsRoutes from './modules/reviews/reviews.routes.js';
 import messagingRoutes from './modules/messaging/messaging.routes.js';
 import feesRoutes from './modules/fees/fees.routes.js';
 import questionGeneratorRoutes from './modules/question-generator/question-generator.routes.js';
+import { NotificationService } from './modules/notifications/notification.service.js';
 
 const app = express();
 
@@ -41,10 +42,18 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Skip high-frequency background polling from cluttering server logs
+const SILENT_POLL_PATHS = new Set([
+  '/api/notifications/unread-count',
+  '/api/health',
+]);
+
 // Request logging (sanitized, non-sensitive)
 app.use((req: Request, _res: Response, next: NextFunction) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  if (!SILENT_POLL_PATHS.has(req.path)) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  }
   next();
 });
 
@@ -130,10 +139,23 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server if run directly
 const isMain = process.argv[1] && process.argv[1].endsWith('index.ts');
 if (isMain || process.env.NODE_ENV === 'production') {
-  app.listen(config.port, config.host, () => {
+  const server = app.listen(config.port, config.host, () => {
     console.log(`[TuitionOS API Server] listening on http://${config.host}:${config.port}`);
     console.log(`[TuitionOS API Server] Health check available at http://${config.host}:${config.port}/api/health`);
+    NotificationService.startWorker(15000);
   });
+
+  const handleShutdown = () => {
+    console.log('[TuitionOS API Server] Gracefully shutting down...');
+    NotificationService.stopWorker();
+    server.close(() => {
+      console.log('[TuitionOS API Server] Closed remaining connections.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', handleShutdown);
+  process.on('SIGTERM', handleShutdown);
 }
 
 export default app;

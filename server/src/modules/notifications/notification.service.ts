@@ -1,9 +1,47 @@
 import { PrismaClient } from '@prisma/client';
-import { getSmsProvider } from './sms.provider.js';
+import { getSmsProvider, getSmsProviderStatus } from './sms.provider.js';
 
 const prisma = new PrismaClient();
 
 export class NotificationService {
+  private static workerTimer: NodeJS.Timeout | null = null;
+  private static isProcessing = false;
+
+  /**
+   * Start recurring background worker to poll and process outbox queue
+   */
+  static startWorker(intervalMs = 15000) {
+    if (this.workerTimer) return;
+    const providerStatus = getSmsProviderStatus();
+    console.log(
+      `[NotificationService] SMS Background Worker started (polling every ${intervalMs / 1000}s, active provider: ${providerStatus.providerName})`
+    );
+
+    this.workerTimer = setInterval(() => {
+      this.processPendingNotifications().catch((err) => {
+        console.error('[NotificationService Worker Polling Error]', err.message);
+      });
+    }, intervalMs);
+
+    // Immediate initial tick
+    setTimeout(() => {
+      this.processPendingNotifications().catch((err) => {
+        console.error('[NotificationService Worker Initial Error]', err.message);
+      });
+    }, 500);
+  }
+
+  /**
+   * Stop recurring background worker
+   */
+  static stopWorker() {
+    if (this.workerTimer) {
+      clearInterval(this.workerTimer);
+      this.workerTimer = null;
+      console.log('[NotificationService] SMS Background Worker stopped');
+    }
+  }
+
   /**
    * Enqueue SMS notifications for verified guardians on Check-in/Check-out
    */
@@ -43,7 +81,7 @@ export class NotificationService {
       return [];
     }
 
-    // Format IST Date & Time
+    // Format IST Date & Time (Asia/Kolkata timezone safe)
     const timeFormatter = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata',
       hour: '2-digit',
@@ -102,10 +140,10 @@ export class NotificationService {
       createdNotifications.push(notif);
     }
 
-    // Process immediately in background
+    // Trigger immediate outbox processing in background without blocking response
     setTimeout(() => {
-      this.processPendingNotifications().catch((err) => {
-        console.error('[NotificationService] Background worker error:', err.message);
+      NotificationService.processPendingNotifications().catch((err) => {
+        console.error('[NotificationService] Background dispatch error:', err.message);
       });
     }, 100);
 
@@ -113,71 +151,120 @@ export class NotificationService {
   }
 
   /**
-   * Process pending / queued notifications
+   * Process pending / queued notifications safely with concurrency lock and backoff
    */
   static async processPendingNotifications() {
-    const provider = getSmsProvider();
+    if (this.isProcessing) {
+      return; // Concurrency protection: already executing an outbox batch
+    }
 
-    const pending = await prisma.smsNotification.findMany({
-      where: {
-        OR: [
-          { status: 'QUEUED' },
-          {
-            status: 'FAILED',
-            retryCount: { lt: 3 },
-            OR: [
-              { scheduledRetryAt: null },
-              { scheduledRetryAt: { lte: new Date() } },
-            ],
-          },
-        ],
-      },
-      take: 20,
-    });
+    this.isProcessing = true;
+    try {
+      const provider = getSmsProvider();
+      const now = new Date();
 
-    if (pending.length === 0) return;
-
-    for (const notif of pending) {
-      try {
-        const result = await provider.send(notif.phoneNumber, notif.messageBody, notif.templateName);
-
-        if (result.success) {
-          await prisma.smsNotification.update({
-            where: { id: notif.id },
-            data: {
-              status: 'SENT',
-              provider: result.provider,
-              providerRef: result.providerRef || null,
-              sentAt: new Date(),
-              deliveredAt: new Date(),
-              failureReason: null,
+      // Find pending notifications:
+      // 1. Newly QUEUED
+      // 2. FAILED with scheduledRetryAt <= now and retryCount < maxRetries
+      const pending = await prisma.smsNotification.findMany({
+        where: {
+          OR: [
+            { status: 'QUEUED' },
+            {
+              status: 'FAILED',
+              retryCount: { lt: 3 },
+              scheduledRetryAt: { lte: now },
             },
-          });
-        } else {
+          ],
+        },
+        take: 25,
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (pending.length === 0) return;
+
+      for (const notif of pending) {
+        // Atomic status transition to SENDING to prevent concurrent worker duplicate send
+        const locked = await prisma.smsNotification.updateMany({
+          where: {
+            id: notif.id,
+            status: { in: ['QUEUED', 'FAILED'] },
+          },
+          data: {
+            status: 'SENDING',
+          },
+        });
+
+        if (locked.count === 0) {
+          continue; // Another process or thread claimed this notification
+        }
+
+        try {
+          const result = await provider.send(notif.phoneNumber, notif.messageBody, notif.templateName);
+
+          if (result.success) {
+            // STRICT SAFETY: Do NOT mark DELIVERED unless provider confirmed real delivery!
+            // When gateway accepts message, status is SENT.
+            const isConfirmedDelivered = result.delivered === true;
+
+            await prisma.smsNotification.update({
+              where: { id: notif.id },
+              data: {
+                status: isConfirmedDelivered ? 'DELIVERED' : 'SENT',
+                provider: result.provider,
+                providerRef: result.providerRef || null,
+                sentAt: new Date(),
+                deliveredAt: isConfirmedDelivered ? new Date() : null,
+                failureReason: null,
+                scheduledRetryAt: null,
+              },
+            });
+          } else {
+            const nextRetryCount = notif.retryCount + 1;
+            const isPermanentError =
+              result.error?.includes('not configured') ||
+              result.error?.includes('Invalid destination') ||
+              result.error?.includes('rejected template');
+
+            // Exponential backoff: 2m, 4m, 8m
+            const retryDelayMinutes = Math.pow(2, nextRetryCount);
+            const nextRetryAt =
+              !isPermanentError && nextRetryCount < notif.maxRetries
+                ? new Date(Date.now() + retryDelayMinutes * 60 * 1000)
+                : null;
+
+            await prisma.smsNotification.update({
+              where: { id: notif.id },
+              data: {
+                status: 'FAILED',
+                provider: result.provider,
+                failureReason: result.error || 'Provider rejected delivery',
+                retryCount: nextRetryCount,
+                scheduledRetryAt: nextRetryAt,
+              },
+            });
+          }
+        } catch (err: any) {
           const nextRetryCount = notif.retryCount + 1;
-          const retryDelayMinutes = Math.pow(2, nextRetryCount); // Exponential backoff: 2m, 4m, 8m
-          const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60 * 1000);
+          const retryDelayMinutes = Math.pow(2, nextRetryCount);
+          const nextRetryAt =
+            nextRetryCount < notif.maxRetries
+              ? new Date(Date.now() + retryDelayMinutes * 60 * 1000)
+              : null;
 
           await prisma.smsNotification.update({
             where: { id: notif.id },
             data: {
               status: 'FAILED',
-              failureReason: result.error || 'Provider rejected delivery',
+              failureReason: err.message || 'Unexpected delivery failure',
               retryCount: nextRetryCount,
-              scheduledRetryAt: nextRetryCount < notif.maxRetries ? nextRetryAt : null,
+              scheduledRetryAt: nextRetryAt,
             },
           });
         }
-      } catch (err: any) {
-        await prisma.smsNotification.update({
-          where: { id: notif.id },
-          data: {
-            status: 'FAILED',
-            failureReason: err.message || 'Unexpected delivery failure',
-            retryCount: notif.retryCount + 1,
-          },
-        });
       }
+    } finally {
+      this.isProcessing = false;
     }
   }
 
@@ -194,7 +281,7 @@ export class NotificationService {
     }
 
     if (notif.status === 'SENT' || notif.status === 'DELIVERED') {
-      throw new Error('Notification has already been delivered successfully');
+      throw new Error('Notification has already been accepted/delivered successfully');
     }
 
     await prisma.smsNotification.update({
@@ -206,8 +293,8 @@ export class NotificationService {
       },
     });
 
-    // Dispatch background processor
-    this.processPendingNotifications().catch(console.error);
+    // Dispatch background processor immediately
+    NotificationService.processPendingNotifications().catch(console.error);
 
     return { message: 'Notification re-queued for delivery' };
   }

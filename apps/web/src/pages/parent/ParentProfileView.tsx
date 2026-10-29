@@ -161,7 +161,7 @@ export const ParentProfileView: React.FC<ParentProfileViewProps> = ({ student, p
                 <strong className="text-[#2D1E18] block mt-0.5">{parent?.phone || 'N/A'}</strong>
               </div>
               <div className="p-3.5 rounded-2xl bg-[#F7F2EF]">
-                <span className="text-[10px] text-[#8D6E63] uppercase font-bold block">SMS Alerts</span>
+                <span className="text-[10px] text-[#8D6E63] uppercase font-bold block">In-App Alerts</span>
                 <span className="text-emerald-800 font-bold block mt-0.5">Enabled</span>
               </div>
             </div>

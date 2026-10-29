@@ -3,6 +3,7 @@ import { apiFetch } from '../../services/api';
 import {
   Bell,
   CheckCheck,
+  CheckCircle2,
   Calendar,
   CreditCard,
   Award,
@@ -72,6 +73,8 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
+      case 'ATTENDANCE':
+        return <CheckCircle2 className="w-5 h-5 text-emerald-600" />;
       case 'ABSENCE':
         return <AlertCircle className="w-5 h-5 text-rose-600" />;
       case 'FEE_DUE':

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, Building, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 
 export const Navbar: React.FC = () => {
   const { user, activeInstitute, logout } = useAuth();
@@ -40,6 +41,8 @@ export const Navbar: React.FC = () => {
 
       <div className="flex items-center gap-4">
         {getRoleBadge(user?.role)}
+
+        <NotificationBell />
 
         <div className="hidden md:flex items-center gap-2 text-xs text-[#5D4037]">
           <UserIcon className="w-3.5 h-3.5 text-[#8D6E63]" />

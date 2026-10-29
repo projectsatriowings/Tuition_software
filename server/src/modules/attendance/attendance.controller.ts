@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { config } from '../../config/index.js';
 import { NotificationService } from '../notifications/notification.service.js';
+import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
 import {
   getAuthorizedStudentScope,
   isStudentAuthorized,
@@ -268,7 +269,7 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     // (Preserves successful attendance record even if telephony provider or template fails)
     let smsNotifications: any[] = [];
     try {
-      smsNotifications = await NotificationService.queueAttendanceNotification({
+      await InAppNotificationService.createAttendanceNotifications({
         attendanceEventId: event.id,
         studentId,
         instituteId,
@@ -303,7 +304,8 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
         smsNotification:
           smsNotifications.length > 0
             ? {
-                queued: true,
+                queued: false,
+          reason: 'In-app notification sent',
                 count: smsNotifications.length,
                 status: smsNotifications[0].status,
                 recipient: smsNotifications[0].phoneNumber.replace(/(\d{2})\d+(\d{2})/, '$1******$2'),
@@ -452,11 +454,21 @@ export async function voiceMatchStudents(req: AuthenticatedRequest, res: Respons
         latestCheckIn &&
         (!latestCheckOut || latestCheckOut.sessionNumber < latestCheckIn.sessionNumber)
       );
+      const isCheckedOut = !!(
+        latestCheckIn &&
+        latestCheckOut &&
+        latestCheckOut.sessionNumber >= latestCheckIn.sessionNumber
+      );
 
       const checkInTimeFormatted = latestCheckIn ? timeFormatter.format(latestCheckIn.eventTime) : null;
+      const checkOutTimeFormatted = latestCheckOut ? timeFormatter.format(latestCheckOut.eventTime) : null;
       const targetEnrollment = batchId
         ? s.enrollments.find((e) => e.batchId === batchId) || s.enrollments[0]
         : s.enrollments[0];
+
+      const todayStatus = isCheckedIn ? 'CHECKED_IN' : isCheckedOut ? 'CHECKED_OUT' : 'ABSENT';
+      const recommendedAction: 'CHECK_IN' | 'CHECK_OUT' | 'COMPLETED' =
+        todayStatus === 'ABSENT' ? 'CHECK_IN' : todayStatus === 'CHECKED_IN' ? 'CHECK_OUT' : 'COMPLETED';
 
       return {
         id: s.id,
@@ -472,8 +484,11 @@ export async function voiceMatchStudents(req: AuthenticatedRequest, res: Respons
         subjectId: targetEnrollment?.subjectId || null,
         subjectName: targetEnrollment?.subject?.name || null,
         alreadyCheckedIn: isCheckedIn,
+        alreadyCheckedOut: isCheckedOut,
         checkInTimeFormatted,
-        todayStatus: isCheckedIn ? 'CHECKED_IN' : latestCheckOut ? 'CHECKED_OUT' : 'ABSENT',
+        checkOutTimeFormatted,
+        todayStatus,
+        recommendedAction,
       };
     });
 
@@ -482,29 +497,44 @@ export async function voiceMatchStudents(req: AuthenticatedRequest, res: Respons
 
     if (matchResult.status === 'EXACT_SINGLE' && matchResult.bestMatch) {
       const match = matchResult.bestMatch;
+      const proposedAction = match.recommendedAction || 'CHECK_IN';
+      const autoActionEligible = proposedAction === 'CHECK_IN'; // Fast path for check-in; check-out requires deliberate confirm or single tap
+
+      let message = `Exact match found for ${match.firstName} ${match.lastName}. Ready to check in.`;
+      if (proposedAction === 'CHECK_OUT') {
+        message = `${match.firstName} ${match.lastName} is checked in at ${match.checkInTimeFormatted}. Ready to check out.`;
+      } else if (proposedAction === 'COMPLETED') {
+        message = `${match.firstName} ${match.lastName} has already checked out for today at ${match.checkOutTimeFormatted || 'earlier'}.`;
+      }
+
       return res.json({
         success: true,
         status: 'EXACT_SINGLE',
         matchCount: 1,
         bestMatch: match,
         matches: [match],
-        autoCheckInEligible: !match.alreadyCheckedIn,
+        proposedAction,
+        autoActionEligible,
+        autoCheckInEligible: autoActionEligible,
         alreadyCheckedIn: !!match.alreadyCheckedIn,
+        alreadyCheckedOut: !!match.alreadyCheckedOut,
         checkInTimeFormatted: match.checkInTimeFormatted,
-        message: match.alreadyCheckedIn
-          ? `${match.firstName} ${match.lastName} is already checked in at ${match.checkInTimeFormatted}.`
-          : `Exact match found for ${match.firstName} ${match.lastName}. Initiating automatic check-in.`,
+        checkOutTimeFormatted: match.checkOutTimeFormatted,
+        message,
         cleanedQuery: matchResult.cleanedQuery,
       });
     }
 
     if (matchResult.status === 'EXACT_MULTIPLE') {
+      const matches = matchResult.allMatches || matchResult.exactMatches;
       return res.json({
         success: true,
         status: 'EXACT_MULTIPLE',
-        matchCount: matchResult.exactMatches.length,
+        matchCount: matches.length,
         bestMatch: null,
-        matches: matchResult.exactMatches,
+        matches,
+        proposedAction: 'MULTIPLE_CANDIDATES',
+        autoActionEligible: false,
         autoCheckInEligible: false,
         message: `Multiple students matched '${transcript}'. Please select the intended student.`,
         cleanedQuery: matchResult.cleanedQuery,
@@ -514,30 +544,45 @@ export async function voiceMatchStudents(req: AuthenticatedRequest, res: Respons
     if (matchResult.status === 'FUZZY_SINGLE' && matchResult.bestMatch) {
       const match = matchResult.bestMatch;
       const confidence = matchResult.fuzzyMatches[0]?.score || 0.8;
+      const proposedAction = match.recommendedAction || 'CHECK_IN';
+
+      let message = `Possible match for ${match.firstName} ${match.lastName} (${Math.round(confidence * 100)}% confidence). Please confirm action.`;
+      if (proposedAction === 'CHECK_OUT') {
+        message = `Possible match for ${match.firstName} ${match.lastName} (currently checked in). Please confirm check-out.`;
+      } else if (proposedAction === 'COMPLETED') {
+        message = `${match.firstName} ${match.lastName} has already checked out today.`;
+      }
+
       return res.json({
         success: true,
         status: 'FUZZY_SINGLE',
         matchCount: 1,
         bestMatch: match,
         matches: [match],
-        autoCheckInEligible: false, // Never auto check-in low/fuzzy confidence! Requires staff confirmation
+        proposedAction,
+        autoActionEligible: false, // Never auto action low/fuzzy confidence! Requires staff confirmation
+        autoCheckInEligible: false,
         requiresConfirmation: true,
         confidenceScore: Math.round(confidence * 100),
         alreadyCheckedIn: !!match.alreadyCheckedIn,
+        alreadyCheckedOut: !!match.alreadyCheckedOut,
         checkInTimeFormatted: match.checkInTimeFormatted,
-        message: `Low confidence match for ${match.firstName} ${match.lastName} (${Math.round(confidence * 100)}% match). Please confirm manually.`,
+        checkOutTimeFormatted: match.checkOutTimeFormatted,
+        message,
         cleanedQuery: matchResult.cleanedQuery,
       });
     }
 
     if (matchResult.status === 'FUZZY_MULTIPLE') {
-      const matches = matchResult.fuzzyMatches.map((f) => f.student);
+      const matches = matchResult.allMatches || matchResult.fuzzyMatches.map((f) => f.student);
       return res.json({
         success: true,
         status: 'FUZZY_MULTIPLE',
         matchCount: matches.length,
         bestMatch: null,
         matches,
+        proposedAction: 'MULTIPLE_CANDIDATES',
+        autoActionEligible: false,
         autoCheckInEligible: false,
         message: `Multiple students have similar names to '${transcript}'. Please select the intended student.`,
         cleanedQuery: matchResult.cleanedQuery,
@@ -550,6 +595,8 @@ export async function voiceMatchStudents(req: AuthenticatedRequest, res: Respons
       matchCount: 0,
       bestMatch: null,
       matches: [],
+      proposedAction: 'NONE',
+      autoActionEligible: false,
       autoCheckInEligible: false,
       message: `No matching student found for '${transcript}'.`,
       cleanedQuery: matchResult.cleanedQuery,
@@ -611,12 +658,32 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
     // Check transition validity:
     // Student CANNOT check out if they have no active check-in today!
     const activeCheckIn = todaysEvents.find((e) => e.eventType === 'CHECK_IN');
-    const existingCheckOut = todaysEvents.find((e) => e.eventType === 'CHECK_OUT' && e.sessionNumber === activeCheckIn?.sessionNumber);
+    const existingCheckOut = todaysEvents.find(
+      (e) => e.eventType === 'CHECK_OUT' && e.sessionNumber === activeCheckIn?.sessionNumber
+    );
 
-    if (!activeCheckIn || existingCheckOut) {
+    if (!activeCheckIn) {
       return res.status(400).json({
         success: false,
         error: 'Cannot check out: Student has no active check-in record for today.',
+      });
+    }
+
+    if (existingCheckOut) {
+      const timeFormatted = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(existingCheckOut.eventTime);
+
+      return res.status(409).json({
+        success: false,
+        alreadyCheckedOut: true,
+        error: `${student.firstName} ${student.lastName} has already checked out for today at ${timeFormatted}.`,
+        data: {
+          existingEvent: existingCheckOut,
+        },
       });
     }
 
@@ -641,7 +708,7 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
         });
 
         // Queue SMS notification for guardians
-        await NotificationService.queueAttendanceNotification({
+        await InAppNotificationService.createAttendanceNotifications({
           attendanceEventId: createdEvent.id,
           studentId,
           instituteId,
@@ -655,10 +722,32 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
       { timeout: 15000, maxWait: 10000 }
     );
 
+    const checkOutTimeFormatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(serverNow);
+
     return res.status(201).json({
       success: true,
       message: `${student.firstName} ${student.lastName} checked out successfully.`,
-      data: { event },
+      data: {
+        event,
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          admissionNumber: student.admissionNumber,
+          photoUrl: student.photoUrl,
+          checkOutTimeFormatted,
+        },
+        smsNotification: {
+          queued: false,
+          reason: 'In-app notification sent',
+          eventType: 'CHECK_OUT',
+        },
+      },
     });
   } catch (err: any) {
     console.error('[Check-out Error]', err);
@@ -677,7 +766,11 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
     const batchId = req.query.batchId as string;
     const subjectId = req.query.subjectId as string;
     const dateQuery = req.query.date as string;
-    const targetDate = dateQuery ? new Date(dateQuery) : getInstituteLocalDate();
+
+    // Authoritative date rule: For normal staff attendance workflow, the date is strictly TODAY
+    // derived in the institute's timezone (Asia/Kolkata). Client-side historical or future overrides are ignored.
+    const todayLocalDate = getInstituteLocalDate(new Date(), 'Asia/Kolkata');
+    const targetDate = req.user?.role === 'STAFF' ? todayLocalDate : dateQuery ? new Date(dateQuery) : todayLocalDate;
 
     // Staff authorization check on batchId & subjectId
     if (req.user?.role === 'STAFF') {
@@ -740,6 +833,13 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
       }),
     ]);
 
+    const timeFormatter = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
     // Map each student's current status for today
     const studentStatusMap = students.map((student) => {
       const studentEvents = events.filter((e) => e.studentId === student.id);
@@ -764,7 +864,9 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
         status,
         isLate: checkInEvent?.isLate || false,
         checkInTime: checkInEvent?.eventTime || null,
+        checkInTimeFormatted: checkInEvent ? timeFormatter.format(checkInEvent.eventTime) : null,
         checkOutTime: checkOutEvent?.eventTime || null,
+        checkOutTimeFormatted: checkOutEvent ? timeFormatter.format(checkOutEvent.eventTime) : null,
         method: checkInEvent?.method || null,
         markedBy: checkInEvent?.markedBy?.fullName || null,
         eventId: checkInEvent?.id || null,
@@ -778,10 +880,21 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
     const lateCount = studentStatusMap.filter((s) => s.isLate).length;
     const absentCount = totalStudents - presentTotal;
 
+    const formattedDate = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date());
+
     return res.json({
       success: true,
       data: {
         date: targetDate.toISOString().split('T')[0],
+        formattedDate,
+        timeZone: 'Asia/Kolkata',
+        isTodayOnly: true,
         counts: {
           totalStudents,
           presentTotal,

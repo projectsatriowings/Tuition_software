@@ -77,9 +77,10 @@ export async function listBatches(req: AuthenticatedRequest, res: Response) {
     let batchWhere: any = { instituteId };
     let authorizedSubjectIds: string[] | null = null;
     let staffProfileId: string | null = null;
+    let assignments: any = null;
 
     if (isStaff) {
-      const assignments = await getAuthorizedStaffAssignments(req, prisma);
+      assignments = await getAuthorizedStaffAssignments(req, prisma);
       if (assignments.authorizedBatchIds.length === 0) {
         return res.json({ success: true, data: { batches: [] } });
       }
@@ -131,14 +132,18 @@ export async function listBatches(req: AuthenticatedRequest, res: Response) {
       },
     });
 
-    // If caller is STAFF, filter each batch's batchSubjects to only those assigned to this staff member
+    // If caller is STAFF, filter each batch's batchSubjects to those assigned to this staff member.
+    // If staff is assigned to the whole batch with no specific subject restriction, include all subjects in that batch.
     const filteredBatches = isStaff
       ? batches.map((b) => {
-          const staffSubjects = b.batchSubjects.filter(
-            (bs) =>
-              (staffProfileId && bs.staffProfileId === staffProfileId) ||
-              (authorizedSubjectIds && authorizedSubjectIds.includes(bs.subjectId))
-          );
+          const assignedSubIds = assignments?.subjectIdsByBatch?.[b.id] || [];
+          const staffSubjects = assignedSubIds.length === 0
+            ? b.batchSubjects
+            : b.batchSubjects.filter(
+                (bs) =>
+                  (staffProfileId && bs.staffProfileId === staffProfileId) ||
+                  assignedSubIds.includes(bs.subjectId)
+              );
           return {
             ...b,
             batchSubjects: staffSubjects,
@@ -459,6 +464,40 @@ export async function toggleBatchStatus(req: AuthenticatedRequest, res: Response
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to toggle batch status' });
+  }
+}
+
+// Delete Batch
+export async function deleteBatch(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
+
+    const { id } = req.params;
+
+    const existing = await prisma.batch.findFirst({
+      where: { id, instituteId },
+    });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+    }
+
+    // Safely delete associated records and the batch
+    await prisma.$transaction([
+      prisma.batchSubject.deleteMany({ where: { batchId: id } }),
+      prisma.staffBatchAssignment.deleteMany({ where: { batchId: id } }),
+      prisma.studentEnrollment.deleteMany({ where: { batchId: id } }),
+      prisma.attendanceEvent.deleteMany({ where: { batchId: id } }),
+      prisma.batch.delete({ where: { id } }),
+    ]);
+
+    return res.json({
+      success: true,
+      message: `Batch '${existing.name}' deleted successfully`,
+    });
+  } catch (err: any) {
+    console.error('[deleteBatch error]', err);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to delete batch' });
   }
 }
 

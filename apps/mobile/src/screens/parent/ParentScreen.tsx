@@ -17,6 +17,8 @@ import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
+import { NotificationModal } from '../../components/NotificationModal';
+import { PushNotificationService } from '../../services/pushNotification.service';
 import { themeTokens } from '@tuition/shared';
 
 export const ParentScreen: React.FC = () => {
@@ -46,6 +48,8 @@ export const ParentScreen: React.FC = () => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   const formatKolkataTime = (isoString?: string | null) => {
     if (!isoString) return 'Not available';
@@ -137,11 +141,27 @@ export const ParentScreen: React.FC = () => {
 
   useEffect(() => {
     fetchParentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
   }, [fetchParentData]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchParentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
   };
 
   const handleSelectChild = (child: any) => {
@@ -226,6 +246,14 @@ export const ParentScreen: React.FC = () => {
         setShowReviewModal(false);
         setReviewComment('');
         fetchParentData();
+    PushNotificationService.registerPushToken().catch(() => {});
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
       } else {
         Alert.alert('Submission Error', res.error || 'Failed to submit review.');
       }
@@ -242,6 +270,8 @@ export const ParentScreen: React.FC = () => {
         title="Parent Portal"
         subtitle={selectedChild ? `Student: ${selectedChild.user?.fullName}` : 'Family Dashboard'}
         onRefresh={onRefresh}
+        onOpenNotifications={() => setShowNotificationModal(true)}
+        unreadNotificationsCount={unreadNotifCount}
       />
 
       {/* Linked Children Quick Bar */}
@@ -374,10 +404,10 @@ export const ParentScreen: React.FC = () => {
                   <Card style={{ marginTop: 12 }}>
                     <Text style={styles.cardHeaderTitle}>🛡️ Campus Attendance & Safety</Text>
                     <Text style={styles.safetyText}>
-                      Biometric & cryptographic QR check-in notifications are dispatched via SMS directly to your registered mobile number upon entry and departure.
+                      Attendance check-in and check-out notifications are dispatched via in-app notifications directly to your verified parent account upon entry and departure.
                     </Text>
                     <View style={styles.safetyBadgeRow}>
-                      <Badge label="SMS OUTBOX ACTIVE" variant="indigo" size="sm" />
+                      <Badge label="IN-APP ALERTS ACTIVE" variant="indigo" size="sm" />
                       <Badge label="GATE LOG VALIDATED" variant="success" size="sm" />
                     </View>
                   </Card>
@@ -668,6 +698,12 @@ export const ParentScreen: React.FC = () => {
         visible={showReceiptModal}
         onClose={() => setShowReceiptModal(false)}
         receipt={selectedReceipt}
+      />
+
+      <NotificationModal
+        visible={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        onUnreadCountChange={setUnreadNotifCount}
       />
     </View>
   );

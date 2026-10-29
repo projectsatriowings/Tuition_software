@@ -701,8 +701,9 @@ Please keep this login and password safe. This is your permanent account passwor
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                 {addError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs">
-                    {addError}
+                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2 font-medium">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{addError}</span>
                   </div>
                 )}
 
@@ -1274,3 +1275,4 @@ Please keep this login and password safe. This is your permanent account passwor
     </div>
   );
 };
+

@@ -504,7 +504,7 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
                 <View style={[styles.checkbox, parentCanReceiveSms && styles.checkboxActive]}>
                   {parentCanReceiveSms && <Text style={styles.checkMark}>✓</Text>}
                 </View>
-                <Text style={styles.checkboxLabel}>Consent to receive institute SMS / WhatsApp alerts</Text>
+                <Text style={styles.checkboxLabel}>Consent to receive institute in-app and push alerts</Text>
               </TouchableOpacity>
 
               {/* Submit Button */}

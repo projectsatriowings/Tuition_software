@@ -5,6 +5,7 @@ import {
   createBatch,
   updateBatch,
   toggleBatchStatus,
+  deleteBatch,
   assignSubjectsToBatch,
   updateBatchSubject,
   removeSubjectFromBatch,
@@ -36,6 +37,7 @@ router.get('/batches/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF')
 router.post('/batches', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), createBatch);
 router.put('/batches/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), updateBatch);
 router.patch('/batches/:id/status', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), toggleBatchStatus);
+router.delete('/batches/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), deleteBatch);
 
 // Batch Curriculum (Subjects)
 router.post('/batches/:id/subjects', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), assignSubjectsToBatch);

@@ -7,9 +7,17 @@ interface HeaderProps {
   title?: string;
   subtitle?: string;
   onRefresh?: () => void;
+  onOpenNotifications?: () => void;
+  unreadNotificationsCount?: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, subtitle, onRefresh }) => {
+export const Header: React.FC<HeaderProps> = ({
+  title,
+  subtitle,
+  onRefresh,
+  onOpenNotifications,
+  unreadNotificationsCount = 0,
+}) => {
   const { user, institute, logout } = useMobileAuth();
 
   const getRoleLabel = (role?: string) => {
@@ -44,6 +52,18 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, onRefresh }) =>
         </View>
 
         <View style={styles.actions}>
+          {onOpenNotifications && (
+            <TouchableOpacity onPress={onOpenNotifications} style={[styles.actionBtn, styles.bellBtn]}>
+              <Text style={styles.bellBtnText}>🔔</Text>
+              {unreadNotificationsCount > 0 && (
+                <View style={styles.badgeDot}>
+                  <Text style={styles.badgeDotText}>
+                    {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
           {onRefresh && (
             <TouchableOpacity onPress={onRefresh} style={styles.actionBtn}>
               <Text style={styles.actionBtnText}>↻</Text>
@@ -126,6 +146,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  bellBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 8,
+    position: 'relative',
+  },
+  bellBtnText: {
+    fontSize: 14,
+  },
+  badgeDot: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#DC2626',
+    borderRadius: 9,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeDotText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
   },
   actionBtn: {
     paddingHorizontal: 10,

@@ -386,13 +386,16 @@ Please keep this login and password safe. Use your registered mobile number and 
 
   const handleOpenAssignBatchModal = (student: Student) => {
     setAssignBatchStudent(student);
-    const currentBatchId = student.enrollments?.[0]?.batch?.id || '';
+    const matchingEnrollment = (student.enrollments || []).find(
+      (e: any) => e.isActive !== false && e.batch?.id && (batchFilter ? e.batch.id === batchFilter : batches.some((b) => b.id === e.batch.id))
+    );
+    const currentBatchId = matchingEnrollment?.batch?.id || student.enrollments?.find((e: any) => e.isActive !== false)?.batch?.id || student.enrollments?.[0]?.batch?.id || '';
     setSelectedAssignBatchId(currentBatchId);
 
-    // Existing allocated subjects
-    const existingSubjectIds = student.enrollments
-      ?.filter((e: any) => e.subjectId)
-      ?.map((e: any) => e.subjectId) || [];
+    // Existing allocated subjects for this specific batch
+    const existingSubjectIds = (student.enrollments || [])
+      .filter((e: any) => e.isActive !== false && e.subjectId && (!currentBatchId || e.batchId === currentBatchId))
+      .map((e: any) => e.subjectId) || [];
     setSelectedAssignSubjectIds(existingSubjectIds);
     setAssignBatchError(null);
   };
@@ -475,13 +478,25 @@ Please keep this login and password safe. Use your registered mobile number and 
       } catch {}
     }
 
-    // Extract primary batch
-    const currentBatchId = student.enrollments?.[0]?.batch?.id || '';
+    // Select batch that matches current user's authorized batches, or the active filter, or the student's authorized enrollment
+    const matchingEnrollment = (student.enrollments || []).find(
+      (e: any) => e.isActive !== false && e.batch?.id && (batchFilter ? e.batch.id === batchFilter : batches.some((b) => b.id === e.batch.id))
+    );
+    const authorizedStudentBatchId = (student.enrollments || []).find(
+      (e: any) => e.isActive !== false && batches.some((b) => b.id === e.batch?.id)
+    )?.batch?.id;
+    const currentBatchId = matchingEnrollment?.batch?.id || authorizedStudentBatchId || (batches.length === 1 ? batches[0].id : '') || student.enrollments?.[0]?.batch?.id || '';
 
-    // Extract allocated subject IDs
+    // Extract allocated subject IDs strictly for this batch
     const currentSubjectIds = (student.enrollments || [])
-      .filter((e: any) => e.subjectId)
+      .filter((e: any) => e.isActive !== false && e.subjectId && (!currentBatchId || e.batchId === currentBatchId))
       .map((e: any) => e.subjectId as string);
+
+    // If no specific subject was allocated, default to all subjects in currentBatchId
+    const targetBatch = batches.find((b) => b.id === currentBatchId);
+    const finalSubjectIds = currentSubjectIds.length > 0
+      ? currentSubjectIds
+      : (targetBatch?.batchSubjects || []).map((bs: any) => bs.subject?.id || bs.subjectId);
 
     // Extract primary parent
     const primaryRel = student.parentRelations?.[0];
@@ -500,7 +515,7 @@ Please keep this login and password safe. Use your registered mobile number and 
       bloodGroup: student.bloodGroup || '',
       notes: userNotes,
       batchId: currentBatchId,
-      subjectIds: currentSubjectIds,
+      subjectIds: finalSubjectIds,
       parentFullName,
       parentRelationship: parentRel,
       parentPhone,
@@ -568,22 +583,29 @@ Please keep this login and password safe. Use your registered mobile number and 
         }
       }
 
+      const cleanDob = editFormData.dob && editFormData.dob.trim() ? new Date(editFormData.dob).toISOString() : null;
+      const cleanStudentEmail = editFormData.studentEmail.trim() || null;
+      const cleanStudentPhone = editFormData.studentPhone.trim() || null;
+      const cleanParentEmail = editFormData.parentEmail.trim() || null;
+      const cleanParentPhone = editFormData.parentPhone.trim() || null;
+      const cleanParentName = editFormData.parentFullName.trim() || null;
+
       const payload = {
         firstName: editFormData.firstName.trim(),
         lastName: editFormData.lastName.trim(),
-        studentPhone: editFormData.studentPhone.trim() || undefined,
-        studentEmail: editFormData.studentEmail.trim() || undefined,
-        dob: editFormData.dob ? new Date(editFormData.dob).toISOString() : null,
+        studentPhone: cleanStudentPhone,
+        studentEmail: cleanStudentEmail,
+        dob: cleanDob,
         gender: editFormData.gender,
-        bloodGroup: editFormData.bloodGroup || null,
+        bloodGroup: editFormData.bloodGroup?.trim() || null,
         notes: editFormData.notes.trim() || null,
-        photoUrl: updatedPhotoUrl,
+        photoUrl: updatedPhotoUrl || null,
         batchId: editFormData.batchId || null,
         subjectIds: editFormData.subjectIds,
-        parentFullName: editFormData.parentFullName.trim() || undefined,
+        parentFullName: cleanParentName,
         parentRelationship: editFormData.parentRelationship,
-        parentPhone: editFormData.parentPhone.trim() || undefined,
-        parentEmail: editFormData.parentEmail.trim() || undefined,
+        parentPhone: cleanParentPhone,
+        parentEmail: cleanParentEmail,
       };
 
       const res = await apiFetch(`/students/${editingStudent.id}`, {
@@ -959,8 +981,9 @@ Please keep this login and password safe. Use your registered mobile number and 
       if (err.data?.isExistingStudent && err.data?.existingStudent) {
         setDetectedCollision(err.data.existingStudent);
       }
-      setAdmitError(err.message || 'Failed to admit student');
-      showToast(err.message || 'Could not complete student admission.', 'error');
+      const msg = err.data?.error || err.data?.message || err.message || 'Failed to admit student';
+      setAdmitError(msg);
+      showToast(msg, 'error');
     } finally {
       setAdmitLoading(false);
     }
@@ -1192,25 +1215,53 @@ Please keep this login and password safe. Use your registered mobile number and 
                         className="py-3 px-3 text-[#5D4037]"
                         onClick={() => setSelectedStudentId(student.id)}
                       >
-                        <div
-                          className="truncate max-w-[150px] font-medium text-[#4E342E]"
-                          title={student.enrollments?.[0]?.batch?.name || 'Unassigned'}
-                        >
-                          {student.enrollments?.[0]?.batch?.name ? (
-                            <span>{student.enrollments[0].batch.name}</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenAssignBatchModal(student);
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-semibold transition"
-                              title="Assign to batch"
-                            >
-                              <Plus className="w-3 h-3" /> Assign Batch
-                            </button>
-                          )}
+                        <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
+                          {(() => {
+                            const activeBatchList = (student.enrollments || [])
+                              .filter((e: any) => e.isActive !== false && e.batch?.name)
+                              .filter((e: any) => {
+                                if (batches.length > 0) {
+                                  return batches.some((b) => b.id === e.batch?.id || b.id === e.batchId);
+                                }
+                                return true;
+                              });
+                            const uniqueBatches = Array.from(
+                              new Map(activeBatchList.map((e: any) => [e.batch.id, e.batch.name])).entries()
+                            );
+
+                            if (uniqueBatches.length > 0) {
+                              return uniqueBatches.map(([bId, bName]) => {
+                                const isUserBatch = batches.some((b) => b.id === bId);
+                                return (
+                                  <span
+                                    key={bId}
+                                    title={`Batch: ${bName}`}
+                                    className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold border whitespace-nowrap shadow-xs ${
+                                      isUserBatch
+                                        ? 'bg-amber-100 text-[#3E2723] border-amber-300 font-bold'
+                                        : 'bg-[#F7F2EF] text-[#4E342E] border-[#D7CCC8]'
+                                    }`}
+                                  >
+                                    {bName}
+                                  </span>
+                                );
+                              });
+                            }
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenAssignBatchModal(student);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-semibold transition"
+                                title="Assign to batch"
+                              >
+                                <Plus className="w-3 h-3" /> Assign Batch
+                              </button>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td
@@ -1377,8 +1428,9 @@ Please keep this login and password safe. Use your registered mobile number and 
             </div>
 
             {admitError && (
-              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs">
-                {admitError}
+              <div className="mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2.5 font-medium shadow-sm">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{admitError}</span>
               </div>
             )}
 
