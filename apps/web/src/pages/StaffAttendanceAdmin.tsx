@@ -716,10 +716,10 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-[#2D1E18]">
-                    Physically at the tuition academy right now?
+                    Easy Geofence Positioning & Locking
                   </h4>
                   <p className="text-[11px] text-[#6D4C41] mt-0.5">
-                    Click <strong className="text-[#4E342E]">"Use My Current Location"</strong> on the map below to immediately lock the 200m geofence center to your exact coordinates, then click <strong className="text-[#4E342E]">"Save Configuration"</strong>.
+                    Click <strong className="text-[#4E342E]">"Use My Current Location"</strong> or search your address/landmark. If on a laptop without satellite GPS, switch the map to <strong className="text-[#4E342E]">"🛰️ Satellite"</strong> to see actual building roofs and drag the pin directly onto your academy, then click <strong className="text-[#4E342E]">"Save Configuration"</strong>.
                   </p>
                 </div>
               </div>
@@ -747,6 +747,42 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
 
             {/* Form Fields Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-[#D7CCC8]">
+              <div>
+                <label className="block text-xs font-semibold text-[#6D4C41] mb-1">
+                  Latitude Coordinate *
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={formLat !== null ? formLat : ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) setFormLat(val);
+                  }}
+                  placeholder="e.g. 10.960200"
+                  className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:bg-white focus:outline-none"
+                />
+                <span className="text-[11px] text-[#8D6E63]">Directly editable or pasted from Google Maps.</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#6D4C41] mb-1">
+                  Longitude Coordinate *
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={formLng !== null ? formLng : ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) setFormLng(val);
+                  }}
+                  placeholder="e.g. 79.384400"
+                  className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:bg-white focus:outline-none"
+                />
+                <span className="text-[11px] text-[#8D6E63]">Directly editable or pasted from Google Maps.</span>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-[#6D4C41] mb-1">
                   Permitted Geofence Radius (Metres) *
