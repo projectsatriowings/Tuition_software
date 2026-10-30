@@ -59,3 +59,8 @@ coverage/
 scratch/
 
 
+
+# Database Backups & Dumps
+backups/
+server/backups/
+*.dump
