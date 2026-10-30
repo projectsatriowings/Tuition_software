@@ -14,6 +14,7 @@ import {
   CreditCard,
   Bell,
   User,
+  Compass,
 } from 'lucide-react';
 
 interface SidebarProps {
