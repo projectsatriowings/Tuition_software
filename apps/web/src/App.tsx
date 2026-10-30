@@ -32,7 +32,7 @@ const AppContent: React.FC = () => {
       if (user.role === 'SUPER_ADMIN') {
         setCurrentTab('super_admin_dashboard');
       } else if (user.role === 'ACADEMIC_ADMIN') {
-        setCurrentTab((prev) => (prev === 'materials' || prev === 'homework' ? 'academic_dashboard' : prev));
+        setCurrentTab((prev) => (prev === 'materials' || prev === 'homework' || prev === 'attendance' ? 'academic_dashboard' : prev));
       } else if (user.role === 'STAFF') {
         setCurrentTab('my_attendance');
       } else if (user.role === 'PARENT') {
@@ -44,11 +44,11 @@ const AppContent: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework')) {
-      setCurrentTab('academic_dashboard');
+    if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework' || currentTab === 'attendance' || currentTab === 'my_attendance')) {
+      setCurrentTab('staff_attendance');
     }
-    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff')) {
-      setCurrentTab('attendance');
+    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff' || currentTab === 'staff_attendance')) {
+      setCurrentTab('my_attendance');
     }
   }, [user, currentTab]);
 
@@ -98,7 +98,7 @@ const AppContent: React.FC = () => {
                   <StaffAttendanceAdmin onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
-                {currentTab === 'my_attendance' && <StaffMyAttendance />}
+                {currentTab === 'my_attendance' && user.role === 'STAFF' && <StaffMyAttendance />}
 
                 {currentTab === 'students' && <StudentManagement />}
 
@@ -106,7 +106,7 @@ const AppContent: React.FC = () => {
                   <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
-                {currentTab === 'attendance' && <AttendanceManagement />}
+                {currentTab === 'attendance' && user.role === 'STAFF' && <AttendanceManagement />}
 
                 {(currentTab === 'parent_portal' || currentTab.startsWith('parent_')) && (
                   <ParentPortal

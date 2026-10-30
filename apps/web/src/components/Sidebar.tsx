@@ -43,16 +43,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
 
         {/* Super Admin Nav Items */}
         {role === 'SUPER_ADMIN' && (
-          <button
-            onClick={() => onSelectTab('super_admin_dashboard')}
-            className={navItemClass('super_admin_dashboard')}
-          >
-            <LayoutDashboard className="w-4 h-4" /> Platform Overview
-          </button>
+          <>
+            <button
+              onClick={() => onSelectTab('super_admin_dashboard')}
+              className={navItemClass('super_admin_dashboard')}
+            >
+              <LayoutDashboard className="w-4 h-4" /> Platform Overview
+            </button>
+            <button
+              onClick={() => onSelectTab('staff_attendance')}
+              className={navItemClass('staff_attendance')}
+            >
+              <Calendar className="w-4 h-4" /> Staff Attendance
+            </button>
+          </>
         )}
 
-        {/* Academic Admin & Staff Nav Items */}
-        {(role === 'ACADEMIC_ADMIN' || role === 'STAFF') && (
+        {/* Academic Admin Nav Items (Admin does NOT mark student attendance) */}
+        {role === 'ACADEMIC_ADMIN' && (
           <>
             <button
               onClick={() => onSelectTab('academic_dashboard')}
@@ -61,14 +69,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <LayoutDashboard className="w-4 h-4" /> Dashboard
             </button>
 
-            {role === 'ACADEMIC_ADMIN' && (
-              <button
-                onClick={() => onSelectTab('staff')}
-                className={navItemClass('staff')}
-              >
-                <Users className="w-4 h-4" /> Staff Management
-              </button>
-            )}
+            <button
+              onClick={() => onSelectTab('staff')}
+              className={navItemClass('staff')}
+            >
+              <Users className="w-4 h-4" /> Staff Management
+            </button>
+
+            <button
+              onClick={() => onSelectTab('staff_attendance')}
+              className={navItemClass('staff_attendance')}
+            >
+              <Calendar className="w-4 h-4" /> Staff Attendance
+            </button>
 
             <button
               onClick={() => onSelectTab('students')}
@@ -77,39 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <GraduationCap className="w-4 h-4" /> Student Admissions
             </button>
 
-            {role === 'ACADEMIC_ADMIN' && (
-              <button
-                onClick={() => onSelectTab('academics')}
-                className={navItemClass('academics')}
-              >
-                <Layers className="w-4 h-4" /> Batches & Subjects
-              </button>
-            )}
-
             <button
-              onClick={() => onSelectTab('attendance')}
-              className={navItemClass('attendance')}
+              onClick={() => onSelectTab('academics')}
+              className={navItemClass('academics')}
             >
-              <Calendar className="w-4 h-4" /> Attendance
+              <Layers className="w-4 h-4" /> Batches & Subjects
             </button>
-
-            {role === 'STAFF' && (
-              <>
-                <button
-                  onClick={() => onSelectTab('materials')}
-                  className={navItemClass('materials')}
-                >
-                  <BookOpen className="w-4 h-4" /> Learning Materials
-                </button>
-
-                <button
-                  onClick={() => onSelectTab('homework')}
-                  className={navItemClass('homework')}
-                >
-                  <FileText className="w-4 h-4" /> Homework & Tasks
-                </button>
-              </>
-            )}
 
             <button
               onClick={() => onSelectTab('exams')}
@@ -132,14 +118,80 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <MessageSquare className="w-4 h-4" /> Parent Messages
             </button>
 
-            {role === 'ACADEMIC_ADMIN' && (
-              <button
-                onClick={() => onSelectTab('fees')}
-                className={navItemClass('fees')}
-              >
-                <CreditCard className="w-4 h-4" /> Fees & Finances
-              </button>
-            )}
+            <button
+              onClick={() => onSelectTab('fees')}
+              className={navItemClass('fees')}
+            >
+              <CreditCard className="w-4 h-4" /> Fees & Finances
+            </button>
+          </>
+        )}
+
+        {/* Teaching Staff Nav Items (Own GPS Attendance + Student Class Attendance) */}
+        {role === 'STAFF' && (
+          <>
+            <button
+              onClick={() => onSelectTab('my_attendance')}
+              className={navItemClass('my_attendance')}
+            >
+              <Compass className="w-4 h-4" /> My Attendance (GPS)
+            </button>
+
+            <button
+              onClick={() => onSelectTab('attendance')}
+              className={navItemClass('attendance')}
+            >
+              <Calendar className="w-4 h-4" /> Student Attendance
+            </button>
+
+            <button
+              onClick={() => onSelectTab('academic_dashboard')}
+              className={navItemClass('academic_dashboard')}
+            >
+              <LayoutDashboard className="w-4 h-4" /> Dashboard
+            </button>
+
+            <button
+              onClick={() => onSelectTab('students')}
+              className={navItemClass('students')}
+            >
+              <GraduationCap className="w-4 h-4" /> Student Admissions
+            </button>
+
+            <button
+              onClick={() => onSelectTab('materials')}
+              className={navItemClass('materials')}
+            >
+              <BookOpen className="w-4 h-4" /> Learning Materials
+            </button>
+
+            <button
+              onClick={() => onSelectTab('homework')}
+              className={navItemClass('homework')}
+            >
+              <FileText className="w-4 h-4" /> Homework & Tasks
+            </button>
+
+            <button
+              onClick={() => onSelectTab('exams')}
+              className={navItemClass('exams')}
+            >
+              <Award className="w-4 h-4" /> Exams & Grading
+            </button>
+
+            <button
+              onClick={() => onSelectTab('progress_reviews')}
+              className={navItemClass('progress_reviews')}
+            >
+              <Sparkles className="w-4 h-4" /> Progress & Reviews
+            </button>
+
+            <button
+              onClick={() => onSelectTab('messaging')}
+              className={navItemClass('messaging')}
+            >
+              <MessageSquare className="w-4 h-4" /> Parent Messages
+            </button>
           </>
         )}
 
