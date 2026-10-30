@@ -14,6 +14,12 @@ import { themeTokens } from '@tuition/shared';
 export const ChangePasswordScreen: React.FC = () => {
   const { user, changePassword, logout } = useMobileAuth();
 
+  // Defense-in-depth: Student and Parent credentials are staff-managed permanent credentials.
+  // They should never render this screen.
+  if (user?.role === 'STUDENT' || user?.role === 'PARENT') {
+    return null;
+  }
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

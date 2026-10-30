@@ -63,6 +63,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
+export const isStaffManagedRole = (role?: string | null): boolean => {
+  return role === 'STUDENT' || role === 'PARENT';
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<MobileUser | null>(null);
   const [institute, setInstitute] = useState<MobileInstitute | null>(null);
@@ -86,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const parsedUser = JSON.parse(cachedUser);
           setUser(parsedUser);
-          setMustChangePassword(!!parsedUser.mustChangePassword);
+          setMustChangePassword(!isStaffManagedRole(parsedUser.role) && !!parsedUser.mustChangePassword);
         } catch {
           // ignore corrupted user json
         }
@@ -104,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const meRes = await mobileApiFetch('/auth/me');
         if (meRes.success && meRes.data?.user) {
           setUser(meRes.data.user);
-          setMustChangePassword(!!meRes.data.user.mustChangePassword);
+          setMustChangePassword(!isStaffManagedRole(meRes.data.user.role) && !!meRes.data.user.mustChangePassword);
           await MobileStorage.setItem(AppConfig.storageKeys.userProfile, JSON.stringify(meRes.data.user));
         } else if (!meRes.success && meRes.error?.includes('401')) {
           await logout();
@@ -165,7 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setUser(authUser);
         setInstitute(authInst || null);
-        setMustChangePassword(!!needChange);
+        setMustChangePassword(!isStaffManagedRole(authUser.role) && !!needChange);
         setPendingAuthSession(null);
 
         return { success: true };
@@ -190,7 +194,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(authUser);
       setInstitute(selectedInstitute);
-      setMustChangePassword(!!needChange);
+      setMustChangePassword(!isStaffManagedRole(authUser.role) && !!needChange);
       setPendingAuthSession(null);
     } catch (e) {
       console.error('Error completing institute selection', e);
@@ -218,6 +222,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (isStaffManagedRole(user?.role)) {
+      return {
+        success: false,
+        error: 'Forbidden: Student and Parent credentials are managed exclusively by institute staff.',
+      };
+    }
     try {
       const res = await mobileApiFetch('/auth/change-password', {
         method: 'POST',
@@ -243,6 +253,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setApiBaseUrlState(newUrl);
   };
 
+  const effectiveNeedsPasswordChange = !isStaffManagedRole(user?.role) && mustChangePassword;
+
   return (
     <AuthContext.Provider
       value={{
@@ -251,8 +263,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isLoading: loading,
         isAuthenticated: !!user,
-        mustChangePassword,
-        needsPasswordChange: mustChangePassword,
+        mustChangePassword: effectiveNeedsPasswordChange,
+        needsPasswordChange: effectiveNeedsPasswordChange,
         apiBaseUrl,
         customHost: apiBaseUrl,
         pendingAuthSession,

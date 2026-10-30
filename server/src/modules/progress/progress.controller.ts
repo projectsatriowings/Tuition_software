@@ -280,6 +280,10 @@ export async function listProgressFeedback(req: AuthenticatedRequest, res: Respo
       if (!student) {
         return res.json({ success: true, data: { feedbacks: [] } });
       }
+      // If studentId was explicitly passed in query, reject cross-student probing
+      if (studentId && studentId !== student.id) {
+        return res.status(403).json({ success: false, error: 'Forbidden: You can only view your own progress' });
+      }
       where.studentId = student.id;
     } else {
       // Super Admin / Academic Admin
