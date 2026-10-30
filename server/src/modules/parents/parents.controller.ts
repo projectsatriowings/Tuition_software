@@ -183,7 +183,7 @@ export async function createParent(req: AuthenticatedRequest, res: Response) {
           passwordHash,
           role: 'PARENT',
           isActive: true,
-          mustChangePassword: true,
+          mustChangePassword: false,
         },
       });
 
@@ -549,7 +549,7 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       where: { id: parentProfile.userId },
       data: {
         passwordHash,
-        mustChangePassword: true,
+        mustChangePassword: false,
       },
     });
 
@@ -600,7 +600,7 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       data: {
         temporaryPassword,
         permanentPassword: temporaryPassword,
-        mustChangePassword: true,
+        mustChangePassword: false,
       },
     });
   } catch (err: any) {

@@ -19,6 +19,7 @@ import {
   Search,
   UserCheck,
   ChevronRight,
+  ChevronLeft,
   Sparkles,
   BookMarked,
   Info,
@@ -77,6 +78,8 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
   // Modals
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
+  const [batchStep, setBatchStep] = useState<1 | 2 | 3>(1);
+  const [batchModalError, setBatchModalError] = useState<string | null>(null);
 
   // Batch Subject Modals
   const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
@@ -198,6 +201,10 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
   // Open Edit Batch
   const handleOpenEditBatch = (b: Batch) => {
     setEditingBatch(b);
+    setBatchStep(1);
+    setBatchModalError(null);
+    setBatchStep(1);
+    setBatchModalError(null);
     setBatchForm({
       name: b.name,
       code: b.code || '',
@@ -1159,182 +1166,106 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
 
         {/* Add/Edit Subject inside Batch Modal */}
         {showAddSubjectModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
-              <div className="flex items-center justify-between border-b border-[#F5F0EB] pb-3">
-                <h3 className="text-base font-black text-[#2D1E18]">
-                  {editingBatchSubject ? 'Edit Subject in Batch' : `Add Subject to ${selectedBatchDetails.name}`}
-                </h3>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white border border-[#D7CCC8] rounded-3xl shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-5 animate-scaleUp">
+              {/* Modal Header */}
+              <div className="flex items-start justify-between pb-4 border-b border-[#EFEBE9]">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-[#D7CCC8] text-[#6D4C41] text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                    <BookOpen className="w-3 h-3 text-[#4E342E]" /> Curriculum Subject
+                  </div>
+                  <h2 className="text-xl font-extrabold text-[#2D1E18]">
+                    {editingBatchSubject ? 'Edit Subject in Batch' : `Add Subject to ${selectedBatchDetails.name}`}
+                  </h2>
+                  <p className="text-xs text-[#6D4C41] mt-0.5">
+                    Define subject curriculum details and weekly class schedule
+                  </p>
+                </div>
                 <button
+                  type="button"
                   onClick={() => setShowAddSubjectModal(false)}
-                  className="p-1.5 rounded-xl hover:bg-[#F7F2EF] text-[#6D4C41]"
+                  className="text-[#8D6E63] hover:text-[#2D1E18] p-1"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveBatchSubject} className="space-y-3.5 text-xs">
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Subject Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Mathematics, Physics, Chemistry"
-                    value={subjectForm.name}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Subject Code <span className="font-normal text-[#8D6E63]">(Optional)</span></label>
-                  <input
-                    type="text"
-                    placeholder="e.g. MATH101, PHY-01"
-                    value={subjectForm.code}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
+              <form onSubmit={handleSaveBatchSubject} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                      Subject Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Mathematics, Physics, Chemistry"
+                      value={subjectForm.name}
+                      onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                      Subject Code <span className="font-normal text-[#8D6E63]">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. MATH101, PHY-01"
+                      value={subjectForm.code}
+                      onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
+                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
                 </div>
 
                 <SchedulePicker
                   value={subjectForm.schedule}
                   onChange={(val) => setSubjectForm({ ...subjectForm, schedule: val })}
-                  label="Schedule & Timing"
-                  helperText="Select days and class timings for this subject."
+                  label="Schedule & Timings"
+                  helperText="Select weekly days and class timings for this subject."
                 />
 
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Description (Optional)</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Brief description or syllabus overview"
-                    value={subjectForm.description}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, description: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                      Description <span className="font-normal text-[#8D6E63]">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Brief syllabus overview or notes"
+                      value={subjectForm.description}
+                      onChange={(e) => setSubjectForm({ ...subjectForm, description: e.target.value })}
+                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+                  <div className="pt-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={subjectForm.isActive}
+                        onChange={(e) => setSubjectForm({ ...subjectForm, isActive: e.target.checked })}
+                        className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
+                      />
+                      <span className="text-xs font-semibold text-[#2D1E18]">Active in Batch</span>
+                    </label>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    id="subjectStatusCheckbox"
-                    checked={subjectForm.isActive}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, isActive: e.target.checked })}
-                    className="rounded text-[#4E342E] focus:ring-[#8D6E63]"
-                  />
-                  <label htmlFor="subjectStatusCheckbox" className="font-semibold text-[#4E342E] text-xs">
-                    Subject is Active in this batch
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#F5F0EB]">
+                {/* Footer Buttons */}
+                <div className="flex items-center justify-between pt-4 border-t border-[#EFEBE9] mt-2">
                   <button
                     type="button"
                     onClick={() => setShowAddSubjectModal(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                    className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#4E342E] hover:bg-[#3E2723] shadow-md transition"
+                    className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
                   >
-                    {editingBatchSubject ? 'Save Changes' : 'Add Subject to Batch'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Allocate Student Subjects Modal */}
-        {allocatingStudent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl max-w-lg w-full border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
-              <div className="flex items-center justify-between border-b border-[#F5F0EB] pb-3">
-                <div>
-                  <h3 className="text-base font-black text-[#2D1E18]">Allocate Subjects</h3>
-                  <p className="text-xs text-[#8D6E63]">
-                    {allocatingStudent.firstName} {allocatingStudent.lastName} ({allocatingStudent.admissionNumber})
-                  </p>
-                </div>
-                <button
-                  onClick={() => setAllocatingStudent(null)}
-                  className="p-1.5 rounded-xl hover:bg-[#F7F2EF] text-[#6D4C41]"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveStudentAllocations} className="space-y-4 text-xs">
-                <p className="text-xs text-[#4E342E] font-medium">
-                  Select the subjects this student attends in <strong>{selectedBatchDetails.name}</strong>:
-                </p>
-
-                {subjectsInBatch.length === 0 ? (
-                  <p className="text-xs text-[#8D6E63] italic">No subjects configured in this batch.</p>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    {subjectsInBatch.map((bs: any) => {
-                      const sid = bs.subjectId || bs.subject.id;
-                      const isSelected = selectedAllocationSubjectIds.includes(sid);
-                      return (
-                        <label
-                          key={sid}
-                          className={`flex items-center justify-between p-3 rounded-xl border transition cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-50/60 border-emerald-300'
-                              : 'bg-[#FAF8F5] border-[#EFEBE9] hover:border-[#D7CCC8]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedAllocationSubjectIds([...selectedAllocationSubjectIds, sid]);
-                                } else {
-                                  setSelectedAllocationSubjectIds(
-                                    selectedAllocationSubjectIds.filter((id) => id !== sid)
-                                  );
-                                }
-                              }}
-                              className="rounded text-emerald-700 focus:ring-emerald-500"
-                            />
-                            <div>
-                              <span className="font-bold text-[#2D1E18] block">{bs.subject.name}</span>
-                              {bs.subject.code && (
-                                <span className="text-[10px] text-[#8D6E63] font-mono">{bs.subject.code}</span>
-                              )}
-                            </div>
-                          </div>
-                          {bs.staffProfile?.user?.fullName && (
-                            <span className="text-[10px] text-[#6D4C41]">
-                              Teacher: {bs.staffProfile.user.fullName}
-                            </span>
-                          )}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#F5F0EB]">
-                  <button
-                    type="button"
-                    onClick={() => setAllocatingStudent(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={allocationLoading}
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#4E342E] hover:bg-[#3E2723] shadow-md transition disabled:opacity-50"
-                  >
-                    {allocationLoading ? 'Saving...' : 'Save Subject Allocations'}
+                    <span>{editingBatchSubject ? 'Save Subject Changes' : 'Add Subject to Batch'}</span>
                   </button>
                 </div>
               </form>
@@ -1511,6 +1442,10 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
           <button
             onClick={() => {
               setEditingBatch(null);
+              setBatchStep(1);
+              setBatchModalError(null);
+              setBatchStep(1);
+              setBatchModalError(null);
               setBatchForm({
                 name: '',
                 code: '',
@@ -1727,189 +1662,395 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
 
       {/* ------------------ MODALS FOR BATCH LIST VIEW ------------------ */}
 
-      {/* Create / Edit Batch Modal */}
+      {/* Create or Edit Batch Modal */}
       {showBatchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto border border-[#D7CCC8] shadow-2xl p-6 space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-[#F5F0EB] pb-3">
-              <h3 className="text-base font-black text-[#2D1E18]">
-                {editingBatch ? 'Edit Academic Batch' : 'Create New Academic Batch'}
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 animate-scaleUp">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-[#EFEBE9]">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-[#D7CCC8] text-[#6D4C41] text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                  <Layers className="w-3 h-3 text-[#4E342E]" /> {editingBatch ? 'Batch Settings' : `Step ${batchStep} of 3`}
+                </div>
+                <h2 className="text-xl font-extrabold text-[#2D1E18]">
+                  {editingBatch ? 'Edit Academic Batch' : 'Create New Academic Batch'}
+                </h2>
+                <p className="text-xs text-[#6D4C41] mt-0.5">
+                  {editingBatch
+                    ? 'Update batch details and schedule configuration'
+                    : 'Step-by-step batch configuration, weekly schedule, and faculty setup'}
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => {
                   setShowBatchModal(false);
                   setEditingBatch(null);
                 }}
-                className="p-1.5 rounded-xl hover:bg-[#F7F2EF] text-[#6D4C41]"
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBatch} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Batch Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Class 10 - Batch A"
-                    value={batchForm.name}
-                    onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Batch Code (Unique)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. B-10A"
-                    value={batchForm.code}
-                    onChange={(e) => setBatchForm({ ...batchForm, code: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#4E342E] mb-1">Academic Year *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 2026-2027"
-                  value={batchForm.academicYear}
-                  onChange={(e) => setBatchForm({ ...batchForm, academicYear: e.target.value })}
-                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                />
-              </div>
-
-              <SchedulePicker
-                value={batchForm.schedule}
-                onChange={(val) => setBatchForm({ ...batchForm, schedule: val })}
-                label="Schedule & Timings"
-                helperText="Select default days and class timings for this batch."
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    value={batchForm.startDate}
-                    onChange={(e) => setBatchForm({ ...batchForm, startDate: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">End Date (Optional)</label>
-                  <input
-                    type="date"
-                    value={batchForm.endDate}
-                    onChange={(e) => setBatchForm({ ...batchForm, endDate: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {!editingBatch && availableStaff.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block font-bold text-[#4E342E]">
-                      Assign Faculty / Teachers <span className="font-normal text-[#8D6E63]">(Optional)</span>
-                    </label>
-                    <span className="text-[11px] text-[#8D6E63]">
-                      {batchForm.staffProfileIds.length} teacher(s) selected
-                    </span>
-                  </div>
-                  <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl">
-                    {availableStaff.map((st) => {
-                      const isChecked = batchForm.staffProfileIds.includes(st.staffProfileId);
-                      return (
-                        <label
-                          key={st.staffProfileId}
-                          className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition text-xs ${
-                            isChecked
-                              ? 'bg-white border border-[#4E342E] shadow-sm font-semibold text-[#2D1E18]'
-                              : 'hover:bg-white text-[#6D4C41]'
+            {/* Stepper Progress Bar (Only shown when creating new batch) */}
+            {!editingBatch && (
+              <div className="py-2">
+                <div className="flex items-center justify-between">
+                  {[
+                    { num: 1, label: 'Batch Info' },
+                    { num: 2, label: 'Schedule' },
+                    { num: 3, label: 'Faculty' },
+                  ].map((s, idx) => (
+                    <React.Fragment key={s.num}>
+                      <div className="flex flex-col items-center">
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                            batchStep === s.num
+                              ? 'bg-[#4E342E] text-white ring-4 ring-[#8D6E63]/20 shadow-md'
+                              : batchStep > s.num
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
                           }`}
                         >
+                          {batchStep > s.num ? <Check className="w-4 h-4" /> : s.num}
+                        </div>
+                        <span
+                          className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${
+                            batchStep === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
+                          }`}
+                        >
+                          {s.label}
+                        </span>
+                      </div>
+                      {idx < 2 && (
+                        <div
+                          className={`flex-1 h-0.5 mx-2 transition-colors ${
+                            batchStep > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
+                          }`}
+                        />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {batchModalError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{batchModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveBatch} className="space-y-4 text-xs">
+              {/* STEP 1: BATCH DETAILS (or when editing) */}
+              {(batchStep === 1 || editingBatch) && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                        Batch Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        autoFocus
+                        placeholder="e.g. Class 10 - Science Batch A"
+                        value={batchForm.name}
+                        onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                        Batch Code <span className="font-normal text-[#8D6E63]">(Unique)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. B-10A"
+                        value={batchForm.code}
+                        onChange={(e) => setBatchForm({ ...batchForm, code: e.target.value })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                        Academic Year *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 2026-2027"
+                        value={batchForm.academicYear}
+                        onChange={(e) => setBatchForm({ ...batchForm, academicYear: e.target.value })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                        Batch Status
+                      </label>
+                      <div className="pt-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setBatchForm({
-                                  ...batchForm,
-                                  staffProfileIds: [...batchForm.staffProfileIds, st.staffProfileId],
-                                });
-                              } else {
-                                setBatchForm({
-                                  ...batchForm,
-                                  staffProfileIds: batchForm.staffProfileIds.filter(
-                                    (id) => id !== st.staffProfileId
-                                  ),
-                                });
-                              }
-                            }}
+                            checked={batchForm.isActive}
+                            onChange={(e) => setBatchForm({ ...batchForm, isActive: e.target.checked })}
                             className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
                           />
-                          <div className="flex-1 flex items-center justify-between">
-                            <span>{st.fullName}</span>
-                            <span className="text-[10px] text-[#8D6E63] font-normal">
-                              {st.designation || 'Faculty'}
-                            </span>
-                          </div>
+                          <span className="text-xs font-semibold text-[#2D1E18]">Batch is Active & Enrolling</span>
                         </label>
-                      );
-                    })}
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-[10px] text-[#8D6E63] mt-1 block">
-                    Selected teachers will be authorized for this batch. You can also assign or remove faculty anytime in the batch details.
-                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={batchForm.startDate}
+                        onChange={(e) => setBatchForm({ ...batchForm, startDate: e.target.value })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                        End Date <span className="font-normal text-[#8D6E63]">(Optional)</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={batchForm.endDate}
+                        onChange={(e) => setBatchForm({ ...batchForm, endDate: e.target.value })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                      Description / Notes <span className="font-normal text-[#8D6E63]">(Optional)</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="Notes regarding curriculum, target examinations, or batch eligibility"
+                      value={batchForm.description}
+                      onChange={(e) => setBatchForm({ ...batchForm, description: e.target.value })}
+                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+
+                  {editingBatch && (
+                    <div className="pt-2">
+                      <SchedulePicker
+                        value={batchForm.schedule}
+                        onChange={(val) => setBatchForm({ ...batchForm, schedule: val })}
+                        label="Schedule & Timings"
+                        helperText="Default class timings for this batch."
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div>
-                <label className="block font-bold text-[#4E342E] mb-1">Description (Optional)</label>
-                <textarea
-                  rows={2}
-                  placeholder="Notes about curriculum, target examinations, or batch requirements"
-                  value={batchForm.description}
-                  onChange={(e) => setBatchForm({ ...batchForm, description: e.target.value })}
-                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                />
-              </div>
+              {/* STEP 2: SCHEDULE & TIMINGS (When creating) */}
+              {!editingBatch && batchStep === 2 && (
+                <div className="space-y-4">
+                  <SchedulePicker
+                    value={batchForm.schedule}
+                    onChange={(val) => setBatchForm({ ...batchForm, schedule: val })}
+                    label="Default Batch Schedule & Timings"
+                    helperText="Select the standard days and time slots for classes in this batch."
+                  />
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl text-[11px] text-[#8D6E63] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#A1887F] shrink-0" />
+                    <span>
+                      Individual subjects added to this batch can follow this default schedule or define their own custom class hours anytime.
+                    </span>
+                  </div>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="batchStatusCheckbox"
-                  checked={batchForm.isActive}
-                  onChange={(e) => setBatchForm({ ...batchForm, isActive: e.target.checked })}
-                  className="rounded text-[#4E342E] focus:ring-[#8D6E63]"
-                />
-                <label htmlFor="batchStatusCheckbox" className="font-semibold text-[#4E342E] text-xs">
-                  Active Batch (students can attend and check in)
-                </label>
-              </div>
+              {/* STEP 3: FACULTY ALLOCATION & SUMMARY (When creating) */}
+              {!editingBatch && batchStep === 3 && (
+                <div className="space-y-4">
+                  {/* Batch Summary */}
+                  <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-2.5">
+                    <span className="text-xs font-bold text-[#4E342E] uppercase tracking-wider block">
+                      Batch Summary
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[#8D6E63]">Batch:</span>{' '}
+                        <span className="font-semibold text-[#2D1E18]">{batchForm.name}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8D6E63]">Code:</span>{' '}
+                        <span className="font-mono font-bold text-[#2D1E18]">{batchForm.code || 'Auto'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8D6E63]">Academic Year:</span>{' '}
+                        <span className="font-semibold text-[#2D1E18]">{batchForm.academicYear}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8D6E63]">Schedule:</span>{' '}
+                        <span className="font-semibold text-[#2D1E18]">{batchForm.schedule || 'Flexible'}</span>
+                      </div>
+                    </div>
+                  </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#F5F0EB]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowBatchModal(false);
-                    setEditingBatch(null);
-                  }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#4E342E] hover:bg-[#3E2723] shadow-md transition"
-                >
-                  {editingBatch ? 'Save Changes' : 'Create Batch & Open'}
-                </button>
+                  {/* Faculty Selection */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[#2D1E18]">
+                        Assign Faculty Members (Optional)
+                      </span>
+                      <span className="text-[11px] text-[#8D6E63]">
+                        {batchForm.staffProfileIds.length} teacher(s) selected
+                      </span>
+                    </div>
+
+                    {availableStaff.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-[#8D6E63] bg-[#FAF8F5] rounded-xl border border-dashed border-[#D7CCC8]">
+                        No staff members added yet. You can assign faculty anytime inside the batch details.
+                      </div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                        {availableStaff.map((st) => {
+                          const isChecked = batchForm.staffProfileIds.includes(st.staffProfileId);
+                          return (
+                            <label
+                              key={st.staffProfileId}
+                              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition text-xs ${
+                                isChecked
+                                  ? 'border-[#4E342E] bg-[#FAF8F5] shadow-xs'
+                                  : 'border-[#EFEBE9] hover:border-[#D7CCC8] bg-white'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setBatchForm({
+                                      ...batchForm,
+                                      staffProfileIds: [...batchForm.staffProfileIds, st.staffProfileId],
+                                    });
+                                  } else {
+                                    setBatchForm({
+                                      ...batchForm,
+                                      staffProfileIds: batchForm.staffProfileIds.filter(
+                                        (id) => id !== st.staffProfileId
+                                      ),
+                                    });
+                                  }
+                                }}
+                                className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
+                              />
+                              <div className="flex-1 flex items-center justify-between">
+                                <div>
+                                  <span className="font-bold text-[#2D1E18] block">{st.fullName}</span>
+                                  <span className="text-[10px] text-[#8D6E63]">{st.designation || 'Staff'}</span>
+                                </div>
+                                <span className="text-[10px] text-[#8D6E63] font-mono">{st.email || ''}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Footer Navigation Buttons */}
+              <div className="flex items-center justify-between pt-5 border-t border-[#EFEBE9] mt-6">
+                {editingBatch ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBatchModal(false);
+                        setEditingBatch(null);
+                      }}
+                      className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+                    >
+                      Save Changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {batchStep > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBatchModalError(null);
+                          setBatchStep((prev) => (prev - 1) as any);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF]"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Back
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowBatchModal(false);
+                          setEditingBatch(null);
+                        }}
+                        className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF]"
+                      >
+                        Cancel
+                      </button>
+                    )}
+
+                    {batchStep < 3 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (batchStep === 1) {
+                            if (!batchForm.name.trim()) {
+                              setBatchModalError('Batch name is required');
+                              return;
+                            }
+                            if (!batchForm.academicYear.trim()) {
+                              setBatchModalError('Academic year is required');
+                              return;
+                            }
+                            setBatchModalError(null);
+                            setBatchStep(2);
+                          } else if (batchStep === 2) {
+                            setBatchModalError(null);
+                            setBatchStep(3);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+                      >
+                        <span>Continue</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="inline-flex items-center gap-1.5 px-6 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+                      >
+                        <span>Create Batch & Open</span>
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </form>
           </div>

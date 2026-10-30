@@ -36,6 +36,13 @@ export const ProgressReviewsManagement: React.FC = () => {
   // Sub-tabs
   const [activeTab, setActiveTab] = useState<'progress' | 'inquiries' | 'testimonials'>('progress');
 
+  // Enforce student role sees only Academic Progress Reports
+  useEffect(() => {
+    if (isStudent && activeTab !== 'progress') {
+      setActiveTab('progress');
+    }
+  }, [isStudent, activeTab]);
+
   // Loading & Error states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +159,7 @@ export const ProgressReviewsManagement: React.FC = () => {
           setFeedbacks([]);
         }
       } else if (activeTab === 'inquiries') {
+        if (isStudent) return;
         const res = await apiFetch('/reviews?type=FEEDBACK');
         if (res.success && res.data?.reviews) {
           setReviews(res.data.reviews);
@@ -159,6 +167,7 @@ export const ProgressReviewsManagement: React.FC = () => {
           setReviews([]);
         }
       } else if (activeTab === 'testimonials') {
+        if (isStudent) return;
         const res = await apiFetch('/reviews?type=TESTIMONIAL');
         if (res.success && res.data?.reviews) {
           setReviews(res.data.reviews);
@@ -464,10 +473,12 @@ export const ProgressReviewsManagement: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-[#2D1E18] flex items-center gap-2.5">
             <TrendingUp className="w-7 h-7 text-[#6D4C41]" />
-            <span>Academic Progress & Parent Reviews</span>
+            <span>{isStudent ? 'Academic Progress Reports' : 'Academic Progress & Parent Reviews'}</span>
           </h1>
           <p className="text-xs text-[#6D4C41] mt-1">
-            Teacher observations, student milestone reports, confidential parent inquiries, and public testimonials
+            {isStudent
+              ? 'Official faculty evaluations, milestone reports, and teacher observations for your academic journey'
+              : 'Teacher observations, student milestone reports, confidential parent inquiries, and public testimonials'}
           </p>
         </div>
 
@@ -502,27 +513,31 @@ export const ProgressReviewsManagement: React.FC = () => {
           )}
         </button>
 
-        <button
-          onClick={() => setActiveTab('inquiries')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'inquiries'
-              ? 'bg-[#4E342E] text-white shadow-sm'
-              : 'text-[#6D4C41] hover:text-[#2D1E18]'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4" /> Private Parent Inquiries
-        </button>
+        {!isStudent && (
+          <>
+            <button
+              onClick={() => setActiveTab('inquiries')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'inquiries'
+                  ? 'bg-[#4E342E] text-white shadow-sm'
+                  : 'text-[#6D4C41] hover:text-[#2D1E18]'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" /> Private Parent Inquiries
+            </button>
 
-        <button
-          onClick={() => setActiveTab('testimonials')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'testimonials'
-              ? 'bg-[#4E342E] text-white shadow-sm'
-              : 'text-[#6D4C41] hover:text-[#2D1E18]'
-          }`}
-        >
-          <Star className="w-4 h-4" /> Public Testimonials
-        </button>
+            <button
+              onClick={() => setActiveTab('testimonials')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'testimonials'
+                  ? 'bg-[#4E342E] text-white shadow-sm'
+                  : 'text-[#6D4C41] hover:text-[#2D1E18]'
+              }`}
+            >
+              <Star className="w-4 h-4" /> Public Testimonials
+            </button>
+          </>
+        )}
       </div>
 
       {/* ERROR STATE WITH RETRY */}
@@ -547,6 +562,53 @@ export const ProgressReviewsManagement: React.FC = () => {
       {/* TAB 1: ACADEMIC PROGRESS REPORTS */}
       {activeTab === 'progress' && (
         <div className="space-y-4">
+          {/* Filters Bar (Student) */}
+          {isStudent && (
+            <div className="p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#4E342E]">
+                <Filter className="w-3.5 h-3.5" /> Filters:
+              </div>
+
+              {/* Period Type Filter */}
+              <select
+                value={selectedPeriodFilter}
+                onChange={(e) => setSelectedPeriodFilter(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium focus:ring-1 focus:ring-[#8D6E63]"
+              >
+                <option value="ALL">All Periods</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="TERM">Term / Midterm</option>
+                <option value="ANNUAL">Annual</option>
+              </select>
+
+              {/* Search Bar */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search evaluations or remarks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loadData()}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              {(selectedPeriodFilter !== 'ALL' || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSelectedPeriodFilter('ALL');
+                    setSearchQuery('');
+                  }}
+                  className="text-xs text-[#8D6E63] hover:text-[#2D1E18] underline font-medium"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Filters Bar (Staff & Admin) */}
           {isStaffOrAdmin && (
             <div className="p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm flex flex-wrap items-center gap-3">
@@ -797,7 +859,7 @@ export const ProgressReviewsManagement: React.FC = () => {
       )}
 
       {/* TAB 2: PRIVATE PARENT INQUIRIES */}
-      {activeTab === 'inquiries' && (
+      {!isStudent && activeTab === 'inquiries' && (
         <div className="space-y-6">
           {/* Parent Submission Card */}
           {isParent && (
@@ -1031,7 +1093,7 @@ export const ProgressReviewsManagement: React.FC = () => {
       )}
 
       {/* TAB 3: PUBLIC TESTIMONIALS */}
-      {activeTab === 'testimonials' && (
+      {!isStudent && activeTab === 'testimonials' && (
         <div className="space-y-6">
           {/* Parent Testimonial Submission */}
           {isParent && (

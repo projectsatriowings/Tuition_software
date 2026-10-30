@@ -187,7 +187,29 @@ export async function listReviews(req: AuthenticatedRequest, res: Response) {
         { type: 'TESTIMONIAL', isPublished: true },
       ];
     } else if (req.user?.role === 'STUDENT') {
-      // Students only see published public testimonials
+      // Students are strictly forbidden from accessing private parent inquiries
+      if (type === 'FEEDBACK' || type === 'ALL') {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: Student accounts cannot access private parent inquiries',
+        });
+      }
+
+      // If studentId parameter was supplied, verify it matches the authenticated student
+      if (studentId) {
+        const student = await prisma.student.findFirst({
+          where: { userId: req.user.userId, instituteId },
+          select: { id: true },
+        });
+        if (!student || student.id !== studentId) {
+          return res.status(403).json({
+            success: false,
+            error: 'Forbidden: You can only query your own records',
+          });
+        }
+      }
+
+      // Students can only access approved, published public testimonials
       where.type = 'TESTIMONIAL';
       where.isPublished = true;
     }
