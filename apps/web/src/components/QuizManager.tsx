@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { apiFetch } from '../services/api';
 import {
   HelpCircle,
@@ -39,6 +41,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
 
   // Quiz Builder Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [activeModalTab, setActiveModalTab] = useState<'details' | 'questions'>('details');
+  useBodyScrollLock(showCreateModal);
   const [title, setTitle] = useState('');
   const [instructions, setInstructions] = useState('');
   const [batchId, setBatchId] = useState('');
@@ -223,6 +227,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
     setDurationMinutes('15');
     setMaxAttempts('1');
     setIsPublished(true);
+    setActiveModalTab('details');
     setQuestions([
       {
         questionText: '',
@@ -648,9 +653,10 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
       )}
 
       {/* Staff Quiz Builder Modal */}
-      {showCreateModal && (
+      {showCreateModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[90vh] flex flex-col space-y-5 shadow-2xl">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[90vh] flex flex-col space-y-4 shadow-2xl">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
               <div>
                 <h2 className="text-xl font-bold text-[#2D1E18]">Create Interactive Quiz</h2>
@@ -658,232 +664,397 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
                   Configure questions, options, automated grading, and duration
                 </p>
               </div>
-              <button onClick={() => setShowCreateModal(false)} className="text-[#8D6E63] hover:text-[#2D1E18]">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg hover:bg-[#F7F2EF] transition"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateQuiz} className="flex-1 overflow-y-auto pr-1 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Quiz Title *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Chapter 4 Quiz: Quadratic Equations"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
+            {/* Stepper / Tab Navigation */}
+            <div className="grid grid-cols-2 gap-2 bg-[#F7F2EF] p-1.5 rounded-2xl border border-[#EFEBE9]">
+              <button
+                type="button"
+                onClick={() => {
+                  setMessage(null);
+                  setActiveModalTab('details');
+                }}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeModalTab === 'details'
+                    ? 'bg-white text-[#2D1E18] shadow-sm border border-[#D7CCC8]'
+                    : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    activeModalTab === 'details'
+                      ? 'bg-[#4E342E] text-white'
+                      : title.trim() && batchId
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-[#D7CCC8] text-[#4E342E]'
+                  }`}
+                >
+                  {title.trim() && batchId && activeModalTab !== 'details' ? (
+                    <Check className="w-3 h-3" />
+                  ) : (
+                    '1'
+                  )}
+                </div>
+                <span>1. Quiz Details</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!title.trim()) {
+                    setMessage({ text: 'Please enter a quiz title before proceeding to questions', type: 'error' });
+                    return;
+                  }
+                  if (!batchId) {
+                    setMessage({ text: 'Please select a target batch before proceeding to questions', type: 'error' });
+                    return;
+                  }
+                  setMessage(null);
+                  setActiveModalTab('questions');
+                }}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeModalTab === 'questions'
+                    ? 'bg-white text-[#2D1E18] shadow-sm border border-[#D7CCC8]'
+                    : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    activeModalTab === 'questions'
+                      ? 'bg-[#4E342E] text-white'
+                      : 'bg-[#D7CCC8] text-[#4E342E]'
+                  }`}
+                >
+                  2
+                </div>
+                <span>2. Questions & Options</span>
+                <span className="text-[10px] bg-[#EFEBE9] px-2 py-0.5 rounded-full text-[#4E342E] font-bold">
+                  {questions.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Error / Alert banner inside modal */}
+            {message && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  message.type === 'success'
+                    ? 'bg-emerald-50 border border-emerald-300 text-emerald-800'
+                    : 'bg-rose-50 border border-rose-300 text-rose-800'
+                }`}
+              >
+                {message.type === 'success' ? (
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                )}
+                <span>{message.text}</span>
               </div>
+            )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Target Batch *</label>
-                  <select
-                    value={batchId}
-                    onChange={(e) => {
-                      setBatchId(e.target.value);
-                      setSubjectId('');
-                    }}
-                    required
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  >
-                    <option value="">Select Batch</option>
-                    {batches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Subject (Optional)</label>
-                  <select
-                    value={subjectId}
-                    onChange={(e) => setSubjectId(e.target.value)}
-                    disabled={!batchId}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-50"
-                  >
-                    <option value="">All Batch Curriculum</option>
-                    {availableSubjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Duration (Minutes)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="180"
-                    value={durationMinutes}
-                    onChange={(e) => setDurationMinutes(e.target.value)}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Max Attempts</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="5"
-                    value={maxAttempts}
-                    onChange={(e) => setMaxAttempts(e.target.value)}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Publication</label>
-                  <select
-                    value={isPublished ? 'PUB' : 'DRAFT'}
-                    onChange={(e) => setIsPublished(e.target.value === 'PUB')}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                  >
-                    <option value="PUB">Publish Immediately</option>
-                    <option value="DRAFT">Save as Draft</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Instructions (Optional)</label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Choose the best answer for each question. Negative marking is not applied."
-                  value={instructions}
-                  onChange={(e) => setInstructions(e.target.value)}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
-
-              {/* Questions Section */}
-              <div className="pt-2 space-y-4">
-                <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-2">
-                  <h3 className="text-sm font-bold text-[#2D1E18]">Questions ({questions.length})</h3>
-                  <button
-                    type="button"
-                    onClick={handleAddQuestion}
-                    className="px-3 py-1 bg-[#4E342E] text-white rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-[#3E2723]"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add Question
-                  </button>
-                </div>
-
-                {questions.map((q, qIdx) => (
-                  <div key={qIdx} className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#4E342E]">Question #{qIdx + 1}</span>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={q.questionType}
-                          onChange={(e) => {
-                            const next = [...questions];
-                            next[qIdx].questionType = e.target.value as any;
-                            setQuestions(next);
-                          }}
-                          className="bg-white border border-[#D7CCC8] rounded-lg px-2 py-1 text-[11px] text-[#2D1E18]"
-                        >
-                          <option value="SINGLE_CHOICE">Single Choice (Radio)</option>
-                          <option value="MULTIPLE_CHOICE">Multiple Choice (Checkboxes)</option>
-                        </select>
-                        {questions.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveQuestion(qIdx)}
-                            className="text-rose-600 hover:text-rose-800 p-1"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
+            <form onSubmit={handleCreateQuiz} className="flex-1 overflow-y-auto pr-1 flex flex-col justify-between">
+              {/* TAB 1: Quiz Details */}
+              {activeModalTab === 'details' && (
+                <div className="space-y-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Quiz Title *</label>
                     <input
                       type="text"
-                      placeholder={`Enter question ${qIdx + 1} prompt...`}
-                      value={q.questionText}
-                      onChange={(e) => {
-                        const next = [...questions];
-                        next[qIdx].questionText = e.target.value;
-                        setQuestions(next);
-                      }}
-                      className="w-full bg-white border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      required
+                      placeholder="e.g. Chapter 4 Quiz: Quadratic Equations"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />
+                  </div>
 
-                    {/* Options */}
-                    <div className="space-y-2 pt-1">
-                      <span className="text-[11px] font-semibold text-[#6D4C41] block">
-                        Answer Options (Select correct answer)
-                      </span>
-                      {q.options.map((opt, oIdx) => (
-                        <div key={oIdx} className="flex items-center gap-2">
-                          <input
-                            type={q.questionType === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'}
-                            name={`correct-q-${qIdx}`}
-                            checked={opt.isCorrect}
-                            onChange={() => handleToggleCorrect(qIdx, oIdx)}
-                            className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
-                            title="Mark as correct answer"
-                          />
-                          <input
-                            type="text"
-                            placeholder={`Option ${oIdx + 1}...`}
-                            value={opt.optionText}
-                            onChange={(e) => {
-                              const next = [...questions];
-                              next[qIdx].options[oIdx].optionText = e.target.value;
-                              setQuestions(next);
-                            }}
-                            className="flex-1 bg-white border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18]"
-                          />
-                          {q.options.length > 2 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveOption(qIdx, oIdx)}
-                              className="text-rose-500 hover:text-rose-700"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => handleAddOption(qIdx)}
-                        className="text-[11px] text-[#4E342E] font-semibold hover:underline flex items-center gap-1 mt-1"
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Target Batch *</label>
+                      <select
+                        value={batchId}
+                        onChange={(e) => {
+                          setBatchId(e.target.value);
+                          setSubjectId('');
+                        }}
+                        required
+                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                       >
-                        <Plus className="w-3 h-3" /> Add Option
-                      </button>
+                        <option value="">Select Batch</option>
+                        {batches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Subject (Optional)</label>
+                      <select
+                        value={subjectId}
+                        onChange={(e) => setSubjectId(e.target.value)}
+                        disabled={!batchId}
+                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-50"
+                      >
+                        <option value="">All Batch Curriculum</option>
+                        {availableSubjects.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#EFEBE9]">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl border border-[#D7CCC8] text-xs font-semibold text-[#6D4C41]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm disabled:opacity-50"
-                >
-                  {submitting ? 'Creating Quiz...' : 'Save & Finish'}
-                </button>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Duration (Minutes)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="180"
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(e.target.value)}
+                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Max Attempts</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="5"
+                        value={maxAttempts}
+                        onChange={(e) => setMaxAttempts(e.target.value)}
+                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Publication</label>
+                      <select
+                        value={isPublished ? 'PUB' : 'DRAFT'}
+                        onChange={(e) => setIsPublished(e.target.value === 'PUB')}
+                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      >
+                        <option value="PUB">Publish Immediately</option>
+                        <option value="DRAFT">Save as Draft</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Instructions (Optional)</label>
+                    <textarea
+                      rows={3}
+                      placeholder="e.g. Choose the best answer for each question. Negative marking is not applied."
+                      value={instructions}
+                      onChange={(e) => setInstructions(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: Questions & Options */}
+              {activeModalTab === 'questions' && (
+                <div className="space-y-4 pt-1">
+                  <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#2D1E18]">Questions ({questions.length})</h3>
+                      <p className="text-[11px] text-[#6D4C41]">Configure questions, answer choices, and mark the correct option.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddQuestion}
+                      className="px-3.5 py-1.5 bg-[#4E342E] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 hover:bg-[#3E2723] shadow-sm transition"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Question
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {questions.map((q, qIdx) => (
+                      <div key={qIdx} className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-[#4E342E] text-white flex items-center justify-center text-xs font-bold">
+                              {qIdx + 1}
+                            </span>
+                            <span className="text-xs font-bold text-[#4E342E]">Question #{qIdx + 1}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={q.questionType}
+                              onChange={(e) => {
+                                const next = [...questions];
+                                next[qIdx].questionType = e.target.value as any;
+                                setQuestions(next);
+                              }}
+                              className="bg-white border border-[#D7CCC8] rounded-lg px-2.5 py-1 text-[11px] font-semibold text-[#2D1E18]"
+                            >
+                              <option value="SINGLE_CHOICE">Single Choice (Radio)</option>
+                              <option value="MULTIPLE_CHOICE">Multiple Choice (Checkboxes)</option>
+                            </select>
+                            {questions.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveQuestion(qIdx)}
+                                className="text-rose-600 hover:text-rose-800 p-1 hover:bg-rose-50 rounded-lg transition"
+                                title="Remove Question"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          placeholder={`Enter question ${qIdx + 1} prompt...`}
+                          value={q.questionText}
+                          onChange={(e) => {
+                            const next = [...questions];
+                            next[qIdx].questionText = e.target.value;
+                            setQuestions(next);
+                          }}
+                          className="w-full bg-white border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        />
+
+                        {/* Options */}
+                        <div className="space-y-2 pt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-[#6D4C41]">
+                              Answer Options (Select correct answer):
+                            </span>
+                            <span className="text-[10px] text-[#8D6E63] italic">
+                              {q.questionType === 'SINGLE_CHOICE' ? 'Select 1 correct option' : 'Select 1 or more correct options'}
+                            </span>
+                          </div>
+
+                          {q.options.map((opt, oIdx) => (
+                            <div key={oIdx} className="flex items-center gap-2">
+                              <input
+                                type={q.questionType === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'}
+                                name={`correct-q-${qIdx}`}
+                                checked={opt.isCorrect}
+                                onChange={() => handleToggleCorrect(qIdx, oIdx)}
+                                className="w-4 h-4 text-emerald-600 rounded cursor-pointer accent-[#4E342E]"
+                                title="Mark as correct answer"
+                              />
+                              <input
+                                type="text"
+                                placeholder={`Option ${oIdx + 1}...`}
+                                value={opt.optionText}
+                                onChange={(e) => {
+                                  const next = [...questions];
+                                  next[qIdx].options[oIdx].optionText = e.target.value;
+                                  setQuestions(next);
+                                }}
+                                className={`flex-1 bg-white border rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] ${
+                                  opt.isCorrect ? 'border-emerald-500 ring-1 ring-emerald-500/30 font-medium' : 'border-[#D7CCC8]'
+                                }`}
+                              />
+                              {q.options.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOption(qIdx, oIdx)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded-lg transition"
+                                  title="Remove Option"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => handleAddOption(qIdx)}
+                            className="text-[11px] text-[#4E342E] font-semibold hover:underline flex items-center gap-1 mt-1.5"
+                          >
+                            <Plus className="w-3 h-3" /> Add Option
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Footer Navigation Based on Active Tab */}
+              <div className="pt-4 flex items-center justify-between border-t border-[#EFEBE9] mt-4">
+                {activeModalTab === 'details' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateModal(false)}
+                      className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!title.trim()) {
+                          setMessage({ text: 'Please enter a quiz title before proceeding to questions', type: 'error' });
+                          return;
+                        }
+                        if (!batchId) {
+                          setMessage({ text: 'Please select a target batch before proceeding to questions', type: 'error' });
+                          return;
+                        }
+                        setMessage(null);
+                        setActiveModalTab('questions');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+                    >
+                      <span>Continue to Questions</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMessage(null);
+                        setActiveModalTab('details');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Back to Details</span>
+                    </button>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateModal(false)}
+                        className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md transition-all disabled:opacity-50"
+                      >
+                        <span>{submitting ? 'Creating Quiz...' : isPublished ? 'Create & Publish Quiz' : 'Save as Draft'}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Student Quiz Taker Modal */}

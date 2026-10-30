@@ -37,6 +37,34 @@ interface AddStaffModalProps {
   activeInstituteCode?: string;
 }
 
+
+function formatUserFriendlyError(rawError?: string | null): string {
+  if (!rawError || typeof rawError !== 'string') {
+    return 'Failed to create staff member. Please check your information and try again.';
+  }
+
+  // If already clean, single line without technical keywords
+  if (
+    !rawError.includes('\n') &&
+    !rawError.includes('invocation') &&
+    !rawError.includes('Prisma') &&
+    !rawError.includes('Unknown argument') &&
+    !rawError.includes('C:\\')
+  ) {
+    return rawError;
+  }
+
+  if (rawError.includes('phone') || rawError.includes('already exists')) {
+    return 'A staff account with this phone number, email, or employee code already exists.';
+  }
+
+  if (rawError.includes('dob') || rawError.includes('Date')) {
+    return 'Please check the Date of Birth or Joining Date format.';
+  }
+
+  return 'Unable to save staff profile. Please verify the entered details and try again.';
+}
+
 export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   isOpen,
   onClose,
@@ -255,10 +283,10 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 
         onClose();
       } else {
-        setError(res.error || 'Failed to create staff member');
+        setError(formatUserFriendlyError(res.error));
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred while creating staff member');
+      setError(formatUserFriendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -327,9 +355,18 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         </div>
 
         {error && (
-          <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{error}</span>
+          <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start justify-between gap-2.5 shadow-sm animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-medium leading-relaxed">{error}</span>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-rose-500 hover:text-rose-700 text-xs p-0.5 rounded transition-colors"
+              title="Dismiss error"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 

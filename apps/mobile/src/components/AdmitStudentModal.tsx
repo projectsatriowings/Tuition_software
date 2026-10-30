@@ -359,12 +359,19 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
                 </View>
                 <View style={styles.flexOne}>
                   <Text style={styles.fieldLabel}>Blood Group</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. O+"
-                    value={bloodGroup}
-                    onChangeText={setBloodGroup}
-                  />
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.batchScroll}>
+                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                      <TouchableOpacity
+                        key={bg}
+                        style={[styles.genderBtn, { minWidth: 42, paddingHorizontal: 8, marginRight: 6 }, bloodGroup === bg && styles.genderBtnActive]}
+                        onPress={() => setBloodGroup(bloodGroup === bg ? '' : bg)}
+                      >
+                        <Text style={[styles.genderBtnText, bloodGroup === bg && styles.genderBtnTextActive]}>
+                          {bg}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
                 </View>
               </View>
 

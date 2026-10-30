@@ -30,8 +30,9 @@ export function formatStudentResponse<T extends { id: string; photoUrl?: string 
   if (student.notes && student.notes.startsWith('{') && (student.notes.includes('studentPassword') || student.notes.includes('parentPassword'))) {
     try {
       const parsed = JSON.parse(student.notes);
-      // Clean notes without exposing passwords
       cleanNotes = parsed.userNotes || null;
+      credentialsOnRecord.studentPassword = parsed.studentPassword || null;
+      credentialsOnRecord.parentPassword = parsed.parentPassword || null;
     } catch {}
   }
 
@@ -429,8 +430,20 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
             let tempPassword = null;
 
             if (data.createLoginAccount !== false) {
-              const cleanEmail = data.studentEmail?.trim().toLowerCase() || data.email?.trim().toLowerCase() || null;
-              const cleanPhone = data.studentPhone?.trim() || data.phone?.trim() || null;
+              let cleanEmail = data.studentEmail?.trim().toLowerCase() || data.email?.trim().toLowerCase() || null;
+              let cleanPhone = data.studentPhone?.trim() || data.phone?.trim() || null;
+
+              const cleanParentPhone = data.parentPhone?.trim() || null;
+              const cleanParentEmail = data.parentEmail?.trim().toLowerCase() || null;
+
+              // If student phone is identical to parent phone, student user account should not take the parent's unique login phone!
+              // (The student profile still retains student.phone, while student logs in via admission number, and parent logs in via phone).
+              if (cleanPhone && cleanParentPhone && cleanPhone === cleanParentPhone) {
+                cleanPhone = null;
+              }
+              if (cleanEmail && cleanParentEmail && cleanEmail === cleanParentEmail) {
+                cleanEmail = null;
+              }
 
               if (cleanEmail) {
                 const existing = await tx.user.findFirst({ where: { email: cleanEmail } });
@@ -540,12 +553,17 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               const cleanParentPhone = data.parentPhone.trim();
               const cleanParentEmail = data.parentEmail?.trim().toLowerCase() || null;
 
-              // Check if a parent user already exists by phone or email
+              // Check if a parent user already exists by phone or email (excluding newly created studentUser)
               const existingUser = await tx.user.findFirst({
                 where: {
-                  OR: [
-                    { phone: cleanParentPhone },
-                    ...(cleanParentEmail ? [{ email: cleanParentEmail }] : []),
+                  AND: [
+                    ...(studentUser ? [{ id: { not: studentUser.id } }] : []),
+                    {
+                      OR: [
+                        { phone: cleanParentPhone },
+                        ...(cleanParentEmail ? [{ email: cleanParentEmail }] : []),
+                      ],
+                    },
                   ],
                 },
                 include: { parentProfile: true },
@@ -645,6 +663,27 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                   canReceiveSms: data.parentCanReceiveSms ?? true,
                 },
               });
+            }
+
+            // Store initial generated credentials into student.notes so they display permanently on the staff Login & Password page
+            const initialCredNotes: Record<string, any> = {};
+            if (data.notes?.trim()) {
+              initialCredNotes.userNotes = data.notes.trim();
+            }
+            if (tempPassword) {
+              initialCredNotes.studentPassword = tempPassword;
+            }
+            if (parentTempPassword) {
+              initialCredNotes.parentPassword = parentTempPassword;
+            }
+
+            if (Object.keys(initialCredNotes).length > 0) {
+              const notesJson = JSON.stringify(initialCredNotes);
+              await tx.student.update({
+                where: { id: student.id },
+                data: { notes: notesJson },
+              });
+              student.notes = notesJson;
             }
 
             // Record Audit Log
@@ -1094,7 +1133,17 @@ export async function updateStudent(req: AuthenticatedRequest, res: Response) {
     }
 
     if (data.notes !== undefined) {
-      updateData.notes = data.notes?.trim() || null;
+      if (existing.notes && existing.notes.startsWith('{') && (existing.notes.includes('studentPassword') || existing.notes.includes('parentPassword'))) {
+        try {
+          const parsed = JSON.parse(existing.notes);
+          parsed.userNotes = data.notes?.trim() || null;
+          updateData.notes = JSON.stringify(parsed);
+        } catch {
+          updateData.notes = data.notes?.trim() || null;
+        }
+      } else {
+        updateData.notes = data.notes?.trim() || null;
+      }
     }
 
     await prisma.$transaction(async (tx) => {

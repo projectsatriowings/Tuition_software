@@ -8,6 +8,13 @@ import { hashPassword, generateSecureRandomToken } from '../../utils/security.js
 import { generateNextEmployeeCode } from './staff-code.service.js';
 import { resolveAbsolutePath, getRelativeStorageKey } from '../../utils/storage.js';
 
+
+function safeParseDate(dateVal?: string | null): Date | null {
+  if (!dateVal || typeof dateVal !== 'string' || !dateVal.trim()) return null;
+  const d = new Date(dateVal.trim());
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export const createStaffSchema = z.object({
   fullName: z.string().min(2, 'Staff full name is required'),
   email: z.string().email('Valid email is required'),
@@ -340,7 +347,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           permissionsJson: staffPermissions,
 
           // Personal Details
-          dob: data.dob ? new Date(data.dob) : null,
+          dob: safeParseDate(data.dob),
           gender: data.gender || null,
           altPhone: data.altPhone?.trim() || null,
           personalEmail: data.personalEmail?.trim() || null,
@@ -368,8 +375,8 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           // Employment Details
           department: data.department?.trim() || null,
           employmentType: data.employmentType || 'FULL_TIME',
-          joiningDate: data.joiningDate ? new Date(data.joiningDate) : new Date(),
-          probationEndDate: data.probationEndDate ? new Date(data.probationEndDate) : null,
+          joiningDate: safeParseDate(data.joiningDate) || new Date(),
+          probationEndDate: safeParseDate(data.probationEndDate),
           workLocation: data.workLocation?.trim() || null,
           employmentNotes: data.employmentNotes?.trim() || null,
         },
@@ -480,7 +487,15 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
         error: `A user or staff member with this ${target || 'information'} already exists.`,
       });
     }
-    return res.status(500).json({ success: false, error: err.message || 'Failed to create staff account' });
+    // Clean, user-friendly error message without leaking raw stack traces or Prisma internals
+    let friendlyMessage = 'Failed to create staff account. Please verify all profile information and try again.';
+    if (err.name === 'PrismaClientValidationError' || (err.message && (err.message.includes('invocation') || err.message.includes('Unknown argument')))) {
+      friendlyMessage = 'Invalid staff profile details. Please check the entered dates and required fields.';
+    } else if (err.message && !err.message.includes('\n') && !err.message.includes('Prisma') && !err.message.includes('C:\\')) {
+      friendlyMessage = err.message;
+    }
+
+    return res.status(500).json({ success: false, error: friendlyMessage });
   }
 }
 

@@ -1,4 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { apiFetch } from '../services/api';
 import { Student, Batch, StudentStatus } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -32,21 +34,25 @@ import {
   BookOpen,
   Pencil,
   Camera,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 export const StudentManagement: React.FC = () => {
   const { showToast } = useToast();
-  const { activeInstitute } = useAuth();
+  const { user, activeInstitute } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [batchFilter, setBatchFilter] = useState<string>('');
   const [subjectFilter, setSubjectFilter] = useState<string>('');
   const [showAdmitModal, setShowAdmitModal] = useState(false);
+  const [admitStep, setAdmitStep] = useState<1 | 2 | 3 | 4>(1);
+  useBodyScrollLock(showAdmitModal);
   const [admitLoading, setAdmitLoading] = useState(false);
   const [admitError, setAdmitError] = useState<string | null>(null);
   const [showParentPassword, setShowParentPassword] = useState(false);
@@ -226,7 +232,7 @@ Account Name: ${fullName}
 Role: ${role}
 Institute Code: ${code}
 Login Identifier: ${identifier}
-${pass ? `Initial Password: ${pass}\n` : 'Account: Linked to existing verified parent account\n'}Login Portal: ${window.location.origin}
+${pass ? `Initial Password: ${pass}\r\n` : 'Account: Linked to existing verified parent account\r\n'}Login Portal: ${window.location.origin}
 --------------------------------------
 Important: Please keep these credentials confidential. Password must be changed upon first login.`;
 
@@ -298,8 +304,8 @@ Please keep this login and password safe. Use your registered mobile number and 
   const handleOpenLoginCredentialsModal = (student: any) => {
     setViewingStudentCreds(student);
     setCredsActiveTab('student');
-    setShowStudentExistingPassword(false);
-    setShowParentExistingPassword(false);
+    setShowStudentExistingPassword(true);
+    setShowParentExistingPassword(true);
     setResetStudentPasswordInput('');
     setResetParentPasswordInput('');
     setCredsResetError(null);
@@ -702,26 +708,34 @@ Please keep this login and password safe. Use your registered mobile number and 
     }
   };
 
-  const fetchData = async (signal?: AbortSignal) => {
+  const requestSeq = useRef(0);
+
+  const fetchData = async () => {
+    const seq = ++requestSeq.current;
     try {
       setLoading(true);
       setFetchError(null);
       const query = new URLSearchParams({
-        search: debouncedSearch,
+        search: debouncedSearch.trim(),
         ...(statusFilter && statusFilter !== 'ALL' ? { status: statusFilter } : {}),
         ...(batchFilter ? { batchId: batchFilter } : {}),
         ...(subjectFilter ? { subjectId: subjectFilter } : {}),
       });
 
-      const studentsRes = await apiFetch(`/students?${query.toString()}`, { signal });
-      setStudents(studentsRes.data?.students || []);
+      const studentsRes = await apiFetch(`/students?${query.toString()}`, { skipCache: true });
+      if (seq === requestSeq.current) {
+        setStudents(studentsRes.data?.students || []);
+      }
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
-      console.error(err);
-      setFetchError(err.message || 'Failed to fetch student data');
-      showToast(err.message || 'Failed to fetch student data', 'error');
+      if (seq === requestSeq.current) {
+        console.error(err);
+        setFetchError(err.message || 'Failed to fetch student data');
+        showToast(err.message || 'Failed to fetch student data', 'error');
+      }
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -729,11 +743,8 @@ Please keep this login and password safe. Use your registered mobile number and 
     loadBatches();
   }, [activeInstitute?.id]);
 
-  // Fetch students with AbortController for seamless request cancellation
   useEffect(() => {
-    const controller = new AbortController();
-    fetchData(controller.signal);
-    return () => controller.abort();
+    fetchData();
   }, [debouncedSearch, statusFilter, batchFilter, subjectFilter, activeInstitute?.id]);
 
   useEffect(() => {
@@ -905,6 +916,33 @@ Please keep this login and password safe. Use your registered mobile number and 
     } finally {
       setEnrollLoading(false);
     }
+  };
+
+  const handleProceedFromAdmitStep1 = () => {
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      setAdmitError('Student first name and last name are required.');
+      return;
+    }
+    setAdmitError(null);
+    setAdmitStep(2);
+  };
+
+  const handleProceedFromAdmitStep2 = () => {
+    setAdmitError(null);
+    setAdmitStep(3);
+  };
+
+  const handleProceedFromAdmitStep3 = () => {
+    if (!formData.parentFullName.trim()) {
+      setAdmitError('Parent/Guardian full name is required.');
+      return;
+    }
+    if (!formData.parentPhone.trim()) {
+      setAdmitError('Parent/Guardian phone number is required.');
+      return;
+    }
+    setAdmitError(null);
+    setAdmitStep(4);
   };
 
   const handleAdmitSubmit = async (e: React.FormEvent) => {
@@ -1083,16 +1121,18 @@ Please keep this login and password safe. Use your registered mobile number and 
           >
             <UserCheck className="w-4 h-4 text-[#6D4C41]" /> Enroll Existing Student
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDetectedCollision(null);
-              setShowAdmitModal(true);
-            }}
-            className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
-          >
-            <Plus className="w-4 h-4" /> Create New Student
-          </button>
+          {user?.role !== 'ACADEMIC_ADMIN' && (
+            <button
+              type="button"
+              onClick={() => {
+                setDetectedCollision(null);
+                setShowAdmitModal(true);
+              }}
+              className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+            >
+              <Plus className="w-4 h-4" /> Create New Student
+            </button>
+          )}
         </div>
       </div>
 
@@ -1101,8 +1141,8 @@ Please keep this login and password safe. Use your registered mobile number and 
         {/* Status Tabs */}
         <div className="flex flex-wrap gap-2 border-b border-[#EFEBE9] pb-4">
           {[
+            { id: 'ALL', label: 'All Students' },
             { id: 'ACTIVE', label: 'Active Students' },
-            { id: 'ALL', label: 'All Records' },
             { id: 'PASSED_OUT', label: 'Passed Out' },
             { id: 'DISCONTINUED', label: 'Discontinued' },
           ].map((tab) => (
@@ -1390,17 +1430,6 @@ Please keep this login and password safe. Use your registered mobile number and 
                                 <Key className="w-4 h-4 text-[#8D6E63] shrink-0" />
                                 <span>Login & Password</span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenActionMenuId(null);
-                                  handleOpenAssignBatchModal(student);
-                                }}
-                                className="w-full text-left px-3.5 py-2 hover:bg-[#FDFBF7] text-[#2D1E18] flex items-center gap-2.5 font-medium transition"
-                              >
-                                <Layers className="w-4 h-4 text-[#8D6E63] shrink-0" />
-                                <span>Assign Batch & Subjects</span>
-                              </button>
                               <div className="border-t border-[#EFEBE9] my-1" />
                               {student.status === 'ACTIVE' ? (
                                 <>
@@ -1454,30 +1483,86 @@ Please keep this login and password safe. Use your registered mobile number and 
       </div>
 
       {/* Admit Student Modal */}
-      {showAdmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-xl p-6 max-h-[92vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
+      {showAdmitModal && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 sm:p-8 shadow-2xl text-[#2D1E18] animate-in fade-in zoom-in-95 my-8">
+            {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
               <div>
-                <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                  <GraduationCap className="w-5 h-5 text-[#4E342E]" /> New Student Admission
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-[#D7CCC8] text-[#6D4C41] text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                  <GraduationCap className="w-3.5 h-3.5 text-[#4E342E]" /> Step {admitStep} of 4
+                </div>
+                <h2 className="text-xl font-extrabold text-[#2D1E18]">
+                  New Student Admission
                 </h2>
-                <p className="text-xs text-[#6D4C41]">Admit student and create/link guardian credentials atomically</p>
+                <p className="text-xs text-[#6D4C41] mt-0.5">
+                  Admit student, assign batch curriculum, and provision guardian credentials
+                </p>
               </div>
-              <button onClick={() => setShowAdmitModal(false)} className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAdmitModal(false);
+                  setAdmitStep(1);
+                  setAdmitError(null);
+                }}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-xl hover:bg-[#F7F2EF] transition"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {/* Wizard Step Progress (4 Steps) */}
+            <div className="py-4">
+              <div className="flex items-center justify-between">
+                {[
+                  { num: 1, label: 'Student' },
+                  { num: 2, label: 'Academics' },
+                  { num: 3, label: 'Guardian' },
+                  { num: 4, label: 'Credentials' },
+                ].map((s, idx) => (
+                  <React.Fragment key={s.num}>
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                          admitStep === s.num
+                            ? 'bg-[#4E342E] text-white ring-4 ring-[#8D6E63]/20 shadow-md'
+                            : admitStep > s.num
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
+                        }`}
+                      >
+                        {admitStep > s.num ? <Check className="w-4 h-4" /> : s.num}
+                      </div>
+                      <span
+                        className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${
+                          admitStep === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
+                        }`}
+                      >
+                        {s.label}
+                      </span>
+                    </div>
+                    {idx < 3 && (
+                      <div
+                        className={`flex-1 h-0.5 mx-2 transition-colors ${
+                          admitStep > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
+                        }`}
+                      />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+
             {admitError && (
-              <div className="mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2.5 font-medium shadow-sm">
+              <div className="mb-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2.5 font-medium shadow-sm">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>{admitError}</span>
               </div>
             )}
 
             {detectedCollision && (
-              <div className="mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2.5 shadow-sm">
+              <div className="mb-4 p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2.5 shadow-sm">
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
                   <div className="text-xs space-y-1">
@@ -1522,458 +1607,574 @@ Please keep this login and password safe. Use your registered mobile number and 
               </div>
             )}
 
-            <form onSubmit={handleAdmitSubmit} className="space-y-4 mt-4">
-              {/* Student Photo Upload Section */}
-              <div className="p-3.5 rounded-2xl bg-[#FDFBF7] border border-[#D7CCC8] flex items-center gap-4">
-                <div className="relative shrink-0">
-                  {photoPreview ? (
-                    <img
-                      src={photoPreview}
-                      alt="Preview"
-                      className="w-16 h-16 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-sm"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-[#EFEBE9] text-[#8D6E63] border border-[#D7CCC8] flex flex-col items-center justify-center text-[10px] font-semibold text-center p-1">
-                      <User className="w-6 h-6 mb-0.5 text-[#A1887F]" />
-                      No Photo
+            <form onSubmit={handleAdmitSubmit} className="space-y-4">
+              {/* STEP 1: Student Identity & Photo */}
+              {admitStep === 1 && (
+                <div className="space-y-4">
+                  {/* Photo Upload Card */}
+                  <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#D7CCC8] flex items-center gap-4">
+                    <div className="relative shrink-0">
+                      {photoPreview ? (
+                        <img
+                          src={photoPreview}
+                          alt="Preview"
+                          className="w-16 h-16 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-[#EFEBE9] text-[#8D6E63] border border-[#D7CCC8] flex flex-col items-center justify-center text-[10px] font-semibold text-center p-1">
+                          <User className="w-6 h-6 mb-0.5 text-[#A1887F]" />
+                          No Photo
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="flex-1 space-y-1.5">
-                  <span className="text-xs font-bold text-[#4E342E] block">Student Photograph (Optional)</span>
-                  <p className="text-[11px] text-[#8D6E63]">
-                    Upload JPG/PNG portrait or capture via camera (Max 5MB)
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5">
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        capture="environment"
-                        className="hidden"
-                        onChange={handlePhotoSelect}
-                      />
-                      📷 {photoPreview ? 'Change Photo' : 'Select / Capture Photo'}
-                    </label>
-                    {photoPreview && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPhotoFile(null);
-                          setPhotoPreview(null);
-                        }}
-                        className="text-xs text-rose-700 hover:underline font-semibold"
-                      >
-                        Remove
-                      </button>
-                    )}
+                    <div className="flex-1 space-y-1.5">
+                      <span className="text-xs font-bold text-[#4E342E] block">Student Photograph (Optional)</span>
+                      <p className="text-[11px] text-[#8D6E63]">
+                        Upload JPG/PNG portrait or capture via camera (Max 5MB)
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5">
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            capture="environment"
+                            className="hidden"
+                            onChange={handlePhotoSelect}
+                          />
+                          📷 {photoPreview ? 'Change Photo' : 'Select / Capture Photo'}
+                        </label>
+                        {photoPreview && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPhotoFile(null);
+                              setPhotoPreview(null);
+                            }}
+                            className="text-xs text-rose-700 hover:underline font-semibold"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Student Details Section */}
-              <div className="space-y-3">
-                <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center gap-1.5 border-b border-[#EFEBE9] pb-1">
-                  <User className="w-3.5 h-3.5 text-[#8D6E63]" /> Student Profile
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                        Admission Number
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          readOnly
+                          disabled
+                          value={prefixInfo ? `${prefixInfo.previewFormat} (7-char scheme)` : 'Auto-generated on save'}
+                          className="w-full bg-[#EFEBE9]/60 border border-[#D7CCC8] text-[#8D6E63] font-mono font-semibold text-xs rounded-xl px-3.5 py-2.5 cursor-not-allowed select-none"
+                        />
+                        <span className="absolute right-2.5 top-2.5 text-[10px] bg-[#D7CCC8]/60 text-[#4E342E] font-bold px-1.5 py-0.5 rounded">
+                          AUTO
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[#8D6E63] mt-0.5 italic">
+                        Sequential number auto-assigned by institute format
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                        Student Phone Number (Optional)
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3.5 top-3" />
+                        <input
+                          type="tel"
+                          value={formData.studentPhone}
+                          onChange={(e) => setFormData({ ...formData, studentPhone: e.target.value })}
+                          placeholder="e.g. +91 9876543210"
+                          className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        />
+                      </div>
+                      <p className="text-[10px] text-[#8D6E63] mt-0.5">
+                        Optional student's own mobile. If sharing guardian's phone, you can leave this blank.
+                      </p>
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Admission Number
-                    </label>
-                    <div className="relative">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">First Name *</label>
                       <input
                         type="text"
-                        readOnly
-                        disabled
-                        value={prefixInfo ? `${prefixInfo.previewFormat} (7-char scheme)` : 'Auto-generated on save'}
-                        className="w-full bg-[#EFEBE9]/60 border border-[#D7CCC8] text-[#8D6E63] font-mono font-semibold text-xs rounded-xl px-3 py-2 cursor-not-allowed select-none"
+                        required
+                        autoFocus
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                        placeholder="e.g. Aarav"
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                       />
-                      <span className="absolute right-2.5 top-2 text-[10px] bg-[#D7CCC8]/60 text-[#4E342E] font-bold px-1.5 py-0.5 rounded">
-                        AUTO
-                      </span>
                     </div>
-                    <p className="text-[10px] text-[#8D6E63] mt-0.5 italic">
-                      Sequential number auto-assigned by institute format
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Student Phone Number (Optional)
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-3" />
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Last Name *</label>
                       <input
-                        type="tel"
-                        value={formData.studentPhone}
-                        onChange={(e) => setFormData({ ...formData, studentPhone: e.target.value })}
-                        placeholder="e.g. +91 9876543210"
-                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-8 pr-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        type="text"
+                        required
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        placeholder="e.g. Sharma"
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                        Student Email (Optional)
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3.5 top-3" />
+                        <input
+                          type="email"
+                          value={formData.studentEmail}
+                          onChange={(e) => setFormData({ ...formData, studentEmail: e.target.value })}
+                          placeholder="e.g. student@example.com"
+                          className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Gender</label>
+                      <select
+                        value={formData.gender}
+                        onChange={(e) => setFormData({ ...formData, gender: e.target.value as any })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      >
+                        <option value="MALE">Male</option>
+                        <option value="FEMALE">Female</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Date of Birth</label>
+                      <input
+                        type="date"
+                        value={formData.dob}
+                        onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">Blood Group</label>
+                      <input
+                        type="text"
+                        value={formData.bloodGroup}
+                        onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value.toUpperCase() })}
+                        placeholder="e.g. O+, B+, A-"
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] uppercase focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                       />
                     </div>
                   </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">First Name*</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.firstName}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                      placeholder="e.g. Aarav"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
+              {/* STEP 2: Academics & Batch Allocation */}
+              {admitStep === 2 && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1.5">
+                        Class Batch Allocation
+                      </label>
+                      <select
+                        value={formData.batchId}
+                        onChange={(e) => setFormData({ ...formData, batchId: e.target.value, subjectIds: [] })}
+                        className="w-full bg-white border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      >
+                        <option value="">Select Class Batch (Optional)</option>
+                        {batches.map((b) => (
+                          <option key={b.id} value={b.id}>{b.name} ({b.academicYear})</option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-[#8D6E63] mt-1">
+                        Assigning a batch now enables instant attendance tracking and syllabus scheduling.
+                      </p>
+                    </div>
+
+                    {/* Batch Subject Selection (if batch selected and subjects exist) */}
+                    {(() => {
+                      const selectedBatch = batches.find((b) => b.id === formData.batchId);
+                      const subjects = selectedBatch?.batchSubjects || [];
+                      if (!formData.batchId) {
+                        return (
+                          <div className="p-3 bg-white border border-dashed border-[#D7CCC8] rounded-xl text-center text-xs text-[#8D6E63]">
+                            Select a class batch above to view and allocate curriculum subjects.
+                          </div>
+                        );
+                      }
+                      if (subjects.length === 0) {
+                        return (
+                          <div className="p-3 bg-white border border-[#D7CCC8] rounded-xl text-xs text-[#8D6E63]">
+                            No specific subjects configured for this batch yet. The student will be enrolled in the general batch curriculum.
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="bg-white border border-[#D7CCC8] rounded-xl p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-[#4E342E]">
+                              Select Subjects to Allocate
+                            </label>
+                            <span className="text-[10px] font-semibold text-[#8D6E63] bg-[#FAF8F5] px-2 py-0.5 rounded-full border border-[#D7CCC8]">
+                              {formData.subjectIds.length} of {subjects.length} selected
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {subjects.map((bs: any) => {
+                              const isSelected = formData.subjectIds.includes(bs.subject.id);
+                              return (
+                                <button
+                                  key={bs.subject.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const next = isSelected
+                                      ? formData.subjectIds.filter((id) => id !== bs.subject.id)
+                                      : [...formData.subjectIds, bs.subject.id];
+                                    setFormData({ ...formData, subjectIds: next });
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                                    isSelected
+                                      ? 'bg-[#4E342E] text-white shadow-sm'
+                                      : 'bg-[#FAF8F5] border border-[#D7CCC8] text-[#5D4037] hover:bg-[#F7F2EF]'
+                                  }`}
+                                >
+                                  {isSelected && <Check className="w-3.5 h-3.5" />}
+                                  <span>{bs.subject.name} {bs.subject.code ? `(${bs.subject.code})` : ''}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+
                   <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Last Name*</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.lastName}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                      placeholder="e.g. Sharma"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Notes / Medical Info</label>
+                    <textarea
+                      rows={3}
+                      value={formData.notes}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                      placeholder="Optional remarks (e.g. allergies, emergency instructions, academic background)"
+                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />
                   </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Student Email (Optional)
-                    </label>
-                    <div className="relative">
-                      <Mail className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-3" />
+              {/* STEP 3: Parent / Guardian Details */}
+              {admitStep === 3 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                        Parent / Guardian Full Name *
+                      </label>
                       <input
-                        type="email"
-                        value={formData.studentEmail}
-                        onChange={(e) => setFormData({ ...formData, studentEmail: e.target.value })}
-                        placeholder="e.g. student@example.com"
-                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-8 pr-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        type="text"
+                        required
+                        autoFocus
+                        value={formData.parentFullName}
+                        onChange={(e) => setFormData({ ...formData, parentFullName: e.target.value })}
+                        placeholder="e.g. Ramesh Sharma"
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                       />
                     </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                        Relationship to Student *
+                      </label>
+                      <select
+                        value={formData.parentRelationship}
+                        onChange={(e) => setFormData({ ...formData, parentRelationship: e.target.value as any })}
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                      >
+                        <option value="FATHER">Father</option>
+                        <option value="MOTHER">Mother</option>
+                        <option value="GUARDIAN">Legal Guardian</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Initial Student Password (Optional)
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-[#4E342E]">
+                          Parent Phone Number * (Login Identifier)
+                        </label>
+                        {checkingParent && (
+                          <span className="text-[10px] text-[#8D6E63] flex items-center gap-1 font-medium">
+                            <Loader2 className="w-3 h-3 animate-spin text-[#8D6E63]" /> Checking...
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <Phone className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3.5 top-3" />
+                        <input
+                          type="tel"
+                          required
+                          value={formData.parentPhone}
+                          onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
+                          placeholder="e.g. 9876543210"
+                          className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        />
+                      </div>
+                      <p className="text-[10px] text-[#8D6E63] mt-0.5 italic">
+                        If parent already exists for a sibling, they are linked automatically.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                        Parent Email (Optional)
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3.5 top-3" />
+                        <input
+                          type="email"
+                          value={formData.parentEmail}
+                          onChange={(e) => setFormData({ ...formData, parentEmail: e.target.value })}
+                          placeholder="e.g. parent@example.com"
+                          className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Existing Parent / Sibling Found Banner */}
+                  {matchedParent?.found && !matchedParent.isStudent && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 space-y-1.5 shadow-sm">
+                      <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-800">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Existing Parent Account Found: {matchedParent.user?.fullName}</span>
+                        <span className="text-[10px] font-semibold bg-emerald-200/80 text-emerald-800 px-2 py-0.5 rounded-full ml-auto">
+                          Auto-Linking Active
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        This student will be automatically linked to <strong>{matchedParent.user?.fullName}</strong> ({matchedParent.user?.phone || matchedParent.user?.email})
+                        {matchedParent.children && matchedParent.children.length > 0 && (
+                          <> as a sibling of <strong>{matchedParent.children.map(c => `${c.name} (${c.admissionNumber})`).join(', ')}</strong></>
+                        )}.
+                        The parent's current login credentials will remain unchanged.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Student Account Collision Warning */}
+                  {matchedParent?.found && matchedParent.isStudent && (
+                    <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{matchedParent.message}</span>
+                    </div>
+                  )}
+
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      id="parentCanReceiveSms"
+                      checked={formData.parentCanReceiveSms}
+                      onChange={(e) => setFormData({ ...formData, parentCanReceiveSms: e.target.checked })}
+                      className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63] w-4 h-4"
+                    />
+                    <label htmlFor="parentCanReceiveSms" className="text-xs text-[#4E342E] font-medium cursor-pointer select-none">
+                      Consent to instant SMS / in-app attendance and exam notification alerts
                     </label>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: Account Provisioning & Summary */}
+              {admitStep === 4 && (
+                <div className="space-y-4">
+                  {/* Overview Card */}
+                  <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-3">
+                    <span className="text-xs font-bold text-[#4E342E] uppercase tracking-wider block">
+                      Admission Summary
+                    </span>
+                    <div className="grid grid-cols-2 gap-2.5 text-xs">
+                      <div>
+                        <span className="text-[#8D6E63]">Student:</span>{' '}
+                        <span className="font-semibold text-[#2D1E18]">{formData.firstName} {formData.lastName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8D6E63]">Batch:</span>{' '}
+                        <span className="font-semibold text-[#2D1E18]">
+                          {batches.find(b => b.id === formData.batchId)?.name || 'Unassigned'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#8D6E63]">Parent:</span>{' '}
+                        <span className="font-semibold text-[#2D1E18]">{formData.parentFullName} ({formData.parentRelationship})</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8D6E63]">Parent Phone:</span>{' '}
+                        <span className="font-mono font-semibold text-[#2D1E18]">{formData.parentPhone}</span>
+                      </div>
+                      {formData.subjectIds.length > 0 && (
+                        <div className="col-span-2">
+                          <span className="text-[#8D6E63]">Allocated Subjects:</span>{' '}
+                          <span className="font-semibold text-[#2D1E18]">
+                            {formData.subjectIds.length} subject(s) allocated
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Student Initial Password */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#4E342E]">
+                        Initial Student Password (Optional)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, studentInitialPassword: generateStrongPassword('Stud') })}
+                        className="text-[11px] font-semibold text-[#8D6E63] hover:text-[#4E342E] flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3" /> Auto-generate
+                      </button>
+                    </div>
                     <div className="relative">
-                      <Key className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-3" />
+                      <Key className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3.5 top-3" />
                       <input
                         type={showStudentPassword ? 'text' : 'password'}
                         value={formData.studentInitialPassword}
                         onChange={(e) => setFormData({ ...formData, studentInitialPassword: e.target.value })}
-                        placeholder="Leave blank to auto-generate"
-                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-8 pr-9 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        placeholder="Leave blank to auto-generate password"
+                        className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-10 py-2.5 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                       />
                       <button
                         type="button"
                         onClick={() => setShowStudentPassword(!showStudentPassword)}
-                        className="absolute right-2.5 top-2.5 text-[#8D6E63] hover:text-[#4E342E]"
+                        className="absolute right-3 top-3 text-[#8D6E63] hover:text-[#4E342E]"
                       >
                         {showStudentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#8D6E63] mt-0.5">
-                      Must be changed on student's initial login
-                    </p>
+                    <span className="text-[10px] text-[#8D6E63] mt-1 block">
+                      Used for student portal login. Auto-generated by system if left blank.
+                    </span>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Gender</label>
-                    <select
-                      value={formData.gender}
-                      onChange={(e) => setFormData({ ...formData, gender: e.target.value as any })}
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    >
-                      <option value="MALE">Male</option>
-                      <option value="FEMALE">Female</option>
-                      <option value="OTHER">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Date of Birth</label>
-                    <input
-                      type="date"
-                      value={formData.dob}
-                      onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Blood Group</label>
-                    <input
-                      type="text"
-                      value={formData.bloodGroup}
-                      onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value.toUpperCase() })}
-                      placeholder="e.g. O+"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] uppercase focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Batch Enrollment</label>
-                    <select
-                      value={formData.batchId}
-                      onChange={(e) => setFormData({ ...formData, batchId: e.target.value, subjectIds: [] })}
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    >
-                      <option value="">Select Class Batch</option>
-                      {batches.map((b) => (
-                        <option key={b.id} value={b.id}>{b.name} ({b.academicYear})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Notes / Medical Info</label>
-                    <input
-                      type="text"
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      placeholder="Optional remarks"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                </div>
-
-                {/* Batch Subject Selection (if batch selected and subjects exist) */}
-                {(() => {
-                  const selectedBatch = batches.find((b) => b.id === formData.batchId);
-                  const subjects = selectedBatch?.batchSubjects || [];
-                  if (!formData.batchId || subjects.length === 0) return null;
-                  return (
-                    <div className="bg-[#EFEBE9]/40 border border-[#D7CCC8] rounded-xl p-3 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-semibold text-[#4E342E]">
-                          Select Subjects to Allocate
-                        </label>
-                        <span className="text-[10px] text-[#8D6E63]">
-                          {formData.subjectIds.length} of {subjects.length} selected
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {subjects.map((bs: any) => {
-                          const isSelected = formData.subjectIds.includes(bs.subject.id);
-                          return (
-                            <button
-                              key={bs.subject.id}
-                              type="button"
-                              onClick={() => {
-                                const next = isSelected
-                                  ? formData.subjectIds.filter((id) => id !== bs.subject.id)
-                                  : [...formData.subjectIds, bs.subject.id];
-                                setFormData({ ...formData, subjectIds: next });
-                              }}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                                isSelected
-                                  ? 'bg-[#4E342E] text-white shadow-xs'
-                                  : 'bg-white border border-[#D7CCC8] text-[#5D4037] hover:bg-[#F7F2EF]'
-                              }`}
-                            >
-                              {isSelected && <Check className="w-3.5 h-3.5" />}
-                              <span>{bs.subject.name} {bs.subject.code ? `(${bs.subject.code})` : ''}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Parent / Guardian Credentials Section */}
-              <div className="pt-2 space-y-3">
-                <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center justify-between border-b border-[#EFEBE9] pb-1">
-                  <div className="flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-[#8D6E63]" />
-                    <span>Parent / Guardian Account</span>
-                  </div>
-                  <span className="text-[10px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Creates or links login account
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Parent / Guardian Full Name*
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.parentFullName}
-                      onChange={(e) => setFormData({ ...formData, parentFullName: e.target.value })}
-                      placeholder="e.g. Ramesh Sharma"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Relationship to Student*
-                    </label>
-                    <select
-                      value={formData.parentRelationship}
-                      onChange={(e) => setFormData({ ...formData, parentRelationship: e.target.value as any })}
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    >
-                      <option value="FATHER">Father</option>
-                      <option value="MOTHER">Mother</option>
-                      <option value="GUARDIAN">Legal Guardian</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Parent Initial Password */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-[#4E342E]">
-                        Parent Phone Number* (Login Identifier)
+                      <label className="text-xs font-semibold text-[#4E342E]">
+                        Initial Parent Password
                       </label>
-                      {checkingParent && (
-                        <span className="text-[10px] text-[#8D6E63] flex items-center gap-1 font-medium">
-                          <Loader2 className="w-3 h-3 animate-spin text-[#8D6E63]" /> Checking...
-                        </span>
+                      {!matchedParent?.found && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, parentInitialPassword: generateStrongPassword('Parent') })}
+                          className="text-[11px] font-semibold text-[#8D6E63] hover:text-[#4E342E] flex items-center gap-1"
+                        >
+                          <Sparkles className="w-3 h-3" /> Auto-generate
+                        </button>
                       )}
                     </div>
-                    <div className="relative">
-                      <Phone className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-3" />
-                      <input
-                        type="tel"
-                        required
-                        value={formData.parentPhone}
-                        onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
-                        placeholder="e.g. 9876543210"
-                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-8 pr-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                      />
-                    </div>
-                    <p className="text-[10px] text-[#8D6E63] mt-0.5 italic">
-                      If parent already exists for a sibling, they are linked automatically.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Parent Email (Optional)
-                    </label>
-                    <div className="relative">
-                      <Mail className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-3" />
-                      <input
-                        type="email"
-                        value={formData.parentEmail}
-                        onChange={(e) => setFormData({ ...formData, parentEmail: e.target.value })}
-                        placeholder="e.g. parent@example.com"
-                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-8 pr-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Existing Parent / Sibling Found Banner */}
-                {matchedParent?.found && !matchedParent.isStudent && (
-                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 space-y-1.5 shadow-sm">
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-800">
-                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Existing Parent Account Found: {matchedParent.user?.fullName}</span>
-                      <span className="text-[10px] font-semibold bg-emerald-200/80 text-emerald-800 px-2 py-0.5 rounded-full ml-auto">
-                        Auto-Linking Active
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-emerald-800 leading-relaxed">
-                      This student will be automatically linked to <strong>{matchedParent.user?.fullName}</strong> ({matchedParent.user?.phone || matchedParent.user?.email})
-                      {matchedParent.children && matchedParent.children.length > 0 && (
-                        <> as a sibling of <strong>{matchedParent.children.map(c => `${c.name} (${c.admissionNumber})`).join(', ')}</strong></>
-                      )}.
-                      The parent's current login credentials will remain unchanged.
-                    </p>
-                  </div>
-                )}
-
-                {/* Student Account Collision Warning */}
-                {matchedParent?.found && matchedParent.isStudent && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>{matchedParent.message}</span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Initial Parent Password
-                    </label>
                     {matchedParent?.found && !matchedParent.isStudent ? (
-                      <div className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#4E342E] flex items-center gap-2">
+                      <div className="bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#4E342E] flex items-center gap-2">
                         <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span className="font-medium text-[11px]">
-                          Existing login account is active. Password will remain unchanged.
+                          Existing login account is active for this guardian. Password will remain unchanged.
                         </span>
                       </div>
                     ) : (
                       <>
                         <div className="relative">
-                          <Key className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-3" />
+                          <Key className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3.5 top-3" />
                           <input
                             type={showParentPassword ? 'text' : 'password'}
                             value={formData.parentInitialPassword}
                             onChange={(e) => setFormData({ ...formData, parentInitialPassword: e.target.value })}
-                            placeholder="Leave blank to auto-generate"
-                            className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-8 pr-9 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                            placeholder="Leave blank to auto-generate password"
+                            className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-10 py-2.5 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                           />
                           <button
                             type="button"
                             onClick={() => setShowParentPassword(!showParentPassword)}
-                            className="absolute right-2.5 top-2.5 text-[#8D6E63] hover:text-[#4E342E]"
+                            className="absolute right-3 top-3 text-[#8D6E63] hover:text-[#4E342E]"
                           >
                             {showParentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
-                        <p className="text-[10px] text-[#8D6E63] mt-0.5">
-                          Must be changed on parent's initial login
-                        </p>
+                        <span className="text-[10px] text-[#8D6E63] mt-1 block">
+                          Used for parent mobile login. Auto-generated by system if left blank.
+                        </span>
                       </>
                     )}
                   </div>
-                  <div className="flex items-center pt-5">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={formData.parentCanReceiveSms}
-                        onChange={(e) => setFormData({ ...formData, parentCanReceiveSms: e.target.checked })}
-                        className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
-                      />
-                      <span className="text-xs text-[#4E342E] font-medium">
-                        Consent to SMS / WhatsApp alerts
-                      </span>
-                    </label>
-                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="pt-4 flex justify-end gap-3 border-t border-[#EFEBE9]">
-                <button
-                  type="button"
-                  onClick={() => setShowAdmitModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={admitLoading}
-                  className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50"
-                >
-                  {admitLoading ? 'Admitting & Enrolling...' : 'Complete Admission'}
-                </button>
+              {/* Footer Navigation Buttons */}
+              <div className="flex items-center justify-between pt-5 border-t border-[#EFEBE9] mt-6">
+                {admitStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdmitError(null);
+                      setAdmitStep((prev) => (prev - 1) as any);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Back
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdmitModal(false);
+                      setAdmitStep(1);
+                      setAdmitError(null);
+                    }}
+                    className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition"
+                  >
+                    Cancel
+                  </button>
+                )}
+
+                {admitStep < 4 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (admitStep === 1) handleProceedFromAdmitStep1();
+                      else if (admitStep === 2) handleProceedFromAdmitStep2();
+                      else if (admitStep === 3) handleProceedFromAdmitStep3();
+                    }}
+                    className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+                  >
+                    <span>Continue</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={admitLoading}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all disabled:opacity-50"
+                  >
+                    {admitLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <span>Complete Admission</span>
+                  </button>
+                )}
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Enroll Existing Student Modal */}
@@ -2474,11 +2675,11 @@ Portal: ${window.location.origin}
 Name: ${st?.fullName || admittedSuccess.name}
 Admission No: ${admittedSuccess.admissionNumber}
 Login ID: ${st?.identifier || admittedSuccess.admissionNumber}
-${st?.temporaryPassword ? `Temporary Password: ${st.temporaryPassword}\n` : ''}
+${st?.temporaryPassword ? `Temporary Password: ${st.temporaryPassword}\r\n` : ''}
 2. PARENT LOGIN
 Guardian: ${pr?.fullName || 'Registered Guardian'}
 Login ID: ${pr?.identifier || 'Registered Phone'}
-${pr?.isExistingAccount ? 'Account: Existing verified parent account\n' : pr?.temporaryPassword ? `Temporary Password: ${pr.temporaryPassword}\n` : ''}======================================
+${pr?.isExistingAccount ? 'Account: Existing verified parent account\r\n' : pr?.temporaryPassword ? `Temporary Password: ${pr.temporaryPassword}\r\n` : ''}======================================
 Please keep credentials safe. Passwords must be changed upon first login.`;
                   copyToClipboard(text, 'copy_all');
                 }}
