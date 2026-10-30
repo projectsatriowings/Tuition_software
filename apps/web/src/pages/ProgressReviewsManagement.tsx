@@ -26,7 +26,6 @@ import {
   CheckCircle2,
   MessageSquare,
   ChevronDown,
-  MessageCircle,
 } from 'lucide-react';
 
 export const ProgressReviewsManagement: React.FC = () => {
