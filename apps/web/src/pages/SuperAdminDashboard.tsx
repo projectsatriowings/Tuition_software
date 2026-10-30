@@ -1,3 +1,4 @@
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
 import { Institute, User } from '../types';
@@ -60,7 +61,7 @@ export const SuperAdminDashboard: React.FC = () => {
   // 1. CREATE INSTITUTE MODAL STATE
   // ----------------------------------------------------
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
+    const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   // Form fields
@@ -129,6 +130,7 @@ export const SuperAdminDashboard: React.FC = () => {
   // 2. INSTITUTE DETAILS DRAWER STATE
   // ----------------------------------------------------
   const [selectedInstituteId, setSelectedInstituteId] = useState<string | null>(null);
+  useBodyScrollLock(showCreateModal || !!selectedInstituteId || !!createdInstitute);
   const [detailData, setDetailData] = useState<InstituteDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);

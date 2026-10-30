@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 @layer base {
+  body.modal-open, html.modal-open {
+    overflow: hidden !important;
+  }
+  body:has(.fixed.inset-0) {
+    overflow: hidden !important;
+  }
+  body:has(.fixed.inset-0) main {
+    overflow: hidden !important;
+  }
   :root {
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     

@@ -54,7 +54,7 @@ const AppContent: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F7F2EF] flex items-center justify-center text-[#3E2723]">
+      <div className="h-screen bg-[#F7F2EF] overflow-hidden flex items-center justify-center text-[#3E2723]">
         <div className="flex items-center gap-3">
           <div className="w-4 h-4 rounded-full bg-[#4E342E] animate-ping"></div>
           <span className="text-sm font-semibold text-[#6D4C41]">Loading TuitionOS...</span>
@@ -68,10 +68,10 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F2EF] text-[#2D1E18] flex flex-col font-sans">
+    <div className="h-screen bg-[#F7F2EF] overflow-hidden text-[#2D1E18] flex flex-col font-sans">
       <Navbar />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar currentTab={currentTab} onSelectTab={(tab) => setCurrentTab(tab)} />
 
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#F7F2EF]">
