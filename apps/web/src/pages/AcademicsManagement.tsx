@@ -123,7 +123,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
     description: '',
     schedule: '',
     isActive: true,
-    staffProfileId: '',
+    staffProfileIds: [] as string[],
   });
 
   // Subject Inside Batch Form State
@@ -207,7 +207,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
       description: b.description || '',
       schedule: b.schedule || '',
       isActive: b.isActive,
-      staffProfileId: '',
+      staffProfileIds: [] as string[],
     });
     setShowBatchModal(true);
   };
@@ -251,7 +251,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
             description: batchForm.description || undefined,
             schedule: batchForm.schedule || undefined,
             isActive: batchForm.isActive,
-            staffProfileId: batchForm.staffProfileId || undefined,
+            staffProfileIds: batchForm.staffProfileIds.length > 0 ? batchForm.staffProfileIds : undefined,
           }),
         });
         if (res.success && res.data?.batch) {
@@ -266,7 +266,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
             description: '',
             schedule: '',
             isActive: true,
-            staffProfileId: '',
+            staffProfileIds: [] as string[],
           });
           await fetchData();
           // Prompt requirement 1.2: "After saving, navigate to the batch details page."
@@ -898,7 +898,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                       <span className="text-[#8D6E63]">Faculty:</span>
                       <span className="font-semibold text-[#4E342E] flex items-center gap-1.5">
                         <Users className="w-3.5 h-3.5 text-[#8D6E63]" />
-                        {bs.staffProfile?.user?.fullName || 'Not assigned'}
+                        {bs.staffProfile?.user?.fullName || 'Batch Faculty'}
                       </span>
                     </div>
 
@@ -1186,32 +1186,15 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-[#4E342E] mb-1">Subject Code <span className="font-normal text-[#8D6E63]">(Optional)</span></label>
-                    <input
-                      type="text"
-                      placeholder="e.g. MATH101"
-                      value={subjectForm.code}
-                      onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
-                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-[#4E342E] mb-1">Assigned Teacher</label>
-                    <select
-                      value={subjectForm.staffProfileId}
-                      onChange={(e) => setSubjectForm({ ...subjectForm, staffProfileId: e.target.value })}
-                      className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                    >
-                      <option value="">-- Select Teacher (Optional) --</option>
-                      {availableStaff.map((st) => (
-                        <option key={st.staffProfileId} value={st.staffProfileId}>
-                          {st.fullName} ({st.designation || 'Staff'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label className="block font-bold text-[#4E342E] mb-1">Subject Code <span className="font-normal text-[#8D6E63]">(Optional)</span></label>
+                  <input
+                    type="text"
+                    placeholder="e.g. MATH101, PHY-01"
+                    value={subjectForm.code}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
+                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
+                  />
                 </div>
 
                 <SchedulePicker
@@ -1537,7 +1520,7 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                 description: '',
                 schedule: '',
                 isActive: true,
-                staffProfileId: '',
+                staffProfileIds: [] as string[],
               });
               setShowBatchModal(true);
             }}
@@ -1828,21 +1811,61 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
                 </div>
               </div>
 
-              {!editingBatch && (
+              {!editingBatch && availableStaff.length > 0 && (
                 <div>
-                  <label className="block font-bold text-[#4E342E] mb-1">Initial Faculty Assignment</label>
-                  <select
-                    value={batchForm.staffProfileId}
-                    onChange={(e) => setBatchForm({ ...batchForm, staffProfileId: e.target.value })}
-                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#8D6E63] focus:outline-none"
-                  >
-                    <option value="">-- Assign Faculty Member (Optional) --</option>
-                    {availableStaff.map((st) => (
-                      <option key={st.staffProfileId} value={st.staffProfileId}>
-                        {st.fullName} ({st.designation || 'Staff'})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block font-bold text-[#4E342E]">
+                      Assign Faculty / Teachers <span className="font-normal text-[#8D6E63]">(Optional)</span>
+                    </label>
+                    <span className="text-[11px] text-[#8D6E63]">
+                      {batchForm.staffProfileIds.length} teacher(s) selected
+                    </span>
+                  </div>
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl">
+                    {availableStaff.map((st) => {
+                      const isChecked = batchForm.staffProfileIds.includes(st.staffProfileId);
+                      return (
+                        <label
+                          key={st.staffProfileId}
+                          className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition text-xs ${
+                            isChecked
+                              ? 'bg-white border border-[#4E342E] shadow-sm font-semibold text-[#2D1E18]'
+                              : 'hover:bg-white text-[#6D4C41]'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setBatchForm({
+                                  ...batchForm,
+                                  staffProfileIds: [...batchForm.staffProfileIds, st.staffProfileId],
+                                });
+                              } else {
+                                setBatchForm({
+                                  ...batchForm,
+                                  staffProfileIds: batchForm.staffProfileIds.filter(
+                                    (id) => id !== st.staffProfileId
+                                  ),
+                                });
+                              }
+                            }}
+                            className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
+                          />
+                          <div className="flex-1 flex items-center justify-between">
+                            <span>{st.fullName}</span>
+                            <span className="text-[10px] text-[#8D6E63] font-normal">
+                              {st.designation || 'Faculty'}
+                            </span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <span className="text-[10px] text-[#8D6E63] mt-1 block">
+                    Selected teachers will be authorized for this batch. You can also assign or remove faculty anytime in the batch details.
+                  </span>
                 </div>
               )}
 
