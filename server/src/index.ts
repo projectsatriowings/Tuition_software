@@ -21,6 +21,7 @@ import progressRoutes from './modules/progress/progress.routes.js';
 import reviewsRoutes from './modules/reviews/reviews.routes.js';
 import messagingRoutes from './modules/messaging/messaging.routes.js';
 import feesRoutes from './modules/fees/fees.routes.js';
+import staffAttendanceRoutes from './modules/staff-attendance/staff-attendance.routes.js';
 import { NotificationService } from './modules/notifications/notification.service.js';
 
 const app = express();
@@ -106,6 +107,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/reviews', reviewsRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/fees', feesRoutes);
+app.use('/api/staff-attendance', staffAttendanceRoutes);
 
 // Root info endpoint & health check redirects
 app.get('/', (_req: Request, res: Response) => {

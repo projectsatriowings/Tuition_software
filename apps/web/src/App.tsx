@@ -6,6 +6,8 @@ import { Login } from './pages/Login';
 import { SuperAdminDashboard } from './pages/SuperAdminDashboard';
 import { AcademicAdminDashboard } from './pages/AcademicAdminDashboard';
 import { StaffManagement } from './pages/StaffManagement';
+import { StaffAttendanceAdmin } from './pages/StaffAttendanceAdmin';
+import { StaffMyAttendance } from './pages/StaffMyAttendance';
 import { StudentManagement } from './pages/StudentManagement';
 import { AcademicsManagement } from './pages/AcademicsManagement';
 import { AttendanceManagement } from './pages/AttendanceManagement';
@@ -32,7 +34,7 @@ const AppContent: React.FC = () => {
       } else if (user.role === 'ACADEMIC_ADMIN') {
         setCurrentTab((prev) => (prev === 'materials' || prev === 'homework' ? 'academic_dashboard' : prev));
       } else if (user.role === 'STAFF') {
-        setCurrentTab('attendance');
+        setCurrentTab('my_attendance');
       } else if (user.role === 'PARENT') {
         setCurrentTab('parent_dashboard');
       } else if (user.role === 'STUDENT') {
@@ -91,6 +93,12 @@ const AppContent: React.FC = () => {
                 )}
 
                 {currentTab === 'staff' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <StaffManagement />}
+
+                {currentTab === 'staff_attendance' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
+                  <StaffAttendanceAdmin onNavigateTab={(tab) => setCurrentTab(tab)} />
+                )}
+
+                {currentTab === 'my_attendance' && <StaffMyAttendance />}
 
                 {currentTab === 'students' && <StudentManagement />}
 
