@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../../services/api';
 import { Batch, StaffMember } from '../../types';
 import {
@@ -332,8 +333,8 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-[#D7CCC8] animate-in fade-in zoom-in-95 my-8">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
@@ -848,7 +849,8 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

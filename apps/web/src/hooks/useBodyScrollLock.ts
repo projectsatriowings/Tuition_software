@@ -32,3 +32,4 @@ export function useBodyScrollLock(isLocked: boolean = true) {
     };
   }, [isLocked]);
 }
+

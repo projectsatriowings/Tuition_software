@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../services/api';
 import { StaffMember, Batch } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -538,7 +539,7 @@ export const StaffManagement: React.FC = () => {
       />
 
       {/* Created Credential Modal */}
-      {createdCredential && (
+      {createdCredential && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 shadow-2xl text-[#2D1E18]">
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
@@ -676,11 +677,12 @@ export const StaffManagement: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Existing Credentials View / Reset Modal */}
-      {viewingStaffCreds && (
+      {viewingStaffCreds && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18]">
             <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
@@ -855,11 +857,12 @@ export const StaffManagement: React.FC = () => {
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Batch & Subject Assignment Modal */}
-      {viewingStaffAssignments && (
+      {viewingStaffAssignments && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 shadow-2xl text-[#2D1E18] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
@@ -1028,7 +1031,8 @@ export const StaffManagement: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
