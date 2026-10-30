@@ -30,7 +30,7 @@ export async function getAuthorizedStaffAssignments(
   }
 
   const role = req.user.role;
-  const userId = req.user.userId;
+  const userId = req.user.userId || (req.user as any).id;
   const instituteId = req.instituteId;
 
   if (role === 'SUPER_ADMIN' || role === 'ACADEMIC_ADMIN') {
@@ -150,7 +150,7 @@ export async function getAuthorizedStudentScope(
   }
 
   const role = req.user.role;
-  const userId = req.user.userId;
+  const userId = req.user.userId || (req.user as any).id;
   const instituteId = req.instituteId;
 
   if (!instituteId && role !== 'SUPER_ADMIN') {

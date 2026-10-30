@@ -1,6 +1,8 @@
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
 import { Institute, User } from '../types';
+import { lookupByPostalCode, lookupByCity } from '../utils/locationHelper';
 import {
   Building2,
   Plus,
@@ -59,7 +61,7 @@ export const SuperAdminDashboard: React.FC = () => {
   // 1. CREATE INSTITUTE MODAL STATE
   // ----------------------------------------------------
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
+    const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   // Form fields
@@ -81,6 +83,40 @@ export const SuperAdminDashboard: React.FC = () => {
 
   const [showInitialPassword, setShowInitialPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+
+  // Auto-fill City & State when PIN Code is entered
+  const handlePostalCodeChange = async (val: string) => {
+    setNewInst((prev) => ({ ...prev, postalCode: val }));
+    const clean = val.trim().replace(/\D/g, '');
+    if (clean.length === 6) {
+      setIsLocating(true);
+      const res = await lookupByPostalCode(clean);
+      setIsLocating(false);
+      if (res) {
+        setNewInst((prev) => ({
+          ...prev,
+          city: res.city || prev.city,
+          state: res.state || prev.state,
+        }));
+      }
+    }
+  };
+
+  // Auto-fill State and optional PIN when City is entered
+  const handleCityChange = async (val: string) => {
+    setNewInst((prev) => ({ ...prev, city: val }));
+    if (val.trim().length >= 3) {
+      const res = await lookupByCity(val);
+      if (res && res.state) {
+        setNewInst((prev) => ({
+          ...prev,
+          state: res.state || prev.state,
+          postalCode: prev.postalCode ? prev.postalCode : (res.postalCode || ''),
+        }));
+      }
+    }
+  };
 
   // Success Created Institute Modal State
   const [createdInstitute, setCreatedInstitute] = useState<{
@@ -94,6 +130,7 @@ export const SuperAdminDashboard: React.FC = () => {
   // 2. INSTITUTE DETAILS DRAWER STATE
   // ----------------------------------------------------
   const [selectedInstituteId, setSelectedInstituteId] = useState<string | null>(null);
+  useBodyScrollLock(showCreateModal || !!selectedInstituteId || !!createdInstitute);
   const [detailData, setDetailData] = useState<InstituteDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -766,11 +803,14 @@ export const SuperAdminDashboard: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">City</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-[#4E342E]">City</label>
+                      <span className="text-[10px] text-[#8D6E63]">Auto-detects State</span>
+                    </div>
                     <input
                       type="text"
                       value={newInst.city}
-                      onChange={(e) => setNewInst({ ...newInst, city: e.target.value })}
+                      onChange={(e) => handleCityChange(e.target.value)}
                       placeholder="e.g. Bangalore"
                       className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />
@@ -788,11 +828,21 @@ export const SuperAdminDashboard: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">PIN / Postal Code</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-[#4E342E]">PIN / Postal Code</label>
+                      {isLocating ? (
+                        <span className="text-[10px] text-[#4E342E] font-medium animate-pulse flex items-center gap-1">
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Fetching...
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#8D6E63]">Auto-fills City & State</span>
+                      )}
+                    </div>
                     <input
                       type="text"
+                      maxLength={6}
                       value={newInst.postalCode}
-                      onChange={(e) => setNewInst({ ...newInst, postalCode: e.target.value })}
+                      onChange={(e) => handlePostalCodeChange(e.target.value)}
                       placeholder="e.g. 560001"
                       className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />

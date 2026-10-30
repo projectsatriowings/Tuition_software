@@ -173,13 +173,9 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Periodic sync every 10 seconds to keep UI 100% matched with database
-    const interval = setInterval(() => fetchData(true), 10000);
-
     return () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
-      clearInterval(interval);
     };
   }, [fetchData]);
 
@@ -1426,18 +1422,6 @@ export const AcademicsManagement: React.FC<AcademicsManagementProps> = ({ onNavi
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Refresh / Sync with Database Action */}
-          <button
-            type="button"
-            onClick={handleManualSync}
-            disabled={isSyncing}
-            className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#FAF8F5] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] px-3.5 py-2.5 rounded-xl transition shadow-sm disabled:opacity-60"
-            title="Synchronize batch list directly from database"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-[#8D6E63]' : ''}`} />
-            <span>{isSyncing ? 'Syncing...' : 'Sync DB'}</span>
-          </button>
-
           {/* Create Batch Action */}
           <button
             onClick={() => {

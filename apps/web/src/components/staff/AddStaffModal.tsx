@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { apiFetch } from '../../services/api';
 import { Batch, StaffMember } from '../../types';
 import {
@@ -35,12 +37,41 @@ interface AddStaffModalProps {
   activeInstituteCode?: string;
 }
 
+
+function formatUserFriendlyError(rawError?: string | null): string {
+  if (!rawError || typeof rawError !== 'string') {
+    return 'Failed to create staff member. Please check your information and try again.';
+  }
+
+  // If already clean, single line without technical keywords
+  if (
+    !rawError.includes('\n') &&
+    !rawError.includes('invocation') &&
+    !rawError.includes('Prisma') &&
+    !rawError.includes('Unknown argument') &&
+    !rawError.includes('C:\\')
+  ) {
+    return rawError;
+  }
+
+  if (rawError.includes('phone') || rawError.includes('already exists')) {
+    return 'A staff account with this phone number, email, or employee code already exists.';
+  }
+
+  if (rawError.includes('dob') || rawError.includes('Date')) {
+    return 'Please check the Date of Birth or Joining Date format.';
+  }
+
+  return 'Unable to save staff profile. Please verify the entered details and try again.';
+}
+
 export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
   activeInstituteCode,
 }) => {
+  useBodyScrollLock(isOpen);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Step 1: Basic Information
@@ -252,10 +283,10 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 
         onClose();
       } else {
-        setError(res.error || 'Failed to create staff member');
+        setError(formatUserFriendlyError(res.error));
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred while creating staff member');
+      setError(formatUserFriendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -263,11 +294,11 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white border border-[#D7CCC8] rounded-3xl shadow-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-6 sm:p-8 space-y-6">
-        {/* Modal Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-[#EFEBE9]">
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-[#D7CCC8] animate-in fade-in zoom-in-95 my-8">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-[#D7CCC8] text-[#6D4C41] text-[10px] font-bold uppercase tracking-wider mb-1.5">
               <User className="w-3 h-3 text-[#4E342E]" /> Step {step} of 4
@@ -296,29 +327,26 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               <React.Fragment key={s.num}>
                 <div className="flex flex-col items-center">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                      step === s.num
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step === s.num
                         ? 'bg-[#4E342E] text-white ring-4 ring-[#8D6E63]/20 shadow-md'
                         : step > s.num
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
-                    }`}
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
+                      }`}
                   >
                     {step > s.num ? <Check className="w-4 h-4" /> : s.num}
                   </div>
                   <span
-                    className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${
-                      step === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
-                    }`}
+                    className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${step === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
+                      }`}
                   >
                     {s.label}
                   </span>
                 </div>
                 {idx < 3 && (
                   <div
-                    className={`flex-1 h-0.5 mx-2 transition-colors ${
-                      step > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
-                    }`}
+                    className={`flex-1 h-0.5 mx-2 transition-colors ${step > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
+                      }`}
                   />
                 )}
               </React.Fragment>
@@ -327,9 +355,18 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         </div>
 
         {error && (
-          <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{error}</span>
+          <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start justify-between gap-2.5 shadow-sm animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-medium leading-relaxed">{error}</span>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-rose-500 hover:text-rose-700 text-xs p-0.5 rounded transition-colors"
+              title="Dismiss error"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -701,6 +738,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
