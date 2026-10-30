@@ -1,11 +1,9 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
 import { generateNextEmployeeCode } from './staff-code.service.js';
-
-const prisma = new PrismaClient();
 
 export const createStaffSchema = z.object({
   fullName: z.string().min(2, 'Staff full name is required'),

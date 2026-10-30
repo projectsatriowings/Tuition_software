@@ -13,21 +13,34 @@ import {
   ShieldCheck,
   CheckCircle,
   X,
+  RotateCw,
+  AlertCircle,
+  BookOpen,
+  Award,
   Filter,
+  Search,
+  Eye,
+  Edit3,
   Clock,
+  Check,
   CheckCircle2,
   MessageSquare,
+  ChevronDown,
+  MessageCircle,
 } from 'lucide-react';
 
 export const ProgressReviewsManagement: React.FC = () => {
   const { user } = useAuth();
   const isParent = user?.role === 'PARENT';
+  const isStudent = user?.role === 'STUDENT';
   const isStaffOrAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ACADEMIC_ADMIN' || user?.role === 'STAFF';
 
-  const [activeTab, setActiveTab] = useState<'feedback' | 'parent_inquiries' | 'reviews'>('feedback');
-  const [feedbacks, setFeedbacks] = useState<any[]>([]);
-  const [reviews, setReviews] = useState<any[]>([]);
+  // Sub-tabs
+  const [activeTab, setActiveTab] = useState<'progress' | 'parent_inquiries' | 'inquiries' | 'testimonials'>('progress');
+
+  // Loading & Error states
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Staff Parent Feedback State
   const [parentFeedbacks, setParentFeedbacks] = useState<any[]>([]);
@@ -38,28 +51,63 @@ export const ProgressReviewsManagement: React.FC = () => {
   const [staffResponseStatus, setStaffResponseStatus] = useState<'RESPONDED' | 'RESOLVED'>('RESPONDED');
   const [submittingStaffResponse, setSubmittingStaffResponse] = useState<boolean>(false);
 
-  // Parent review submission
-  const [myChildren, setMyChildren] = useState<any[]>([]);
-  const [selectedChildId, setSelectedChildId] = useState('');
-  const [rating, setRating] = useState(5);
-  const [reviewText, setReviewText] = useState('');
-  const [submittingReview, setSubmittingReview] = useState(false);
+  // Tab 1: Academic Progress Reports
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [selectedBatchFilter, setSelectedBatchFilter] = useState('');
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
+  const [selectedPeriodFilter, setSelectedPeriodFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Staff feedback submission modal
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [students, setStudents] = useState<any[]>([]);
-  const [feedbackStudentId, setFeedbackStudentId] = useState('');
-  const [feedbackBatchId, setFeedbackBatchId] = useState('');
-  const [termName, setTermName] = useState('Quarter 1');
-  const [feedbackRating, setFeedbackRating] = useState(5);
-  const [remarks, setRemarks] = useState('');
-  const [strengths, setStrengths] = useState('');
-  const [improvements, setImprovements] = useState('');
-  const [recommendations, setRecommendations] = useState('');
-
-  // Admin reply
+  // Tab 2 & 3: Parent Inquiries & Testimonials
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [inquiryStatusFilter, setInquiryStatusFilter] = useState('ALL');
   const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [replyStatus, setReplyStatus] = useState<'REPLIED' | 'RESOLVED'>('REPLIED');
+  const [submittingReply, setSubmittingReply] = useState(false);
+
+  // Parent form states
+  const [myChildren, setMyChildren] = useState<any[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState('');
+  const [inquirySubject, setInquirySubject] = useState('');
+  const [inquiryCategory, setInquiryCategory] = useState('ACADEMIC');
+  const [inquiryMessage, setInquiryMessage] = useState('');
+  const [submittingInquiry, setSubmittingInquiry] = useState(false);
+
+  const [testimonialRating, setTestimonialRating] = useState(5);
+  const [testimonialText, setTestimonialText] = useState('');
+  const [consentPublic, setConsentPublic] = useState(false);
+  const [submittingTestimonial, setSubmittingTestimonial] = useState(false);
+
+  // Staff Feedback Modal
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null);
+  const [batchStudents, setBatchStudents] = useState<any[]>([]);
+  const [loadingBatchStudents, setLoadingBatchStudents] = useState(false);
+  const [formBatchId, setFormBatchId] = useState('');
+  const [formSubjectId, setFormSubjectId] = useState('');
+  const [formStudentId, setFormStudentId] = useState('');
+  const [formTermName, setFormTermName] = useState('Quarter 1 Progress Review');
+  const [formPeriodType, setFormPeriodType] = useState<'WEEKLY' | 'MONTHLY' | 'TERM' | 'ANNUAL'>('TERM');
+  const [formStartDate, setFormStartDate] = useState('');
+  const [formEndDate, setFormEndDate] = useState('');
+  const [formRemarks, setFormRemarks] = useState('');
+  const [formRating, setFormRating] = useState(5);
+  const [formStrengths, setFormStrengths] = useState('');
+  const [formImprovements, setFormImprovements] = useState('');
+  const [formRecommendations, setFormRecommendations] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
+  // Real-time metrics preview
+  const [metricsPreview, setMetricsPreview] = useState<any>(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+
+  useEffect(() => {
+    loadInitialFilters();
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'parent_inquiries') {
@@ -67,7 +115,7 @@ export const ProgressReviewsManagement: React.FC = () => {
     } else {
       loadData();
     }
-  }, [activeTab, feedbackFilterStatus, feedbackFilterCategory]);
+  }, [activeTab, selectedBatchFilter, selectedSubjectFilter, selectedStatusFilter, selectedPeriodFilter, feedbackFilterStatus, feedbackFilterCategory]);
 
   useEffect(() => {
     const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
@@ -156,165 +204,409 @@ export const ProgressReviewsManagement: React.FC = () => {
     }
   }
 
+  // Load batch/subject filters and linked children
+  async function loadInitialFilters() {
+    try {
+      if (isStaffOrAdmin) {
+        const [batchesRes, subjectsRes] = await Promise.all([
+          apiFetch('/academics/batches').catch(() => ({ success: false, data: { batches: [] } })),
+          apiFetch('/academics/subjects').catch(() => ({ success: false, data: { subjects: [] } })),
+        ]);
+        if (batchesRes.success && batchesRes.data?.batches) {
+          setBatches(batchesRes.data.batches);
+        }
+        if (subjectsRes.success && subjectsRes.data?.subjects) {
+          setSubjects(subjectsRes.data.subjects);
+        }
+      } else if (isParent) {
+        const childRes = await apiFetch('/parents/my/children').catch(() => ({ success: false, data: { children: [] } }));
+        if (childRes.success && childRes.data?.children) {
+          const kids = childRes.data.children;
+          setMyChildren(kids);
+          if (kids.length > 0 && !selectedChildId) {
+            setSelectedChildId(kids[0].student.id);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Initial filters load warning]', e);
+    }
+  }
+
+  // Fetch data based on active tab
   async function loadData() {
     try {
       setLoading(true);
-      if (activeTab === 'feedback') {
-        if (isParent) {
-          const childRes = await apiFetch('/parents/my/children');
-          const childrenList = childRes.data?.children || [];
-          setMyChildren(childrenList);
-          if (childrenList.length > 0) {
-            const firstChildId = childrenList[0].student.id;
-            const res = await apiFetch(`/progress/students/${firstChildId}`);
-            if (res.success) setFeedbacks(res.data.feedbacks || []);
-          }
-        } else if (user?.role === 'STUDENT') {
-          const profileRes = await apiFetch('/students/my/profile');
-          if (profileRes.success && profileRes.data?.student?.id) {
-            const res = await apiFetch(`/progress/students/${profileRes.data.student.id}`);
-            if (res.success) setFeedbacks(res.data.feedbacks || []);
-          }
-        } else {
-          // Staff/Admin loads students list for selection
-          const sRes = await apiFetch('/students?limit=50');
-          const stList = sRes.data?.students || [];
-          setStudents(stList);
-          if (stList.length > 0) {
-            const res = await apiFetch(`/progress/students/${stList[0].id}`);
-            if (res.success) setFeedbacks(res.data.feedbacks || []);
-          }
-        }
-      } else {
-        const res = await apiFetch('/reviews');
-        if (res.success) setReviews(res.data.reviews || []);
+      setError(null);
 
-        if (isParent) {
-          const childRes = await apiFetch('/parents/my/children');
-          setMyChildren(childRes.data?.children || []);
+      if (activeTab === 'progress') {
+        const queryParams = new URLSearchParams();
+        if (selectedBatchFilter) queryParams.set('batchId', selectedBatchFilter);
+        if (selectedSubjectFilter) queryParams.set('subjectId', selectedSubjectFilter);
+        if (selectedStatusFilter !== 'ALL') queryParams.set('status', selectedStatusFilter);
+        if (searchQuery.trim()) queryParams.set('search', searchQuery.trim());
+
+        const qStr = queryParams.toString();
+        const res = await apiFetch(`/progress${qStr ? '?' + qStr : ''}`);
+        if (res.success && res.data?.feedbacks) {
+          setFeedbacks(res.data.feedbacks);
+        } else {
+          setFeedbacks([]);
+        }
+      } else if (activeTab === 'inquiries') {
+        const res = await apiFetch('/reviews?type=FEEDBACK');
+        if (res.success && res.data?.reviews) {
+          setReviews(res.data.reviews);
+        } else {
+          setReviews([]);
+        }
+      } else if (activeTab === 'testimonials') {
+        const res = await apiFetch('/reviews?type=TESTIMONIAL');
+        if (res.success && res.data?.reviews) {
+          setReviews(res.data.reviews);
+        } else {
+          setReviews([]);
         }
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('[Progress & Reviews Load Error]', err);
+      setError(err.message || 'Unable to load records from the server.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSubmitReview(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedChildId) return;
+  // When staff selects a batch in the modal, load enrolled students
+  async function handleBatchChange(batchId: string) {
+    setFormBatchId(batchId);
+    setFormStudentId('');
+    setBatchStudents([]);
+    setMetricsPreview(null);
+
+    if (!batchId) return;
 
     try {
-      setSubmittingReview(true);
-      const res = await apiFetch('/reviews', {
-        method: 'POST',
-        body: JSON.stringify({
-          studentId: selectedChildId,
-          rating: Number(rating),
-          reviewText,
-        }),
-      });
-
-      if (res.success) {
-        alert('Thank you! Your feedback has been submitted.');
-        setReviewText('');
-        loadData();
+      setLoadingBatchStudents(true);
+      const res = await apiFetch(`/students?batchId=${batchId}&status=ACTIVE&limit=100`);
+      if (res.success && res.data?.students) {
+        setBatchStudents(res.data.students);
       }
-    } catch (err: any) {
-      alert(err.message || 'Failed to submit review');
+    } catch (err) {
+      console.error('[Load batch students error]', err);
     } finally {
-      setSubmittingReview(false);
+      setLoadingBatchStudents(false);
     }
   }
 
-  async function handleCreateFeedback(e: React.FormEvent) {
-    e.preventDefault();
+  // When student or dates change in modal, fetch real-time performance indicators
+  useEffect(() => {
+    if (!formStudentId || !formBatchId) {
+      setMetricsPreview(null);
+      return;
+    }
+
+    let active = true;
+    async function fetchMetrics() {
+      try {
+        setLoadingMetrics(true);
+        const q = new URLSearchParams({
+          studentId: formStudentId,
+          batchId: formBatchId,
+          ...(formSubjectId ? { subjectId: formSubjectId } : {}),
+          ...(formStartDate ? { startDate: formStartDate } : {}),
+          ...(formEndDate ? { endDate: formEndDate } : {}),
+        });
+        const res = await apiFetch(`/progress/metrics-preview?${q.toString()}`);
+        if (active && res.success && res.data?.metrics) {
+          setMetricsPreview(res.data.metrics);
+        }
+      } catch (e) {
+        console.warn('[Fetch metrics preview warning]', e);
+      } finally {
+        if (active) setLoadingMetrics(false);
+      }
+    }
+
+    fetchMetrics();
+    return () => {
+      active = false;
+    };
+  }, [formStudentId, formBatchId, formSubjectId, formStartDate, formEndDate]);
+
+  // Handle Create or Update Progress Report
+  async function handleSubmitFeedback(isPublishAction: boolean) {
+    if (!formStudentId || !formBatchId || !formRemarks.trim()) {
+      alert('Please select student, batch, and provide teacher remarks.');
+      return;
+    }
+
     try {
-      const res = await apiFetch('/progress', {
-        method: 'POST',
-        body: JSON.stringify({
-          studentId: feedbackStudentId,
-          batchId: feedbackBatchId,
-          termName,
-          remarks,
-          rating: Number(feedbackRating),
-          strengths,
-          improvements,
-          recommendations,
-          isPublished: true,
-        }),
-      });
+      setSubmittingFeedback(true);
+      const payload = {
+        studentId: formStudentId,
+        batchId: formBatchId,
+        subjectId: formSubjectId || null,
+        termName: formTermName.trim(),
+        periodType: formPeriodType,
+        startDate: formStartDate || null,
+        endDate: formEndDate || null,
+        remarks: formRemarks.trim(),
+        rating: Number(formRating),
+        strengths: formStrengths.trim() || null,
+        improvements: formImprovements.trim() || null,
+        recommendations: formRecommendations.trim() || null,
+        isPublished: isPublishAction,
+      };
+
+      let res;
+      if (editingFeedbackId) {
+        res = await apiFetch(`/progress/${editingFeedbackId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await apiFetch('/progress', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (res.success) {
         setShowFeedbackModal(false);
-        setRemarks('');
-        setStrengths('');
-        setImprovements('');
-        setRecommendations('');
+        resetFeedbackForm();
         loadData();
       }
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Failed to save progress report');
+    } finally {
+      setSubmittingFeedback(false);
     }
   }
 
-  async function handleReply(reviewId: string) {
+  // Publish a draft report directly from list
+  async function handleDirectPublish(feedbackId: string) {
+    if (!window.confirm('Publish this report officially? The student and linked parents will be notified immediately.')) return;
     try {
+      const res = await apiFetch(`/progress/${feedbackId}/publish`, { method: 'PATCH' });
+      if (res.success) {
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to publish report');
+    }
+  }
+
+  // Delete a report
+  async function handleDeleteFeedback(feedbackId: string) {
+    if (!window.confirm('Are you sure you want to delete this progress report?')) return;
+    try {
+      const res = await apiFetch(`/progress/${feedbackId}`, { method: 'DELETE' });
+      if (res.success) {
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete report');
+    }
+  }
+
+  // Open Edit Modal
+  function handleEditReport(fb: any) {
+    setEditingFeedbackId(fb.id);
+    setFormBatchId(fb.batchId);
+    setFormSubjectId(fb.subjectId || '');
+    setFormStudentId(fb.studentId);
+    setFormTermName(fb.termName);
+    setFormPeriodType(fb.periodType || 'TERM');
+    setFormStartDate(fb.startDate ? fb.startDate.slice(0, 10) : '');
+    setFormEndDate(fb.endDate ? fb.endDate.slice(0, 10) : '');
+    setFormRemarks(fb.remarks || '');
+    setFormRating(fb.rating || 5);
+    setFormStrengths(fb.strengths || '');
+    setFormImprovements(fb.improvements || '');
+    setFormRecommendations(fb.recommendations || '');
+    handleBatchChange(fb.batchId);
+    setShowFeedbackModal(true);
+  }
+
+  function resetFeedbackForm() {
+    setEditingFeedbackId(null);
+    setFormBatchId('');
+    setFormSubjectId('');
+    setFormStudentId('');
+    setFormTermName('Quarter 1 Progress Review');
+    setFormPeriodType('TERM');
+    setFormStartDate('');
+    setFormEndDate('');
+    setFormRemarks('');
+    setFormRating(5);
+    setFormStrengths('');
+    setFormImprovements('');
+    setFormRecommendations('');
+    setBatchStudents([]);
+    setMetricsPreview(null);
+  }
+
+  // Parent submits private inquiry/feedback
+  async function handleSubmitInquiry(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inquiryMessage.trim()) return;
+
+    try {
+      setSubmittingInquiry(true);
+      const res = await apiFetch('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'FEEDBACK',
+          studentId: selectedChildId || null,
+          subject: inquirySubject.trim() || 'Parent Feedback',
+          category: inquiryCategory,
+          reviewText: inquiryMessage.trim(),
+        }),
+      });
+
+      if (res.success) {
+        alert('Thank you! Your private feedback has been delivered to faculty.');
+        setInquirySubject('');
+        setInquiryMessage('');
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit feedback');
+    } finally {
+      setSubmittingInquiry(false);
+    }
+  }
+
+  // Parent submits voluntary public testimonial
+  async function handleSubmitTestimonial(e: React.FormEvent) {
+    e.preventDefault();
+    if (!testimonialText.trim() || !consentPublic) return;
+
+    try {
+      setSubmittingTestimonial(true);
+      const res = await apiFetch('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'TESTIMONIAL',
+          studentId: selectedChildId || null,
+          rating: Number(testimonialRating),
+          reviewText: testimonialText.trim(),
+          isPublicConsent: true,
+        }),
+      });
+
+      if (res.success) {
+        alert('Thank you! Your testimonial has been submitted for administrative review.');
+        setTestimonialText('');
+        setConsentPublic(false);
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit testimonial');
+    } finally {
+      setSubmittingTestimonial(false);
+    }
+  }
+
+  // Staff replies to private feedback or review
+  async function handleSendReply(reviewId: string) {
+    if (!replyText.trim()) return;
+
+    try {
+      setSubmittingReply(true);
       const res = await apiFetch(`/reviews/${reviewId}/reply`, {
         method: 'PATCH',
-        body: JSON.stringify({ replyText }),
+        body: JSON.stringify({
+          replyText: replyText.trim(),
+          status: replyStatus,
+        }),
       });
+
       if (res.success) {
         setReplyingReviewId(null);
         setReplyText('');
         loadData();
       }
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Failed to send reply');
+    } finally {
+      setSubmittingReply(false);
     }
   }
 
+  // Staff moderates testimonial status
+  async function handleModerateTestimonial(reviewId: string, status: 'PUBLISHED' | 'ARCHIVED') {
+    try {
+      const res = await apiFetch(`/reviews/${reviewId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (res.success) {
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to update testimonial status');
+    }
+  }
+
+  const filteredFeedbacks = feedbacks.filter((fb) => {
+    if (selectedPeriodFilter !== 'ALL' && fb.periodType !== selectedPeriodFilter) return false;
+    return true;
+  });
+
+  const filteredInquiries = reviews.filter((r) => {
+    if (inquiryStatusFilter !== 'ALL' && r.status !== inquiryStatusFilter) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-[#2D1E18] flex items-center gap-2.5">
+          <h1 className="text-2xl font-black text-[#2D1E18] flex items-center gap-2.5">
             <TrendingUp className="w-7 h-7 text-[#6D4C41]" />
             <span>Academic Progress & Parent Reviews</span>
           </h1>
-          <p className="text-sm text-[#6D4C41] mt-1">
-            Teacher term feedback, subject mastery observations, and parent review submissions
+          <p className="text-xs text-[#6D4C41] mt-1">
+            Teacher observations, student milestone reports, confidential parent inquiries, and public testimonials
           </p>
         </div>
 
-        {isStaffOrAdmin && activeTab === 'feedback' && (
+        {isStaffOrAdmin && activeTab === 'progress' && (
           <button
-            onClick={() => setShowFeedbackModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl font-semibold text-sm shadow-sm self-start sm:self-auto"
+            onClick={() => {
+              resetFeedbackForm();
+              setShowFeedbackModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl font-bold text-xs shadow-sm self-start sm:self-auto transition-all"
           >
-            <Plus className="w-4 h-4" /> Add Student Feedback
+            <Plus className="w-4 h-4" /> Log Progress Report
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#D7CCC8] pb-2">
+      {/* Primary Sub-Tabs */}
+      <div className="flex items-center gap-2 border-b border-[#D7CCC8] pb-2 overflow-x-auto">
         <button
-          onClick={() => setActiveTab('feedback')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            activeTab === 'feedback'
+          onClick={() => setActiveTab('progress')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'progress'
               ? 'bg-[#4E342E] text-white shadow-sm'
               : 'text-[#6D4C41] hover:text-[#2D1E18]'
           }`}
         >
-          <Sparkles className="w-4 h-4" /> Academic Progress Feedback
+          <Sparkles className="w-4 h-4" /> Academic Progress Reports
+          {feedbacks.length > 0 && (
+            <span className="px-1.5 py-0.2 bg-white/20 text-white rounded-full text-[10px]">
+              {feedbacks.length}
+            </span>
+          )}
         </button>
         {isStaffOrAdmin && (
           <button
             onClick={() => setActiveTab('parent_inquiries')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
               activeTab === 'parent_inquiries'
                 ? 'bg-[#4E342E] text-white shadow-sm'
                 : 'text-[#6D4C41] hover:text-[#2D1E18]'
@@ -324,44 +616,192 @@ export const ProgressReviewsManagement: React.FC = () => {
           </button>
         )}
         <button
-          onClick={() => setActiveTab('reviews')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            activeTab === 'reviews'
+          onClick={() => setActiveTab('inquiries')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'inquiries'
               ? 'bg-[#4E342E] text-white shadow-sm'
               : 'text-[#6D4C41] hover:text-[#2D1E18]'
           }`}
         >
-          <Star className="w-4 h-4" /> Parent Reviews & Testimonials
+          <MessageSquare className="w-4 h-4" /> Private Parent Inquiries
+        </button>
+
+        <button
+          onClick={() => setActiveTab('testimonials')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'testimonials'
+              ? 'bg-[#4E342E] text-white shadow-sm'
+              : 'text-[#6D4C41] hover:text-[#2D1E18]'
+          }`}
+        >
+          <Star className="w-4 h-4" /> Public Testimonials
         </button>
       </div>
 
-      {/* Tab 1: Progress Feedback */}
-      {activeTab === 'feedback' && (
+      {/* ERROR STATE WITH RETRY */}
+      {error && (
+        <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <div>
+              <p className="font-bold text-sm">Failed to Load Progress & Reviews</p>
+              <p className="text-rose-700">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={loadData}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex-shrink-0"
+          >
+            <RotateCw className="w-3.5 h-3.5" /> Retry
+          </button>
+        </div>
+      )}
+
+      {/* TAB 1: ACADEMIC PROGRESS REPORTS */}
+      {activeTab === 'progress' && (
         <div className="space-y-4">
+          {/* Filters Bar (Staff & Admin) */}
+          {isStaffOrAdmin && (
+            <div className="p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#4E342E]">
+                <Filter className="w-3.5 h-3.5" /> Filters:
+              </div>
+
+              {/* Batch Filter */}
+              <select
+                value={selectedBatchFilter}
+                onChange={(e) => setSelectedBatchFilter(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium focus:ring-1 focus:ring-[#8D6E63]"
+              >
+                <option value="">All Assigned Batches</option>
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Subject Filter */}
+              <select
+                value={selectedSubjectFilter}
+                onChange={(e) => setSelectedSubjectFilter(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium focus:ring-1 focus:ring-[#8D6E63]"
+              >
+                <option value="">All Subjects</option>
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={selectedStatusFilter}
+                onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium focus:ring-1 focus:ring-[#8D6E63]"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PUBLISHED">Published Only</option>
+                <option value="DRAFT">Drafts Only</option>
+              </select>
+
+              {/* Period Type Filter */}
+              <select
+                value={selectedPeriodFilter}
+                onChange={(e) => setSelectedPeriodFilter(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium focus:ring-1 focus:ring-[#8D6E63]"
+              >
+                <option value="ALL">All Periods</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="TERM">Term / Midterm</option>
+                <option value="ANNUAL">Annual</option>
+              </select>
+
+              {/* Search Bar */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search student or remarks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loadData()}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              {(selectedBatchFilter || selectedSubjectFilter || selectedStatusFilter !== 'ALL' || selectedPeriodFilter !== 'ALL' || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSelectedBatchFilter('');
+                    setSelectedSubjectFilter('');
+                    setSelectedStatusFilter('ALL');
+                    setSelectedPeriodFilter('ALL');
+                    setSearchQuery('');
+                  }}
+                  className="text-xs text-[#8D6E63] hover:text-[#2D1E18] underline font-medium"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* LOADING STATE */}
           {loading ? (
-            <div className="p-12 text-center text-[#8D6E63] text-sm">Loading academic feedback...</div>
-          ) : feedbacks.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm">
-              No academic progress feedback logged for this term yet.
+            <div className="p-16 text-center text-[#8D6E63] text-xs flex flex-col items-center justify-center gap-3">
+              <div className="w-6 h-6 rounded-full bg-[#6D4C41] animate-ping" />
+              <span className="font-bold text-[#4E342E]">Loading academic progress reports...</span>
+            </div>
+          ) : filteredFeedbacks.length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-xs shadow-sm space-y-3">
+              <Sparkles className="w-8 h-8 text-[#8D6E63] mx-auto opacity-40" />
+              <h3 className="font-bold text-[#2D1E18] text-sm">No Progress Reports Found</h3>
+              <p className="max-w-md mx-auto text-[#6D4C41]">
+                {isStaffOrAdmin
+                  ? 'No academic progress reports match the selected filters. Click "Log Progress Report" to draft an evaluation.'
+                  : 'No published progress reports are available for your account at this time.'}
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {feedbacks.map((fb) => (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {filteredFeedbacks.map((fb) => (
                 <div
                   key={fb.id}
-                  className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm hover:shadow-md transition-shadow space-y-4"
+                  className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm hover:shadow-md transition-shadow space-y-4"
                 >
-                  <div className="flex items-start justify-between">
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
-                        {fb.termName}
-                      </span>
-                      <h3 className="font-bold text-[#2D1E18] text-base mt-2">
-                        {fb.batch?.name || 'Class Batch'}
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
+                          {fb.periodType || 'TERM'} &bull; {fb.termName}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            fb.isPublished
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {fb.isPublished ? 'PUBLISHED' : 'DRAFT'}
+                        </span>
+                      </div>
+
+                      <h3 className="font-extrabold text-[#2D1E18] text-base mt-2">
+                        {fb.student ? `${fb.student.firstName} ${fb.student.lastName}` : 'Enrolled Student'}
+                        {fb.student?.admissionNumber && (
+                          <span className="text-xs text-[#8D6E63] font-normal ml-2">
+                            ({fb.student.admissionNumber})
+                          </span>
+                        )}
                       </h3>
-                      <span className="text-xs text-[#6D4C41]">
-                        Evaluated by: <strong>{fb.staff?.fullName || 'Faculty'}</strong>
-                      </span>
+                      <div className="text-xs text-[#6D4C41] flex items-center gap-2 mt-0.5">
+                        <span>Batch: <strong>{fb.batch?.name}</strong></span>
+                        {fb.subject && <span>&bull; Subject: <strong>{fb.subject.name}</strong></span>}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-1 text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 text-xs font-bold">
@@ -370,30 +810,56 @@ export const ProgressReviewsManagement: React.FC = () => {
                     </div>
                   </div>
 
-                  <p className="text-xs text-[#2D1E18] leading-relaxed bg-[#F7F2EF] p-3.5 rounded-2xl border border-[#D7CCC8]">
+                  {/* Auto-Calculated Metrics Bar */}
+                  {(fb.attendanceRate !== null || fb.homeworkRate !== null || fb.examAverage !== null) && (
+                    <div className="grid grid-cols-3 gap-2 bg-[#F7F2EF] p-2.5 rounded-2xl border border-[#D7CCC8]/60 text-center">
+                      <div>
+                        <span className="block text-[10px] uppercase font-bold text-[#8D6E63]">Attendance</span>
+                        <strong className="text-xs font-black text-[#2D1E18]">
+                          {fb.attendanceRate !== null ? `${Number(fb.attendanceRate)}%` : 'N/A'}
+                        </strong>
+                      </div>
+                      <div className="border-x border-[#D7CCC8]/60">
+                        <span className="block text-[10px] uppercase font-bold text-[#8D6E63]">Homework</span>
+                        <strong className="text-xs font-black text-[#2D1E18]">
+                          {fb.homeworkRate !== null ? `${Number(fb.homeworkRate)}%` : 'N/A'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="block text-[10px] uppercase font-bold text-[#8D6E63]">Test Average</span>
+                        <strong className="text-xs font-black text-[#2D1E18]">
+                          {fb.examAverage !== null ? `${Number(fb.examAverage)}%` : 'N/A'}
+                        </strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Teacher Observations / Remarks */}
+                  <p className="text-xs text-[#2D1E18] leading-relaxed bg-[#F7F2EF] p-3 rounded-2xl border border-[#D7CCC8]">
                     "{fb.remarks}"
                   </p>
 
+                  {/* Strengths, Improvements, Recommendations */}
                   <div className="space-y-2 text-xs">
                     {fb.strengths && (
-                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800">
-                        <strong className="block text-[10px] uppercase font-bold text-emerald-900 mb-0.5">
-                          Identified Strengths:
+                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
+                        <strong className="block text-[10px] uppercase font-bold text-emerald-800 mb-0.5">
+                          Key Strengths:
                         </strong>
                         {fb.strengths}
                       </div>
                     )}
                     {fb.improvements && (
-                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
-                        <strong className="block text-[10px] uppercase font-bold text-amber-900 mb-0.5">
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                        <strong className="block text-[10px] uppercase font-bold text-amber-800 mb-0.5">
                           Growth Areas:
                         </strong>
                         {fb.improvements}
                       </div>
                     )}
                     {fb.recommendations && (
-                      <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-800">
-                        <strong className="block text-[10px] uppercase font-bold text-sky-900 mb-0.5">
+                      <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900">
+                        <strong className="block text-[10px] uppercase font-bold text-sky-800 mb-0.5">
                           Recommended Actions:
                         </strong>
                         {fb.recommendations}
@@ -401,8 +867,40 @@ export const ProgressReviewsManagement: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="pt-2 text-[11px] text-[#8D6E63] text-right">
-                    {new Date(fb.createdAt).toLocaleDateString()}
+                  {/* Card Footer */}
+                  <div className="pt-2 border-t border-[#EFEBE9] flex items-center justify-between text-[11px] text-[#8D6E63]">
+                    <span>
+                      Faculty: <strong>{fb.staff?.fullName || 'Assigned Staff'}</strong> &bull;{' '}
+                      {new Date(fb.createdAt).toLocaleDateString()}
+                    </span>
+
+                    {/* Staff Actions */}
+                    {isStaffOrAdmin && (
+                      <div className="flex items-center gap-2">
+                        {!fb.isPublished && (
+                          <button
+                            onClick={() => handleDirectPublish(fb.id)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] shadow-sm transition-all"
+                          >
+                            Publish Now
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleEditReport(fb)}
+                          className="p-1 text-[#6D4C41] hover:text-[#2D1E18]"
+                          title="Edit Report"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteFeedback(fb.id)}
+                          className="p-1 text-rose-600 hover:text-rose-800"
+                          title="Delete Report"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -582,26 +1080,101 @@ export const ProgressReviewsManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 2: Parent Reviews */}
-      {activeTab === 'reviews' && (
+      {/* Response Modal for Parent Feedback */}
+      {respondingFeedback && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-[#D7CCC8] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
+              <h3 className="text-sm font-bold text-[#2D1E18] flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-[#4E342E]" /> Respond to Parent Feedback
+              </h3>
+              <button
+                onClick={() => setRespondingFeedback(null)}
+                className="p-1 rounded-lg text-[#8D6E63] hover:bg-[#F7F2EF]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs text-[#2D1E18] space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-[#6D4C41] font-semibold">
+                <span>Student: {respondingFeedback.student?.firstName} {respondingFeedback.student?.lastName}</span>
+                <span>Category: {respondingFeedback.category}</span>
+              </div>
+              <p className="italic">"{respondingFeedback.feedbackText}"</p>
+            </div>
+
+            <form onSubmit={handleStaffSubmitResponse} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Your Response *</label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Provide detailed feedback or resolution actions for the parent..."
+                  value={staffResponseText}
+                  onChange={(e) => setStaffResponseText(e.target.value)}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl p-3 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs">
+                  <label className="text-[11px] text-[#6D4C41] font-semibold">Update Status:</label>
+                  <select
+                    value={staffResponseStatus}
+                    onChange={(e) => setStaffResponseStatus(e.target.value as any)}
+                    className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-2.5 py-1 text-xs font-semibold text-[#2D1E18]"
+                  >
+                    <option value="RESPONDED">Responded</option>
+                    <option value="RESOLVED">Resolved</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRespondingFeedback(null)}
+                    className="px-3 py-1.5 text-xs text-[#6D4C41] hover:bg-[#F7F2EF] rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingStaffResponse}
+                    className="px-4 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {submittingStaffResponse ? 'Saving...' : 'Submit Response'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: PRIVATE PARENT INQUIRIES */}
+      {activeTab === 'inquiries' && (
         <div className="space-y-6">
-          {/* Parent Submission Form */}
+          {/* Parent Submission Card */}
           {isParent && (
             <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
               <h2 className="text-base font-bold text-[#2D1E18] flex items-center gap-2">
-                <Star className="w-5 h-5 text-amber-500 fill-current" /> Submit Feedback for Your Child
+                <MessageSquare className="w-5 h-5 text-[#6D4C41]" /> Send Private Feedback to Faculty
               </h2>
-              <form onSubmit={handleSubmitReview} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <p className="text-xs text-[#6D4C41]">
+                Messages submitted here are strictly confidential and shared only with authorized teaching staff and administrators.
+              </p>
+
+              <form onSubmit={handleSubmitInquiry} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">
-                      Select Linked Child *
-                    </label>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Select Child *</label>
                     <select
                       required
                       value={selectedChildId}
                       onChange={(e) => setSelectedChildId(e.target.value)}
-                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
                     >
                       <option value="">Select Child</option>
                       {myChildren.map((c) => (
@@ -613,240 +1186,648 @@ export const ProgressReviewsManagement: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Rating (1-5) *</label>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Category *</label>
                     <select
-                      value={rating}
-                      onChange={(e) => setRating(parseInt(e.target.value, 10))}
-                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                      value={inquiryCategory}
+                      onChange={(e) => setInquiryCategory(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
                     >
-                      <option value={5}>5 Stars - Outstanding</option>
-                      <option value={4}>4 Stars - Very Good</option>
+                      <option value="ACADEMIC">Academic Progress</option>
+                      <option value="SCHEDULE">Class Timetable</option>
+                      <option value="FACILITIES">Tuition Center Facilities</option>
+                      <option value="BEHAVIOR">Student Behavior / Attendance</option>
+                      <option value="BILLING">Fee & Finances</option>
+                      <option value="GENERAL">General Feedback</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Subject / Topic *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Mathematics problem sheet help"
+                      value={inquirySubject}
+                      onChange={(e) => setInquirySubject(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Message Details *</label>
+                  <textarea
+                    rows={3}
+                    required
+                    placeholder="Provide details regarding your query or observation..."
+                    value={inquiryMessage}
+                    onChange={(e) => setInquiryMessage(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl p-3 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={submittingInquiry}
+                    className="flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {submittingInquiry ? 'Sending...' : 'Send Private Inquiry'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Inquiries List */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#2D1E18]">
+                {isParent ? 'Your Feedback & Responses' : 'Parent Inquiries Feed'} ({filteredInquiries.length})
+              </h3>
+
+              {isStaffOrAdmin && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={inquiryStatusFilter}
+                    onChange={(e) => setInquiryStatusFilter(e.target.value)}
+                    className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1 text-xs text-[#2D1E18]"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="NEW">New Inquiries</option>
+                    <option value="REPLIED">Replied</option>
+                    <option value="RESOLVED">Resolved</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="p-12 text-center text-xs text-[#8D6E63]">Loading inquiries...</div>
+            ) : filteredInquiries.length === 0 ? (
+              <div className="p-12 text-center rounded-3xl bg-white border border-[#D7CCC8] text-xs text-[#8D6E63]">
+                No private parent feedback records found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredInquiries.map((rev) => (
+                  <div
+                    key={rev.id}
+                    className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E]">
+                            {rev.category || 'GENERAL'}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              rev.status === 'NEW'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : rev.status === 'RESOLVED'
+                                ? 'bg-sky-100 text-sky-900 border border-sky-300'
+                                : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                            }`}
+                          >
+                            {rev.status}
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-[#2D1E18] text-sm mt-1.5">{rev.subject}</h4>
+                        <span className="text-[11px] text-[#6D4C41]">
+                          From: <strong>{rev.parent?.user?.fullName || 'Parent'}</strong>
+                          {rev.student && (
+                            <> &bull; Regarding: <strong>{rev.student.firstName} {rev.student.lastName}</strong></>
+                          )}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#8D6E63]">{new Date(rev.createdAt).toLocaleDateString()}</span>
+                    </div>
+
+                    <p className="text-xs text-[#2D1E18] bg-[#F7F2EF] p-3 rounded-2xl border border-[#D7CCC8] leading-relaxed">
+                      "{rev.reviewText}"
+                    </p>
+
+                    {/* Reply Section */}
+                    {rev.replyText && (
+                      <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200 text-xs space-y-1">
+                        <strong className="text-[10px] uppercase font-bold text-emerald-900 block flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3 text-emerald-700" /> Faculty Response:
+                        </strong>
+                        <p className="text-emerald-950 leading-relaxed">{rev.replyText}</p>
+                        {rev.repliedAt && (
+                          <span className="text-[10px] text-emerald-700 block text-right">
+                            {new Date(rev.repliedAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Staff Reply Controls */}
+                    {isStaffOrAdmin && replyingReviewId !== rev.id && (
+                      <div className="pt-1 flex justify-end">
+                        <button
+                          onClick={() => {
+                            setReplyingReviewId(rev.id);
+                            setReplyText(rev.replyText || '');
+                          }}
+                          className="flex items-center gap-1 text-xs text-[#4E342E] hover:underline font-bold"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          {rev.replyText ? 'Edit Response' : 'Reply to Parent'}
+                        </button>
+                      </div>
+                    )}
+
+                    {isStaffOrAdmin && replyingReviewId === rev.id && (
+                      <div className="space-y-2 pt-2 border-t border-[#EFEBE9]">
+                        <textarea
+                          rows={2}
+                          placeholder="Type faculty response..."
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl p-2.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                        />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <label className="text-[11px] text-[#6D4C41] font-semibold">Mark as:</label>
+                            <select
+                              value={replyStatus}
+                              onChange={(e) => setReplyStatus(e.target.value as any)}
+                              className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2 py-0.5 text-xs"
+                            >
+                              <option value="REPLIED">Replied</option>
+                              <option value="RESOLVED">Resolved</option>
+                            </select>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setReplyingReviewId(null)}
+                              className="px-2.5 py-1 text-xs text-[#8D6E63]"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleSendReply(rev.id)}
+                              disabled={submittingReply}
+                              className="px-3.5 py-1 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-lg text-xs font-bold"
+                            >
+                              {submittingReply ? 'Sending...' : 'Submit Reply'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: PUBLIC TESTIMONIALS */}
+      {activeTab === 'testimonials' && (
+        <div className="space-y-6">
+          {/* Parent Testimonial Submission */}
+          {isParent && (
+            <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+              <h2 className="text-base font-bold text-[#2D1E18] flex items-center gap-2">
+                <Star className="w-5 h-5 text-amber-500 fill-current" /> Share a Parent Testimonial
+              </h2>
+              <p className="text-xs text-[#6D4C41]">
+                Share your experience regarding teaching quality, faculty guidance, and student growth. Testimonials are reviewed by administration before publication.
+              </p>
+
+              <form onSubmit={handleSubmitTestimonial} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Linked Child</label>
+                    <select
+                      value={selectedChildId}
+                      onChange={(e) => setSelectedChildId(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18]"
+                    >
+                      <option value="">General Review</option>
+                      {myChildren.map((c) => (
+                        <option key={c.student.id} value={c.student.id}>
+                          {c.student.firstName} {c.student.lastName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Rating (1 to 5 Stars) *</label>
+                    <select
+                      value={testimonialRating}
+                      onChange={(e) => setTestimonialRating(parseInt(e.target.value, 10))}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18]"
+                    >
+                      <option value={5}>5 Stars - Outstanding Experience</option>
+                      <option value={4}>4 Stars - Very Good Support</option>
                       <option value={3}>3 Stars - Satisfactory</option>
-                      <option value={2}>2 Stars - Needs Attention</option>
+                      <option value={2}>2 Stars - Needs Improvement</option>
                       <option value={1}>1 Star - Dissatisfied</option>
                     </select>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Your Review & Experience *</label>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Your Testimonial Review *</label>
                   <textarea
                     rows={3}
                     required
-                    placeholder="Share your feedback regarding teaching quality, batch pace, and support..."
-                    value={reviewText}
-                    onChange={(e) => setReviewText(e.target.value)}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-sm text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                    placeholder="Describe how the tuition classes have helped your child..."
+                    value={testimonialText}
+                    onChange={(e) => setTestimonialText(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl p-3 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
                   />
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={submittingReview || !selectedChildId}
-                  className="px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-50"
-                >
-                  {submittingReview ? 'Submitting...' : 'Post Feedback'}
-                </button>
+                {/* Explicit Consent Checkbox */}
+                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50/60 border border-amber-200 text-xs text-amber-900">
+                  <input
+                    type="checkbox"
+                    id="consent"
+                    required
+                    checked={consentPublic}
+                    onChange={(e) => setConsentPublic(e.target.checked)}
+                    className="mt-0.5 rounded text-[#4E342E] focus:ring-[#8D6E63]"
+                  />
+                  <label htmlFor="consent" className="cursor-pointer font-medium leading-relaxed">
+                    I grant explicit consent for TuitionOS to publish this review publicly as an official parent testimonial.
+                  </label>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={submittingTestimonial || !consentPublic}
+                    className="px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {submittingTestimonial ? 'Submitting...' : 'Submit Testimonial for Review'}
+                  </button>
+                </div>
               </form>
             </div>
           )}
 
-          {/* Reviews List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {reviews.length === 0 ? (
-              <div className="col-span-2 p-12 text-center text-[#8D6E63] text-sm italic bg-white border border-[#D7CCC8] rounded-2xl">
-                No parent reviews submitted yet.
+          {/* Testimonials List */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-[#2D1E18]">
+              {isParent ? 'Published & Submitted Testimonials' : 'Testimonials Moderation Desk'} ({reviews.length})
+            </h3>
+
+            {loading ? (
+              <div className="p-12 text-center text-xs text-[#8D6E63]">Loading testimonials...</div>
+            ) : reviews.length === 0 ? (
+              <div className="p-12 text-center rounded-3xl bg-white border border-[#D7CCC8] text-xs text-[#8D6E63]">
+                No public testimonials submitted yet.
               </div>
             ) : (
-              reviews.map((rev) => (
-                <div
-                  key={rev.id}
-                  className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm hover:shadow-md transition-shadow space-y-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-[#2D1E18] text-sm">
-                        {rev.parent?.user?.fullName || 'Verified Parent'}
-                      </h4>
-                      <span className="text-[11px] text-[#6D4C41]">
-                        Parent of <strong>{rev.student?.firstName} {rev.student?.lastName}</strong>
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {reviews.map((rev) => (
+                  <div
+                    key={rev.id}
+                    className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              rev.isPublished
+                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : 'bg-amber-100 text-amber-900 border border-amber-300'
+                            }`}
+                          >
+                            {rev.isPublished ? 'PUBLICLY PUBLISHED' : 'PENDING REVIEW'}
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-[#2D1E18] text-sm mt-1.5">
+                          {rev.parent?.user?.fullName || 'Verified Guardian'}
+                        </h4>
+                        {rev.student && (
+                          <span className="text-[11px] text-[#6D4C41]">
+                            Parent of <strong>{rev.student.firstName} {rev.student.lastName}</strong>
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="flex items-center gap-1 text-amber-500">
-                      {Array.from({ length: rev.rating || 5 }).map((_, i) => (
-                        <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                      ))}
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-[#2D1E18] italic bg-[#F7F2EF] p-3 rounded-2xl border border-[#D7CCC8]">
-                    "{rev.reviewText}"
-                  </p>
-
-                  {/* Staff Reply */}
-                  {rev.replyText ? (
-                    <div className="p-3 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs space-y-1">
-                      <strong className="text-[10px] uppercase font-bold text-[#4E342E] block">
-                        Institute Response:
-                      </strong>
-                      <p className="text-[#2D1E18]">{rev.replyText}</p>
-                    </div>
-                  ) : isStaffOrAdmin && replyingReviewId !== rev.id ? (
-                    <button
-                      onClick={() => setReplyingReviewId(rev.id)}
-                      className="text-xs text-[#4E342E] hover:underline flex items-center gap-1 font-semibold"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" /> Reply to Review
-                    </button>
-                  ) : null}
-
-                  {replyingReviewId === rev.id && (
-                    <div className="space-y-2 pt-2 border-t border-[#EFEBE9]">
-                      <input
-                        type="text"
-                        placeholder="Type response to parent..."
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-3 py-1.5 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                      />
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => setReplyingReviewId(null)}
-                          className="px-2.5 py-1 text-xs text-[#8D6E63]"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleReply(rev.id)}
-                          className="px-3 py-1 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-lg text-xs font-semibold"
-                        >
-                          Send Reply
-                        </button>
+                      <div className="flex items-center gap-0.5 text-amber-500">
+                        {Array.from({ length: rev.rating || 5 }).map((_, i) => (
+                          <Star key={i} className="w-3.5 h-3.5 fill-current" />
+                        ))}
                       </div>
                     </div>
-                  )}
 
-                  <div className="text-[10px] text-[#8D6E63] text-right">
-                    {new Date(rev.createdAt).toLocaleDateString()}
+                    <p className="text-xs text-[#2D1E18] bg-[#F7F2EF] p-3.5 rounded-2xl border border-[#D7CCC8] leading-relaxed italic">
+                      "{rev.reviewText}"
+                    </p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-[#EFEBE9] text-[11px] text-[#8D6E63]">
+                      <span>{new Date(rev.createdAt).toLocaleDateString()}</span>
+
+                      {/* Staff Moderation Controls */}
+                      {isStaffOrAdmin && (
+                        <div className="flex items-center gap-2">
+                          {!rev.isPublished ? (
+                            <button
+                              onClick={() => handleModerateTestimonial(rev.id, 'PUBLISHED')}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] shadow-sm transition-all"
+                            >
+                              Approve & Publish
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleModerateTestimonial(rev.id, 'ARCHIVED')}
+                              className="px-2.5 py-1 rounded-lg bg-[#6D4C41] hover:bg-[#4E342E] text-white font-bold text-[10px] shadow-sm transition-all"
+                            >
+                              Unpublish
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Staff Add Feedback Modal */}
+      {/* STAFF CREATE / EDIT PROGRESS REPORT MODAL */}
       {showFeedbackModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-7 max-w-2xl w-full space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-              <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#6D4C41]" /> Log Academic Progress Feedback
+              <h2 className="text-lg font-black text-[#2D1E18] flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#6D4C41]" />
+                {editingFeedbackId ? 'Edit Academic Progress Report' : 'Log Academic Progress Report'}
               </h2>
               <button onClick={() => setShowFeedbackModal(false)} className="text-[#8D6E63] hover:text-[#2D1E18]">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleCreateFeedback} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Student *</label>
-                <select
-                  required
-                  value={feedbackStudentId}
-                  onChange={(e) => {
-                    setFeedbackStudentId(e.target.value);
-                    const selected = students.find((s) => s.id === e.target.value);
-                    if (selected?.enrollments?.[0]?.batchId) {
-                      setFeedbackBatchId(selected.enrollments[0].batchId);
-                    }
-                  }}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                >
-                  <option value="">Select Student</option>
-                  {students.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.firstName} {st.lastName} ({st.admissionNumber})
-                    </option>
-                  ))}
-                </select>
+
+            <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+              {/* Batch, Subject, Student Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Batch *</label>
+                  <select
+                    required
+                    disabled={!!editingFeedbackId}
+                    value={formBatchId}
+                    onChange={(e) => handleBatchChange(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium"
+                  >
+                    <option value="">Select Batch</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Subject (Optional)</label>
+                  <select
+                    value={formSubjectId}
+                    onChange={(e) => setFormSubjectId(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium"
+                  >
+                    <option value="">All / Comprehensive</option>
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">
+                    Student * {loadingBatchStudents && <span className="font-normal text-[10px]">(Loading...)</span>}
+                  </label>
+                  <select
+                    required
+                    disabled={!!editingFeedbackId || !formBatchId}
+                    value={formStudentId}
+                    onChange={(e) => setFormStudentId(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] font-medium disabled:opacity-50"
+                  >
+                    <option value="">Select Enrolled Student</option>
+                    {batchStudents.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.firstName} {st.lastName} ({st.admissionNumber})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Term / Evaluation *</label>
+              {/* Term & Period Type Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Report Title / Term *</label>
                   <input
                     type="text"
                     required
-                    value={termName}
-                    onChange={(e) => setTermName(e.target.value)}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                    placeholder="e.g. October Monthly Progress Review"
+                    value={formTermName}
+                    onChange={(e) => setFormTermName(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Period Type</label>
+                  <select
+                    value={formPeriodType}
+                    onChange={(e) => setFormPeriodType(e.target.value as any)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18]"
+                  >
+                    <option value="WEEKLY">Weekly</option>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="TERM">Term / Midterm</option>
+                    <option value="ANNUAL">Annual</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Overall Rating</label>
+                  <select
+                    value={formRating}
+                    onChange={(e) => setFormRating(parseInt(e.target.value, 10))}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18]"
+                  >
+                    <option value={5}>5 Stars - Excellent</option>
+                    <option value={4}>4 Stars - Very Good</option>
+                    <option value={3}>3 Stars - Satisfactory</option>
+                    <option value={2}>2 Stars - Needs Attention</option>
+                    <option value={1}>1 Star - Unsatisfactory</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Date Range Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#6D4C41] mb-1">Period Start Date (Optional)</label>
+                  <input
+                    type="date"
+                    value={formStartDate}
+                    onChange={(e) => setFormStartDate(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1 text-xs text-[#2D1E18]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Rating (1-5)</label>
+                  <label className="block text-[11px] font-semibold text-[#6D4C41] mb-1">Period End Date (Optional)</label>
                   <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={feedbackRating}
-                    onChange={(e) => setFeedbackRating(parseInt(e.target.value, 10))}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                    type="date"
+                    value={formEndDate}
+                    onChange={(e) => setFormEndDate(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1 text-xs text-[#2D1E18]"
                   />
                 </div>
               </div>
 
+              {/* REAL-TIME METRICS PREVIEW CARD */}
+              <div className="p-3.5 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-[#4E342E] flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-[#6D4C41]" /> System Performance Aggregates
+                  </span>
+                  <span className="text-[10px] text-[#8D6E63] italic">
+                    Derived from existing database records
+                  </span>
+                </div>
+
+                {loadingMetrics ? (
+                  <div className="text-center py-2 text-xs text-[#8D6E63]">Calculating performance statistics...</div>
+                ) : metricsPreview ? (
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="p-2 rounded-xl bg-white border border-[#D7CCC8]/60">
+                      <span className="text-[10px] uppercase font-bold text-[#8D6E63] block">Attendance</span>
+                      <strong className="text-sm font-black text-[#2D1E18]">
+                        {metricsPreview.attendance.attendanceRate !== null ? `${metricsPreview.attendance.attendanceRate}%` : 'N/A'}
+                      </strong>
+                      <span className="text-[10px] text-[#8D6E63] block">
+                        {metricsPreview.attendance.presentCount} of {metricsPreview.attendance.totalSessions} sessions
+                      </span>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-white border border-[#D7CCC8]/60">
+                      <span className="text-[10px] uppercase font-bold text-[#8D6E63] block">Homework</span>
+                      <strong className="text-sm font-black text-[#2D1E18]">
+                        {metricsPreview.homework.homeworkRate !== null ? `${metricsPreview.homework.homeworkRate}%` : 'N/A'}
+                      </strong>
+                      <span className="text-[10px] text-[#8D6E63] block">
+                        {metricsPreview.homework.completedCount} of {metricsPreview.homework.totalAssigned} tasks
+                      </span>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-white border border-[#D7CCC8]/60">
+                      <span className="text-[10px] uppercase font-bold text-[#8D6E63] block">Exams Average</span>
+                      <strong className="text-sm font-black text-[#2D1E18]">
+                        {metricsPreview.exams.examAverage !== null ? `${metricsPreview.exams.examAverage}%` : 'N/A'}
+                      </strong>
+                      <span className="text-[10px] text-[#8D6E63] block">
+                        {metricsPreview.exams.passedCount} of {metricsPreview.exams.totalExams} tests cleared
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-2 text-[11px] text-[#8D6E63]">
+                    Select a student to view automatic performance statistics.
+                  </div>
+                )}
+              </div>
+
+              {/* Teacher Remarks */}
               <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Observations / Remarks *</label>
+                <label className="block text-xs font-bold text-[#4E342E] mb-1">Teacher Remarks & Observations *</label>
                 <textarea
-                  rows={2}
+                  rows={3}
                   required
-                  placeholder="Subject comprehension and participation..."
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  placeholder="Assess student comprehension, engagement, homework discipline, and class participation..."
+                  value={formRemarks}
+                  onChange={(e) => setFormRemarks(e.target.value)}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl p-3 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
                 />
               </div>
 
+              {/* Strengths & Growth Areas */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Key Strengths</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Quick problem solving, neat presentations"
+                    value={formStrengths}
+                    onChange={(e) => setFormStrengths(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#4E342E] mb-1">Growth Areas</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Needs to practice quadratic formula proofs"
+                    value={formImprovements}
+                    onChange={(e) => setFormImprovements(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18]"
+                  />
+                </div>
+              </div>
+
+              {/* Recommended Actions */}
               <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Strengths</label>
+                <label className="block text-xs font-bold text-[#4E342E] mb-1">Recommended Actions for Student / Parent</label>
                 <input
                   type="text"
-                  placeholder="e.g. Rapid numerical calculation"
-                  value={strengths}
-                  onChange={(e) => setStrengths(e.target.value)}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  placeholder="e.g. 20 minutes daily revision and attend Friday doubt-clearing sessions"
+                  value={formRecommendations}
+                  onChange={(e) => setFormRecommendations(e.target.value)}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18]"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Recommended Actions</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Daily revision of theorem proofs"
-                  value={recommendations}
-                  onChange={(e) => setRecommendations(e.target.value)}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-1.5 text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
+            {/* Modal Actions */}
+            <div className="pt-3 flex items-center justify-between border-t border-[#EFEBE9]">
+              <button
+                type="button"
+                onClick={() => setShowFeedbackModal(false)}
+                className="px-4 py-2 text-xs font-bold text-[#6D4C41] hover:bg-[#F7F2EF] rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-[#EFEBE9]">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowFeedbackModal(false)}
-                  className="px-3 py-1.5 text-xs text-[#6D4C41] hover:bg-[#F7F2EF] rounded-xl"
+                  disabled={submittingFeedback}
+                  onClick={() => handleSubmitFeedback(false)}
+                  className="px-4 py-2 bg-[#F7F2EF] hover:bg-[#D7CCC8] text-[#4E342E] border border-[#D7CCC8] rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-50"
                 >
-                  Cancel
+                  Save as Draft
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-semibold shadow-sm"
+                  type="button"
+                  disabled={submittingFeedback}
+                  onClick={() => handleSubmitFeedback(true)}
+                  className="px-5 py-2 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-50"
                 >
-                  Save Feedback
+                  {submittingFeedback ? 'Publishing...' : 'Publish Official Report'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

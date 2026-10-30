@@ -1,7 +1,6 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-
-const defaultPrisma = new PrismaClient();
+import { prisma as defaultPrisma } from '../../prisma.js';
 
 export interface StudentScopeResult {
   instituteId: string;
@@ -50,6 +49,11 @@ export async function getAuthorizedStaffAssignments(
       subjectIdsByBatch: {},
       allAuthorizedSubjectIds: [],
     };
+  }
+
+  // Request-scoped cache: Avoid redundant database queries for the same staff user within one HTTP request
+  if ((req as any)._cachedStaffAssignments) {
+    return (req as any)._cachedStaffAssignments;
   }
 
   const staffProfile = await prismaClient.staffProfile.findFirst({
@@ -109,13 +113,16 @@ export async function getAuthorizedStaffAssignments(
     }
   }
 
-  return {
+  const result: StaffAssignments = {
     isStaff: true,
     staffProfileId: staffProfile.id,
     authorizedBatchIds: Array.from(batchIdSet),
     subjectIdsByBatch,
     allAuthorizedSubjectIds: Array.from(allSubjectIdsSet),
   };
+
+  (req as any)._cachedStaffAssignments = result;
+  return result;
 }
 
 export interface StudentScopeOptions {

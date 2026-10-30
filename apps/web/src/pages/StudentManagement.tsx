@@ -40,7 +40,9 @@ export const StudentManagement: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
   const [batchFilter, setBatchFilter] = useState<string>('');
   const [subjectFilter, setSubjectFilter] = useState<string>('');
@@ -682,25 +684,41 @@ Please keep this login and password safe. Use your registered mobile number and 
     return Array.from(map.values()).map((s) => ({ subject: s }));
   }, [batches, batchFilter]);
 
-  const fetchData = async () => {
+  // Debounce search input to avoid spamming the backend on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Load batches once per institute context
+  const loadBatches = async () => {
+    try {
+      const res = await apiFetch('/academics/batches');
+      setBatches(res.data?.batches || []);
+    } catch (err: any) {
+      console.warn('[StudentManagement] Failed to load batches:', err.message);
+    }
+  };
+
+  const fetchData = async (signal?: AbortSignal) => {
     try {
       setLoading(true);
+      setFetchError(null);
       const query = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         ...(statusFilter && statusFilter !== 'ALL' ? { status: statusFilter } : {}),
         ...(batchFilter ? { batchId: batchFilter } : {}),
         ...(subjectFilter ? { subjectId: subjectFilter } : {}),
       });
 
-      const [studentsRes, batchesRes] = await Promise.all([
-        apiFetch(`/students?${query.toString()}`),
-        apiFetch('/academics/batches'),
-      ]);
-
+      const studentsRes = await apiFetch(`/students?${query.toString()}`, { signal });
       setStudents(studentsRes.data?.students || []);
-      setBatches(batchesRes.data?.batches || []);
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error(err);
+      setFetchError(err.message || 'Failed to fetch student data');
       showToast(err.message || 'Failed to fetch student data', 'error');
     } finally {
       setLoading(false);
@@ -708,8 +726,15 @@ Please keep this login and password safe. Use your registered mobile number and 
   };
 
   useEffect(() => {
-    fetchData();
-  }, [search, statusFilter, batchFilter, subjectFilter]);
+    loadBatches();
+  }, [activeInstitute?.id]);
+
+  // Fetch students with AbortController for seamless request cancellation
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
+  }, [debouncedSearch, statusFilter, batchFilter, subjectFilter, activeInstitute?.id]);
 
   useEffect(() => {
     if (showAdmitModal) {
@@ -1161,7 +1186,24 @@ Please keep this login and password safe. Use your registered mobile number and 
             <tbody className="divide-y divide-[#EFEBE9]">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-[#6D4C41]">Loading student directory...</td>
+                  <td colSpan={7} className="py-8 text-center text-[#6D4C41]">
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-[#8D6E63]" />
+                      <span>Loading student directory...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : fetchError ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center">
+                    <p className="text-red-700 text-sm font-semibold">{fetchError}</p>
+                    <button
+                      onClick={() => setDebouncedSearch((s) => s)}
+                      className="mt-3 px-3 py-1 bg-[#4E342E] text-white text-xs rounded-lg hover:bg-[#3E2723]"
+                    >
+                      Retry
+                    </button>
+                  </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>

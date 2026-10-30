@@ -1,0 +1,1124 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { apiFetch } from '../services/api';
+import {
+  HelpCircle,
+  Plus,
+  Search,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Award,
+  Play,
+  Eye,
+  Trash2,
+  X,
+  Check,
+  ChevronRight,
+  ChevronLeft,
+  Users,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
+
+interface QuizManagerProps {
+  isStaffOrAdmin: boolean;
+  isStudent: boolean;
+  batches: any[];
+}
+
+export const QuizManager: React.FC<QuizManagerProps> = ({
+  isStaffOrAdmin,
+  isStudent,
+  batches,
+}) => {
+  const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selectedBatchFilter, setSelectedBatchFilter] = useState('ALL');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
+
+  // Quiz Builder Modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [title, setTitle] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [batchId, setBatchId] = useState('');
+  const [subjectId, setSubjectId] = useState('');
+  const [durationMinutes, setDurationMinutes] = useState('15');
+  const [maxAttempts, setMaxAttempts] = useState('1');
+  const [isPublished, setIsPublished] = useState(true);
+  const [questions, setQuestions] = useState<Array<{
+    questionText: string;
+    questionType: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE';
+    marks: number;
+    explanation?: string;
+    options: Array<{ optionText: string; isCorrect: boolean }>;
+  }>>([
+    {
+      questionText: '',
+      questionType: 'SINGLE_CHOICE',
+      marks: 1,
+      options: [
+        { optionText: '', isCorrect: true },
+        { optionText: '', isCorrect: false },
+      ],
+    },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Student Quiz Taking State
+  const [activeQuizForTaker, setActiveQuizForTaker] = useState<any | null>(null);
+  const [currentAttempt, setCurrentAttempt] = useState<any | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string[]>>({});
+  const [takerTimerSeconds, setTakerTimerSeconds] = useState<number | null>(null);
+  const [takerSubmitting, setTakerSubmitting] = useState(false);
+  const [takerResult, setTakerResult] = useState<any | null>(null);
+  const timerIntervalRef = useRef<any>(null);
+
+  // Staff Submissions Analytics Drawer
+  const [analyticsQuiz, setAnalyticsQuiz] = useState<any | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<any | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+
+  useEffect(() => {
+    loadQuizzes();
+  }, []);
+
+  async function loadQuizzes() {
+    try {
+      setLoading(true);
+      const res = await apiFetch('/quizzes');
+      if (res.success) {
+        setQuizzes(res.data.quizzes || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load quizzes:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Derive available subjects for selected batch in builder
+  const selectedBatchObj = batches.find((b) => b.id === batchId);
+  const availableSubjects: any[] = selectedBatchObj?.batchSubjects?.map((bs: any) => bs.subject).filter(Boolean) || [];
+
+  // Question builder helpers
+  function handleAddQuestion() {
+    setQuestions([
+      ...questions,
+      {
+        questionText: '',
+        questionType: 'SINGLE_CHOICE',
+        marks: 1,
+        options: [
+          { optionText: '', isCorrect: true },
+          { optionText: '', isCorrect: false },
+        ],
+      },
+    ]);
+  }
+
+  function handleRemoveQuestion(index: number) {
+    if (questions.length <= 1) return;
+    setQuestions(questions.filter((_, i) => i !== index));
+  }
+
+  function handleAddOption(qIndex: number) {
+    const next = [...questions];
+    next[qIndex].options.push({ optionText: '', isCorrect: false });
+    setQuestions(next);
+  }
+
+  function handleRemoveOption(qIndex: number, optIndex: number) {
+    const next = [...questions];
+    if (next[qIndex].options.length <= 2) return;
+    next[qIndex].options = next[qIndex].options.filter((_, i) => i !== optIndex);
+    setQuestions(next);
+  }
+
+  function handleToggleCorrect(qIndex: number, optIndex: number) {
+    const next = [...questions];
+    const q = next[qIndex];
+    if (q.questionType === 'SINGLE_CHOICE') {
+      q.options.forEach((opt, idx) => {
+        opt.isCorrect = idx === optIndex;
+      });
+    } else {
+      q.options[optIndex].isCorrect = !q.options[optIndex].isCorrect;
+    }
+    setQuestions(next);
+  }
+
+  async function handleCreateQuiz(e: React.FormEvent) {
+    e.preventDefault();
+    if (!batchId) {
+      setMessage({ text: 'Please select a batch for this quiz', type: 'error' });
+      return;
+    }
+
+    // Validate questions
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q.questionText.trim()) {
+        setMessage({ text: `Question ${i + 1} text cannot be empty`, type: 'error' });
+        return;
+      }
+      const hasCorrect = q.options.some((o) => o.isCorrect);
+      if (!hasCorrect) {
+        setMessage({ text: `Question ${i + 1} must have at least one correct option checked`, type: 'error' });
+        return;
+      }
+      for (const opt of q.options) {
+        if (!opt.optionText.trim()) {
+          setMessage({ text: `Question ${i + 1} has an empty option text`, type: 'error' });
+          return;
+        }
+      }
+    }
+
+    try {
+      setSubmitting(true);
+      setMessage(null);
+
+      const res = await apiFetch('/quizzes', {
+        method: 'POST',
+        body: JSON.stringify({
+          batchId,
+          subjectId: subjectId || null,
+          title: title.trim(),
+          instructions: instructions.trim() || null,
+          durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : null,
+          maxAttempts: maxAttempts ? parseInt(maxAttempts, 10) : 1,
+          isPublished,
+          questions,
+        }),
+      });
+
+      if (res.success) {
+        setMessage({
+          text: isPublished
+            ? 'Quiz published to enrolled students!'
+            : 'Quiz saved as draft for faculty review.',
+          type: 'success',
+        });
+        setShowCreateModal(false);
+        resetForm();
+        loadQuizzes();
+      } else {
+        setMessage({ text: res.error || 'Failed to create quiz', type: 'error' });
+      }
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Failed to create quiz', type: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function resetForm() {
+    setTitle('');
+    setInstructions('');
+    setBatchId('');
+    setSubjectId('');
+    setDurationMinutes('15');
+    setMaxAttempts('1');
+    setIsPublished(true);
+    setQuestions([
+      {
+        questionText: '',
+        questionType: 'SINGLE_CHOICE',
+        marks: 1,
+        options: [
+          { optionText: '', isCorrect: true },
+          { optionText: '', isCorrect: false },
+        ],
+      },
+    ]);
+  }
+
+  async function handleTogglePublish(quiz: any) {
+    try {
+      const nextStatus = !quiz.isPublished;
+      const res = await apiFetch(`/quizzes/${quiz.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isPublished: nextStatus }),
+      });
+      if (res.success) {
+        loadQuizzes();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to update quiz status');
+    }
+  }
+
+  async function handleToggleReleaseResults(quiz: any) {
+    try {
+      const nextStatus = !quiz.resultsReleased;
+      const res = await apiFetch(`/quizzes/${quiz.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ resultsReleased: nextStatus }),
+      });
+      if (res.success) {
+        loadQuizzes();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to toggle results release');
+    }
+  }
+
+  async function handleDeleteQuiz(quizId: string) {
+    if (!confirm('Are you sure you want to delete this quiz?')) return;
+    try {
+      const res = await apiFetch(`/quizzes/${quizId}`, { method: 'DELETE' });
+      if (res.success) {
+        loadQuizzes();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete quiz');
+    }
+  }
+
+  // Student Start Quiz Taker
+  async function handleStartQuiz(quiz: any) {
+    try {
+      setTakerSubmitting(true);
+      const res = await apiFetch(`/quizzes/${quiz.id}/start`, { method: 'POST' });
+      if (res.success && res.data) {
+        setActiveQuizForTaker(res.data.quiz);
+        setCurrentAttempt(res.data.attempt);
+        setCurrentQuestionIndex(0);
+        setSelectedAnswers({});
+        setTakerResult(null);
+
+        // Timer setup
+        if (res.data.quiz.durationMinutes) {
+          const totalSecs = res.data.quiz.durationMinutes * 60;
+          setTakerTimerSeconds(totalSecs);
+          if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = setInterval(() => {
+            setTakerTimerSeconds((prev) => {
+              if (prev !== null && prev <= 1) {
+                clearInterval(timerIntervalRef.current);
+                handleAutoSubmit(res.data.quiz.id, res.data.attempt.id);
+                return 0;
+              }
+              return prev !== null ? prev - 1 : null;
+            });
+          }, 1000);
+        }
+      } else {
+        alert(res.error || 'Failed to start quiz');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to start quiz');
+    } finally {
+      setTakerSubmitting(false);
+    }
+  }
+
+  function handleSelectOption(qId: string, optId: string, qType: string) {
+    if (qType === 'SINGLE_CHOICE') {
+      setSelectedAnswers({
+        ...selectedAnswers,
+        [qId]: [optId],
+      });
+    } else {
+      const current = selectedAnswers[qId] || [];
+      const exists = current.includes(optId);
+      const updated = exists ? current.filter((id) => id !== optId) : [...current, optId];
+      setSelectedAnswers({
+        ...selectedAnswers,
+        [qId]: updated,
+      });
+    }
+  }
+
+  async function handleAutoSubmit(quizId: string, attemptId: string) {
+    await handleSubmitQuiz(quizId, attemptId);
+  }
+
+  async function handleSubmitQuiz(quizId?: string, attemptId?: string) {
+    const qId = quizId || activeQuizForTaker?.id;
+    const attId = attemptId || currentAttempt?.id;
+    if (!qId || !attId) return;
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    try {
+      setTakerSubmitting(true);
+      const answersPayload = Object.entries(selectedAnswers).map(([questionId, selectedOptionIds]) => ({
+        questionId,
+        selectedOptionIds,
+      }));
+
+      const res = await apiFetch(`/quizzes/${qId}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({
+          attemptId: attId,
+          answers: answersPayload,
+        }),
+      });
+
+      if (res.success && res.data) {
+        setTakerResult(res.data);
+        loadQuizzes();
+      } else {
+        alert(res.error || 'Failed to submit quiz answers');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Submission error');
+    } finally {
+      setTakerSubmitting(false);
+    }
+  }
+
+  // Staff Submissions & Analytics
+  async function openAnalytics(quiz: any) {
+    setAnalyticsQuiz(quiz);
+    setLoadingAnalytics(true);
+    try {
+      const res = await apiFetch(`/quizzes/${quiz.id}/submissions`);
+      if (res.success) {
+        setAnalyticsData(res.data);
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }
+
+  const filteredQuizzes = quizzes.filter((q) => {
+    const matchesSearch =
+      q.title.toLowerCase().includes(search.toLowerCase()) ||
+      (q.instructions && q.instructions.toLowerCase().includes(search.toLowerCase()));
+
+    const matchesBatch = selectedBatchFilter === 'ALL' || q.batchId === selectedBatchFilter;
+    let matchesStatus = true;
+    if (selectedStatusFilter === 'PUBLISHED') matchesStatus = q.isPublished === true;
+    if (selectedStatusFilter === 'DRAFT') matchesStatus = q.isPublished === false;
+
+    return matchesSearch && matchesBatch && matchesStatus;
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Quiz Top Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-[#2D1E18] flex items-center gap-2">
+            <HelpCircle className="w-6 h-6 text-[#6D4C41]" />
+            <span>Interactive Quizzes & Assessments</span>
+          </h2>
+          <p className="text-xs text-[#6D4C41] mt-0.5">
+            Timed single & multiple choice quizzes with instant automated scoring
+          </p>
+        </div>
+
+        {isStaffOrAdmin && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl font-semibold text-xs shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" /> Create New Quiz
+          </button>
+        )}
+      </div>
+
+      {message && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center justify-between gap-2.5 ${
+            message.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border border-rose-200 text-rose-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {message.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+            <span>{message.text}</span>
+          </div>
+          <button onClick={() => setMessage(null)} className="text-current hover:opacity-75">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div className="p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="relative w-full md:w-80">
+          <Search className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-3" />
+          <input
+            type="text"
+            placeholder="Search quizzes by title..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl pl-10 pr-4 py-2 text-xs text-[#2D1E18] placeholder-[#8D6E63] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {isStaffOrAdmin && batches.length > 0 && (
+            <select
+              value={selectedBatchFilter}
+              onChange={(e) => setSelectedBatchFilter(e.target.value)}
+              className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+            >
+              <option value="ALL">All Batches</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {isStaffOrAdmin && (
+            <select
+              value={selectedStatusFilter}
+              onChange={(e) => setSelectedStatusFilter(e.target.value)}
+              className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+            >
+              <option value="ALL">All Status</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="DRAFT">Drafts Only</option>
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* Quizzes Grid */}
+      {loading ? (
+        <div className="p-12 text-center text-[#8D6E63] text-xs flex items-center justify-center gap-2">
+          <div className="w-3.5 h-3.5 rounded-full bg-[#6D4C41] animate-ping"></div>
+          <span>Loading quizzes...</span>
+        </div>
+      ) : filteredQuizzes.length === 0 ? (
+        <div className="p-12 text-center rounded-2xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-xs shadow-sm space-y-2">
+          <HelpCircle className="w-8 h-8 text-[#BCAAA4] mx-auto" />
+          <p className="font-semibold text-sm">No quizzes found.</p>
+          <p className="text-[11px] text-[#A1887F]">
+            {isStaffOrAdmin
+              ? 'Click "Create New Quiz" to publish your first assessment.'
+              : 'Quizzes assigned to your batches will appear here.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredQuizzes.map((quiz) => (
+            <div
+              key={quiz.id}
+              className={`p-5 rounded-2xl bg-white border shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
+                !quiz.isPublished ? 'border-amber-300 bg-amber-50/20' : 'border-[#D7CCC8]'
+              }`}
+            >
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9]">
+                    <HelpCircle className="w-5 h-5 text-indigo-700" />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {!quiz.isPublished && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase">
+                        Draft
+                      </span>
+                    )}
+                    {quiz.resultsReleased && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Results Out
+                      </span>
+                    )}
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
+                      {quiz._count?.questions || 0} Questions
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-bold text-[#2D1E18] text-base leading-snug">{quiz.title}</h3>
+                  {quiz.instructions && (
+                    <p className="text-xs text-[#6D4C41] mt-1 line-clamp-2">{quiz.instructions}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-[11px] text-[#6D4C41]">
+                  <span className="px-2 py-0.5 rounded bg-[#F7F2EF] border border-[#D7CCC8]">
+                    {quiz.batch?.name}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-[#F7F2EF] border border-[#D7CCC8]">
+                    {quiz.subject?.name || 'All Subjects'}
+                  </span>
+                  {quiz.durationMinutes && (
+                    <span className="px-2 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-800 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> {quiz.durationMinutes} mins
+                    </span>
+                  )}
+                </div>
+
+                {/* Student specific attempt banner */}
+                {isStudent && quiz.myAttempt && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-emerald-800 block">Your Score</span>
+                      <p className="text-sm font-extrabold text-emerald-950">
+                        {quiz.myAttempt.score} / {quiz.myAttempt.totalMarks} ({quiz.myAttempt.percentage}%)
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      Evaluated
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-[#EFEBE9] flex items-center justify-between text-xs">
+                <span className="text-[11px] text-[#8D6E63]">
+                  {new Date(quiz.createdAt).toLocaleDateString()}
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  {isStudent && (
+                    <>
+                      {!quiz.myAttempt ? (
+                        <button
+                          onClick={() => handleStartQuiz(quiz)}
+                          className="px-3.5 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" /> Start Quiz
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleStartQuiz(quiz)}
+                          className="px-3 py-1.5 rounded-xl bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] flex items-center gap-1 text-xs font-semibold transition-all"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View Review
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {isStaffOrAdmin && (
+                    <>
+                      <button
+                        onClick={() => openAnalytics(quiz)}
+                        className="p-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 flex items-center gap-1 transition-colors font-medium text-xs"
+                        title="View student results and analytics"
+                      >
+                        <Users className="w-3.5 h-3.5" /> Submissions
+                      </button>
+
+                      <button
+                        onClick={() => handleToggleReleaseResults(quiz)}
+                        className={`p-2 rounded-xl border text-[11px] font-semibold transition-colors ${
+                          quiz.resultsReleased
+                            ? 'bg-purple-50 text-purple-800 border-purple-200'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                        title={quiz.resultsReleased ? 'Hide answers from students' : 'Release answer keys to students'}
+                      >
+                        {quiz.resultsReleased ? 'Answers Released' : 'Release Key'}
+                      </button>
+
+                      <button
+                        onClick={() => handleTogglePublish(quiz)}
+                        className={`p-2 rounded-xl border text-[11px] font-semibold transition-colors ${
+                          quiz.isPublished
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        }`}
+                      >
+                        {quiz.isPublished ? 'Draft' : 'Publish'}
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteQuiz(quiz.id)}
+                        className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Staff Quiz Builder Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[90vh] flex flex-col space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
+              <div>
+                <h2 className="text-xl font-bold text-[#2D1E18]">Create Interactive Quiz</h2>
+                <p className="text-xs text-[#6D4C41] mt-0.5">
+                  Configure questions, options, automated grading, and duration
+                </p>
+              </div>
+              <button onClick={() => setShowCreateModal(false)} className="text-[#8D6E63] hover:text-[#2D1E18]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateQuiz} className="flex-1 overflow-y-auto pr-1 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Quiz Title *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Chapter 4 Quiz: Quadratic Equations"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Target Batch *</label>
+                  <select
+                    value={batchId}
+                    onChange={(e) => {
+                      setBatchId(e.target.value);
+                      setSubjectId('');
+                    }}
+                    required
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="">Select Batch</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Subject (Optional)</label>
+                  <select
+                    value={subjectId}
+                    onChange={(e) => setSubjectId(e.target.value)}
+                    disabled={!batchId}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-50"
+                  >
+                    <option value="">All Batch Curriculum</option>
+                    {availableSubjects.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Duration (Minutes)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="180"
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Max Attempts</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    value={maxAttempts}
+                    onChange={(e) => setMaxAttempts(e.target.value)}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#4E342E] mb-1">Publication</label>
+                  <select
+                    value={isPublished ? 'PUB' : 'DRAFT'}
+                    onChange={(e) => setIsPublished(e.target.value === 'PUB')}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="PUB">Publish Immediately</option>
+                    <option value="DRAFT">Save as Draft</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Instructions (Optional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Choose the best answer for each question. Negative marking is not applied."
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3.5 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              {/* Questions Section */}
+              <div className="pt-2 space-y-4">
+                <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-2">
+                  <h3 className="text-sm font-bold text-[#2D1E18]">Questions ({questions.length})</h3>
+                  <button
+                    type="button"
+                    onClick={handleAddQuestion}
+                    className="px-3 py-1 bg-[#4E342E] text-white rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-[#3E2723]"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Question
+                  </button>
+                </div>
+
+                {questions.map((q, qIdx) => (
+                  <div key={qIdx} className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#4E342E]">Question #{qIdx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={q.questionType}
+                          onChange={(e) => {
+                            const next = [...questions];
+                            next[qIdx].questionType = e.target.value as any;
+                            setQuestions(next);
+                          }}
+                          className="bg-white border border-[#D7CCC8] rounded-lg px-2 py-1 text-[11px] text-[#2D1E18]"
+                        >
+                          <option value="SINGLE_CHOICE">Single Choice (Radio)</option>
+                          <option value="MULTIPLE_CHOICE">Multiple Choice (Checkboxes)</option>
+                        </select>
+                        {questions.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQuestion(qIdx)}
+                            className="text-rose-600 hover:text-rose-800 p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder={`Enter question ${qIdx + 1} prompt...`}
+                      value={q.questionText}
+                      onChange={(e) => {
+                        const next = [...questions];
+                        next[qIdx].questionText = e.target.value;
+                        setQuestions(next);
+                      }}
+                      className="w-full bg-white border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    />
+
+                    {/* Options */}
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[11px] font-semibold text-[#6D4C41] block">
+                        Answer Options (Select correct answer)
+                      </span>
+                      {q.options.map((opt, oIdx) => (
+                        <div key={oIdx} className="flex items-center gap-2">
+                          <input
+                            type={q.questionType === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'}
+                            name={`correct-q-${qIdx}`}
+                            checked={opt.isCorrect}
+                            onChange={() => handleToggleCorrect(qIdx, oIdx)}
+                            className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                            title="Mark as correct answer"
+                          />
+                          <input
+                            type="text"
+                            placeholder={`Option ${oIdx + 1}...`}
+                            value={opt.optionText}
+                            onChange={(e) => {
+                              const next = [...questions];
+                              next[qIdx].options[oIdx].optionText = e.target.value;
+                              setQuestions(next);
+                            }}
+                            className="flex-1 bg-white border border-[#D7CCC8] rounded-lg px-2.5 py-1.5 text-xs text-[#2D1E18]"
+                          />
+                          {q.options.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOption(qIdx, oIdx)}
+                              className="text-rose-500 hover:text-rose-700"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => handleAddOption(qIdx)}
+                        className="text-[11px] text-[#4E342E] font-semibold hover:underline flex items-center gap-1 mt-1"
+                      >
+                        <Plus className="w-3 h-3" /> Add Option
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 rounded-xl border border-[#D7CCC8] text-xs font-semibold text-[#6D4C41]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-5 py-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm disabled:opacity-50"
+                >
+                  {submitting ? 'Creating Quiz...' : 'Save & Finish'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Student Quiz Taker Modal */}
+      {activeQuizForTaker && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl">
+            {/* Header with Title and Countdown */}
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-[#2D1E18]">{activeQuizForTaker.title}</h2>
+                <span className="text-xs text-[#6D4C41]">
+                  Question {currentQuestionIndex + 1} of {activeQuizForTaker.questions.length}
+                </span>
+              </div>
+              {takerTimerSeconds !== null && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-mono text-xs font-bold">
+                  <Clock className="w-3.5 h-3.5" />
+                  {Math.floor(takerTimerSeconds / 60)}:{(takerTimerSeconds % 60).toString().padStart(2, '0')}
+                </div>
+              )}
+            </div>
+
+            {/* Quiz Result View or Question Taking View */}
+            {takerResult ? (
+              <div className="py-8 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-800 flex items-center justify-center mx-auto">
+                  <Award className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-[#2D1E18]">Quiz Submitted!</h3>
+                  <p className="text-xs text-[#6D4C41] mt-1">Your automated evaluation is ready.</p>
+                </div>
+                <div className="inline-block p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                  <span className="text-xs text-[#6D4C41] block">Your Score</span>
+                  <p className="text-3xl font-extrabold text-[#4E342E] mt-1">
+                    {takerResult.score} / {takerResult.totalMarks}
+                  </p>
+                  <span className="text-xs font-bold text-emerald-800">
+                    {takerResult.percentage}%
+                  </span>
+                </div>
+                <div className="pt-4 flex justify-center">
+                  <button
+                    onClick={() => {
+                      setActiveQuizForTaker(null);
+                      setTakerResult(null);
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-[#4E342E] text-white text-xs font-semibold"
+                  >
+                    Close Quiz
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-5">
+                {activeQuizForTaker.questions[currentQuestionIndex] && (
+                  <div className="space-y-4">
+                    <p className="text-sm font-semibold text-[#2D1E18]">
+                      {activeQuizForTaker.questions[currentQuestionIndex].questionText}
+                    </p>
+
+                    <div className="space-y-2.5">
+                      {activeQuizForTaker.questions[currentQuestionIndex].options.map((opt: any) => {
+                        const qId = activeQuizForTaker.questions[currentQuestionIndex].id;
+                        const isSelected = (selectedAnswers[qId] || []).includes(opt.id);
+                        return (
+                          <div
+                            key={opt.id}
+                            onClick={() =>
+                              handleSelectOption(
+                                qId,
+                                opt.id,
+                                activeQuizForTaker.questions[currentQuestionIndex].questionType
+                              )
+                            }
+                            className={`p-3.5 rounded-xl border text-xs cursor-pointer flex items-center gap-3 transition-all ${
+                              isSelected
+                                ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                                : 'bg-[#F7F2EF] text-[#2D1E18] border-[#D7CCC8] hover:bg-[#EFEBE9]'
+                            }`}
+                          >
+                            <span
+                              className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                isSelected ? 'border-white bg-white text-[#4E342E]' : 'border-[#8D6E63]'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                            </span>
+                            <span>{opt.optionText}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Navigation buttons */}
+            {!takerResult && (
+              <div className="pt-3 flex items-center justify-between border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  disabled={currentQuestionIndex === 0}
+                  onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
+                  className="px-3 py-1.5 rounded-xl border border-[#D7CCC8] text-xs font-semibold text-[#6D4C41] disabled:opacity-40 flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                </button>
+
+                {currentQuestionIndex < activeQuizForTaker.questions.length - 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentQuestionIndex((prev) => prev + 1)}
+                    className="px-4 py-1.5 rounded-xl bg-[#4E342E] text-white text-xs font-semibold flex items-center gap-1"
+                  >
+                    Next <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={takerSubmitting}
+                    onClick={() => handleSubmitQuiz()}
+                    className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    {takerSubmitting ? 'Submitting...' : 'Submit Answers'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Staff Quiz Submissions / Analytics Modal */}
+      {analyticsQuiz && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
+              <div>
+                <h2 className="text-xl font-bold text-[#2D1E18]">{analyticsQuiz.title} — Results</h2>
+                <p className="text-xs text-[#6D4C41] mt-0.5">
+                  Batch: {analyticsQuiz.batch?.name} • Total Marks: {analyticsQuiz.totalMarks}
+                </p>
+              </div>
+              <button onClick={() => setAnalyticsQuiz(null)} className="text-[#8D6E63] hover:text-[#2D1E18]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingAnalytics || !analyticsData ? (
+              <div className="py-12 text-center text-xs text-[#8D6E63]">Loading submissions...</div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                    <span className="text-[11px] text-[#6D4C41] font-semibold">Total Students</span>
+                    <p className="text-xl font-bold text-[#2D1E18] mt-1">{analyticsData.analytics?.totalEligible}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                    <span className="text-[11px] text-emerald-800 font-semibold">Completed</span>
+                    <p className="text-xl font-bold text-emerald-900 mt-1">{analyticsData.analytics?.completedCount}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200">
+                    <span className="text-[11px] text-amber-800 font-semibold">In Progress</span>
+                    <p className="text-xl font-bold text-amber-900 mt-1">{analyticsData.analytics?.inProgressCount}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-sky-50 border border-sky-200">
+                    <span className="text-[11px] text-sky-800 font-semibold">Average Score</span>
+                    <p className="text-xl font-bold text-sky-900 mt-1">{analyticsData.analytics?.avgScore}</p>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="border border-[#D7CCC8] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#F7F2EF] border-b border-[#D7CCC8] text-[#4E342E] font-semibold">
+                      <tr>
+                        <th className="p-3">Student</th>
+                        <th className="p-3">Admission No</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3">Score</th>
+                        <th className="p-3">Percentage</th>
+                        <th className="p-3">Submitted At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EFEBE9]">
+                      {analyticsData.roster?.map((item: any) => (
+                        <tr key={item.student.id} className="hover:bg-[#FAF7F5]">
+                          <td className="p-3 font-medium text-[#2D1E18]">
+                            {item.student.firstName} {item.student.lastName}
+                          </td>
+                          <td className="p-3 text-[#6D4C41] font-mono">{item.student.admissionNumber}</td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                item.status === 'COMPLETED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : item.status === 'IN_PROGRESS'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}
+                            >
+                              {item.status}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold text-[#4E342E]">
+                            {item.score !== null ? `${item.score} / ${item.totalMarks}` : '—'}
+                          </td>
+                          <td className="p-3 text-[#6D4C41]">{item.percentage !== null ? `${item.percentage}%` : '—'}</td>
+                          <td className="p-3 text-[#8D6E63]">
+                            {item.submittedAt ? new Date(item.submittedAt).toLocaleString() : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end border-t border-[#EFEBE9]">
+              <button
+                onClick={() => setAnalyticsQuiz(null)}
+                className="px-5 py-2 rounded-xl bg-[#4E342E] text-white text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+

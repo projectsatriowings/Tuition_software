@@ -1,11 +1,9 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword } from '../../utils/security.js';
-
-const prisma = new PrismaClient();
 
 // Validation Schemas
 export const createInstituteSchema = z.object({
@@ -477,17 +475,17 @@ export async function getDashboardSummary(req: AuthenticatedRequest, res: Respon
     }
 
     const [
-      activeStudents,
-      passedOutStudents,
-      discontinuedStudents,
+      studentCounts,
       totalStaff,
       totalBatches,
       totalSubjects,
       institute,
     ] = await Promise.all([
-      prisma.student.count({ where: { instituteId, status: 'ACTIVE' } }),
-      prisma.student.count({ where: { instituteId, status: 'PASSED_OUT' } }),
-      prisma.student.count({ where: { instituteId, status: 'DISCONTINUED' } }),
+      prisma.student.groupBy({
+        by: ['status'],
+        where: { instituteId },
+        _count: { _all: true },
+      }),
       prisma.staffProfile.count({ where: { instituteId } }),
       prisma.batch.count({ where: { instituteId } }),
       prisma.subject.count({ where: { instituteId } }),
@@ -496,6 +494,15 @@ export async function getDashboardSummary(req: AuthenticatedRequest, res: Respon
         select: { id: true, name: true, code: true, status: true },
       }),
     ]);
+
+    let activeStudents = 0;
+    let passedOutStudents = 0;
+    let discontinuedStudents = 0;
+    for (const sc of studentCounts) {
+      if (sc.status === 'ACTIVE') activeStudents = sc._count._all;
+      else if (sc.status === 'PASSED_OUT') passedOutStudents = sc._count._all;
+      else if (sc.status === 'DISCONTINUED') discontinuedStudents = sc._count._all;
+    }
 
     return res.json({
       success: true,

@@ -208,6 +208,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
             >
               <User className="w-4 h-4" /> Student Profile
             </button>
+
+            <button
+              onClick={() => onSelectTab('progress_reviews')}
+              className={navItemClass('progress_reviews')}
+            >
+              <Sparkles className="w-4 h-4" /> Feedback & Reviews
+            </button>
           </>
         )}
 
@@ -233,6 +240,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               className={navItemClass('homework')}
             >
               <FileText className="w-4 h-4" /> Homework Assignments
+            </button>
+
+            <button
+              onClick={() => onSelectTab('exams')}
+              className={navItemClass('exams')}
+            >
+              <Award className="w-4 h-4" /> Exams & Test Results
             </button>
 
             <button

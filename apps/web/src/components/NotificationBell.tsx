@@ -17,6 +17,7 @@ interface NotificationItem {
   title: string;
   message: string;
   type: string;
+  link?: string | null;
   eventType?: 'CHECK_IN' | 'CHECK_OUT' | null;
   eventTime?: string | null;
   timeFormatted?: string;
@@ -236,7 +237,13 @@ export const NotificationBell: React.FC = () => {
                 return (
                   <div
                     key={notif.id}
-                    onClick={() => !notif.isRead && handleMarkAsRead(notif.id)}
+                    onClick={() => {
+                      if (!notif.isRead) handleMarkAsRead(notif.id);
+                      setIsOpen(false);
+                      if (notif.link) {
+                        window.location.href = notif.link;
+                      }
+                    }}
                     className={`p-3.5 hover:bg-[#F7F2EF]/70 transition-colors cursor-pointer flex items-start gap-3 ${
                       !notif.isRead ? 'bg-[#F7F2EF]/40 font-medium' : 'bg-white'
                     }`}

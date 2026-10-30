@@ -21,13 +21,14 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
+import { StaffAdminModal } from '../../components/StaffAdminModal';
 import { themeTokens } from '@tuition/shared';
 
 export const AdminScreen: React.FC = () => {
   const { user, institute } = useMobileAuth();
   const { showToast } = useMobileToast();
 
-  const [activeTab, setActiveTab] = useState<'kpi' | 'batches' | 'finance' | 'students' | 'manualPayment'>('kpi');
+  const [activeTab, setActiveTab] = useState<'kpi' | 'batches' | 'staff' | 'students' | 'finance' | 'manualPayment'>('kpi');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -37,6 +38,8 @@ export const AdminScreen: React.FC = () => {
   const [outstandingReport, setOutstandingReport] = useState<any>(null);
   const [batches, setBatches] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [showStaffModal, setShowStaffModal] = useState(false);
 
   // Batch Creation State
   const [showNewBatchModal, setShowNewBatchModal] = useState(false);
@@ -100,6 +103,12 @@ export const AdminScreen: React.FC = () => {
       const stuRes = await mobileApiFetch('/students');
       if (stuRes.success && stuRes.data) {
         setStudents(Array.isArray(stuRes.data) ? stuRes.data : stuRes.data.students || []);
+      }
+
+      // 6. Staff Directory
+      const staffRes = await mobileApiFetch('/staff');
+      if (staffRes.success && staffRes.data) {
+        setStaffList(Array.isArray(staffRes.data) ? staffRes.data : staffRes.data.staff || []);
       }
     } catch (e) {
       console.warn('Error loading admin mobile data:', e);
@@ -262,47 +271,61 @@ export const AdminScreen: React.FC = () => {
       />
 
       {/* Tabs */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          onPress={() => setActiveTab('kpi')}
-          style={[styles.tabItem, activeTab === 'kpi' && styles.activeTabItem]}
+      <View style={styles.tabBarWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabBarScroll}
         >
-          <Text style={[styles.tabText, activeTab === 'kpi' && styles.activeTabText]}>
-            KPIs
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('batches')}
-          style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
-            Batches ({batches.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('finance')}
-          style={[styles.tabItem, activeTab === 'finance' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'finance' && styles.activeTabText]}>
-            Finance (₹)
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('manualPayment')}
-          style={[styles.tabItem, activeTab === 'manualPayment' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'manualPayment' && styles.activeTabText]}>
-            Collect Fee
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('students')}
-          style={[styles.tabItem, activeTab === 'students' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'students' && styles.activeTabText]}>
-            Directory ({students.length})
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('kpi')}
+            style={[styles.tabItem, activeTab === 'kpi' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'kpi' && styles.activeTabText]}>
+              KPIs
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('batches')}
+            style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
+              Batches ({batches.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('staff')}
+            style={[styles.tabItem, activeTab === 'staff' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>
+              Faculty ({staffList.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('students')}
+            style={[styles.tabItem, activeTab === 'students' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'students' && styles.activeTabText]}>
+              Directory ({students.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('finance')}
+            style={[styles.tabItem, activeTab === 'finance' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'finance' && styles.activeTabText]}>
+              Finance (₹)
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab('manualPayment')}
+            style={[styles.tabItem, activeTab === 'manualPayment' && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === 'manualPayment' && styles.activeTabText]}>
+              Collect Fee
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {loading ? (
@@ -435,6 +458,90 @@ export const AdminScreen: React.FC = () => {
                     </View>
                   </Card>
                 ))
+              )}
+            </View>
+          )}
+
+          {/* TAB: FACULTY & STAFF DIRECTORY */}
+          {activeTab === 'staff' && (
+            <View>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>👨‍🏫 Faculty & Staff ({staffList.length})</Text>
+                <TouchableOpacity
+                  style={styles.admitStudentBtn}
+                  onPress={() => setShowStaffModal(true)}
+                >
+                  <Text style={styles.admitStudentBtnText}>+ Add Faculty</Text>
+                </TouchableOpacity>
+              </View>
+
+              {staffList.length === 0 ? (
+                <Card>
+                  <Text style={styles.emptyText}>No faculty members registered in this institute yet.</Text>
+                </Card>
+              ) : (
+                staffList.map((member) => {
+                  const staffUser = member.user || member;
+                  const profile = member.profile || {};
+                  const code = member.employeeCode || profile.employeeCode || 'STF-STAFF';
+                  const assignedBatches = member.assignedBatches || member.batches || [];
+                  const isActive = member.status === 'ACTIVE' || member.isActive !== false;
+
+                  return (
+                    <Card key={member.id} style={{ marginBottom: 10 }}>
+                      <View style={styles.stuDirRow}>
+                        <StudentAvatar name={staffUser.fullName || 'Faculty Member'} size={44} />
+
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={styles.stuDirName}>{staffUser.fullName}</Text>
+                            <Badge label={code} variant="indigo" size="sm" />
+                            <Badge
+                              label={isActive ? 'ACTIVE' : 'INACTIVE'}
+                              variant={isActive ? 'success' : 'neutral'}
+                              size="sm"
+                            />
+                          </View>
+
+                          <Text style={styles.stuDirMeta}>
+                            Email: {staffUser.email || 'N/A'} {staffUser.phone ? `• Ph: ${staffUser.phone}` : ''}
+                          </Text>
+
+                          {assignedBatches.length > 0 && (
+                            <Text style={styles.stuDirEmail}>
+                              Assigned: {assignedBatches.map((b: any) => b.batch?.name || b.name || 'Batch').join(', ')}
+                            </Text>
+                          )}
+                        </View>
+
+                        <TouchableOpacity
+                          style={isActive ? styles.actionBtnDisc : styles.actionBtnActive}
+                          onPress={async () => {
+                            try {
+                              const newStatus = isActive ? 'INACTIVE' : 'ACTIVE';
+                              const res = await mobileApiFetch(`/staff/${member.id}/status`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ status: newStatus }),
+                              });
+                              if (res.success) {
+                                showToast(`Staff status updated to ${newStatus}`, 'success');
+                                fetchAdminData();
+                              } else {
+                                showToast(res.error || 'Failed to update status', 'error');
+                              }
+                            } catch (e: any) {
+                              showToast(e.message || 'Network error', 'error');
+                            }
+                          }}
+                        >
+                          <Text style={isActive ? styles.actionBtnDiscText : styles.actionBtnActiveText}>
+                            {isActive ? 'Deactivate' : 'Reactivate'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Card>
+                  );
+                })
               )}
             </View>
           )}
@@ -769,6 +876,13 @@ export const AdminScreen: React.FC = () => {
         onConfirm={handleConfirmStatusChange}
         onCancel={() => setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })}
       />
+
+      <StaffAdminModal
+        isOpen={showStaffModal}
+        onClose={() => setShowStaffModal(false)}
+        batches={batches}
+        onStaffCreated={fetchAdminData}
+      />
     </View>
   );
 };
@@ -778,15 +892,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: themeTokens.colors.background,
   },
-  tabBar: {
-    flexDirection: 'row',
+  tabBarWrapper: {
     backgroundColor: themeTokens.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: themeTokens.colors.border,
   },
+  tabBarScroll: {
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+  },
   tabItem: {
-    flex: 1,
     paddingVertical: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',

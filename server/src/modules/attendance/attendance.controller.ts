@@ -1,6 +1,6 @@
 import { matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
@@ -14,8 +14,6 @@ import {
   isStaffAssignedToBatchSubject,
   getAuthorizedStaffAssignments,
 } from '../students/student-authorization.service.js';
-
-const prisma = new PrismaClient();
 
 // Helper: Get local Date (YYYY-MM-DD) in Asia/Kolkata timezone
 export function getInstituteLocalDate(date = new Date(), timeZone = 'Asia/Kolkata'): Date {
@@ -813,10 +811,17 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
     const [students, events] = await Promise.all([
       prisma.student.findMany({
         where: studentWhere,
-        include: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          photoUrl: true,
           enrollments: {
             where: { isActive: true },
-            include: { batch: { select: { id: true, name: true } } },
+            select: {
+              batch: { select: { id: true, name: true } },
+            },
           },
         },
         orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
@@ -827,7 +832,14 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           eventDate: targetDate,
           ...(batchId ? { batchId } : {}),
         },
-        include: {
+        select: {
+          id: true,
+          studentId: true,
+          eventType: true,
+          eventTime: true,
+          method: true,
+          batchId: true,
+          isLate: true,
           markedBy: { select: { fullName: true } },
         },
       }),
