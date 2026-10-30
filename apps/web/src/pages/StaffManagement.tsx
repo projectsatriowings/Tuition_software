@@ -26,6 +26,9 @@ import {
   BookOpen,
   GraduationCap,
   User,
+  MoreVertical,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 
 export const StaffManagement: React.FC = () => {
@@ -34,6 +37,18 @@ export const StaffManagement: React.FC = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [openMenuStaffId, setOpenMenuStaffId] = useState<string | null>(null);
+
+  // Close 3-dots action menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (openMenuStaffId && !(e.target as HTMLElement).closest('.staff-action-menu')) {
+        setOpenMenuStaffId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openMenuStaffId]);
 
   // Selected staff profile view state
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
@@ -365,7 +380,7 @@ export const StaffManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto min-h-[360px]">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[#D7CCC8] text-[#6D4C41] bg-[#F7F2EF] uppercase tracking-wider">
@@ -374,7 +389,7 @@ export const StaffManagement: React.FC = () => {
                 <th className="py-3 px-4 font-bold">Designation</th>
                 <th className="py-3 px-4 font-bold">Batches Assigned</th>
                 <th className="py-3 px-4 font-bold">Status</th>
-                <th className="py-3 px-4 font-bold text-right">Login & Actions</th>
+                <th className="py-3 px-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EFEBE9]">
@@ -467,53 +482,97 @@ export const StaffManagement: React.FC = () => {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="relative inline-block text-left staff-action-menu">
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedStaffId(item.id);
+                            setOpenMenuStaffId(openMenuStaffId === item.id ? null : item.id);
                           }}
-                          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4E342E] bg-[#4E342E] text-white hover:bg-[#3E2723] transition shadow-sm"
-                          title="Open complete staff profile"
-                        >
-                          <User className="w-3.5 h-3.5" />
-                          <span>Profile</span>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAssignmentModal(item);
-                          }}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
-                          title="Assign batches and subjects taught by this staff member"
-                        >
-                          <BookOpen className="w-3.5 h-3.5 text-[#8D6E63]" />
-                          <span>Batches</span>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenCredentialsModal(item);
-                          }}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
-                          title="View or change staff login and password"
-                        >
-                          <Key className="w-3.5 h-3.5 text-[#8D6E63]" />
-                          <span>Credentials</span>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleStatus(item);
-                          }}
-                          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
-                            item.user.isActive
-                              ? 'border-rose-300 text-rose-800 hover:bg-rose-50'
-                              : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                          className={`p-2 rounded-lg border transition shadow-sm ${
+                            openMenuStaffId === item.id
+                              ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                              : 'bg-white text-[#6D4C41] border-[#D7CCC8] hover:bg-[#FAF8F5] hover:text-[#2D1E18]'
                           }`}
+                          title="Actions menu"
+                          aria-label="Actions menu"
                         >
-                          {item.user.isActive ? 'Deactivate' : 'Activate'}
+                          <MoreVertical className="w-4 h-4" />
                         </button>
+
+                        {openMenuStaffId === item.id && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute right-0 mt-1 w-48 bg-white border border-[#D7CCC8] rounded-xl shadow-xl py-1.5 z-50 text-xs font-medium text-[#2D1E18] text-left"
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                setSelectedStaffId(item.id);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
+                            >
+                              <User className="w-4 h-4 text-[#8D6E63]" />
+                              <span>View Profile</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                handleOpenAssignmentModal(item);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
+                            >
+                              <BookOpen className="w-4 h-4 text-[#8D6E63]" />
+                              <span>Assign Batches</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                handleOpenCredentialsModal(item);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
+                            >
+                              <Key className="w-4 h-4 text-[#8D6E63]" />
+                              <span>Login Credentials</span>
+                            </button>
+
+                            <div className="my-1 border-t border-[#EFEBE9]" />
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                handleToggleStatus(item);
+                              }}
+                              className={`w-full text-left px-3.5 py-2 flex items-center gap-2.5 transition-colors ${
+                                item.user.isActive
+                                  ? 'hover:bg-rose-50 text-rose-700'
+                                  : 'hover:bg-emerald-50 text-emerald-700'
+                              }`}
+                            >
+                              {item.user.isActive ? (
+                                <>
+                                  <UserX className="w-4 h-4 text-rose-600" />
+                                  <span>Deactivate Staff</span>
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="w-4 h-4 text-emerald-600" />
+                                  <span>Activate Staff</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>

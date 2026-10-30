@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { apiFetch } from '../../services/api';
 import { Batch, StaffMember } from '../../types';
 import {
@@ -7,7 +8,6 @@ import {
   User,
   Briefcase,
   GraduationCap,
-  BookOpen,
   Key,
   Check,
   ChevronRight,
@@ -17,7 +17,6 @@ import {
   EyeOff,
   AlertTriangle,
   RefreshCw,
-  Copy,
   Building,
 } from 'lucide-react';
 
@@ -34,7 +33,7 @@ interface AddStaffModalProps {
       instituteCode?: string;
     }
   ) => void;
-  batches: Batch[];
+  batches?: Batch[];
   activeInstituteCode?: string;
 }
 
@@ -42,10 +41,10 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  batches,
   activeInstituteCode,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  useBodyScrollLock(isOpen);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Step 1: Basic Information
   const [fullName, setFullName] = useState('');
@@ -68,11 +67,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   const [qualificationInstitution, setQualificationInstitution] = useState('');
   const [experienceYears, setExperienceYears] = useState('');
 
-  // Step 4: Batch & Subject Assignments
-  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
-  const [batchSubjectMap, setBatchSubjectMap] = useState<Record<string, string[]>>({});
-
-  // Step 5: Account Provisioning
+  // Step 4: Account Provisioning
   const [loginEmail, setLoginEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(true);
@@ -123,8 +118,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
       setQualificationField('');
       setQualificationInstitution('');
       setExperienceYears('');
-      setSelectedBatchIds([]);
-      setBatchSubjectMap({});
       setLoginEmail('');
       setPassword(generateStrongPassword());
       fetchNextCode();
@@ -162,46 +155,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     setStep(4);
   };
 
-  const handleProceedFromStep4 = () => {
-    setError(null);
-    setStep(5);
-  };
-
-  const handleToggleBatch = (batchId: string) => {
-    const isSelected = selectedBatchIds.includes(batchId);
-    if (isSelected) {
-      setSelectedBatchIds((prev) => prev.filter((id) => id !== batchId));
-      setBatchSubjectMap((prev) => {
-        const next = { ...prev };
-        delete next[batchId];
-        return next;
-      });
-    } else {
-      setSelectedBatchIds((prev) => [...prev, batchId]);
-      const batch = batches.find((b) => b.id === batchId);
-      const subjectIds = batch?.batchSubjects?.map((bs) => bs.subjectId) || [];
-      if (subjectIds.length > 0) {
-        setBatchSubjectMap((prev) => ({
-          ...prev,
-          [batchId]: subjectIds,
-        }));
-      }
-    }
-  };
-
-  const handleToggleSubject = (batchId: string, subjectId: string) => {
-    setBatchSubjectMap((prev) => {
-      const current = prev[batchId] || [];
-      const updated = current.includes(subjectId)
-        ? current.filter((id) => id !== subjectId)
-        : [...current, subjectId];
-      return {
-        ...prev,
-        [batchId]: updated,
-      };
-    });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || !designation.trim() || !loginEmail.trim() || !password.trim()) {
@@ -219,15 +172,12 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         phone: phone.trim() || null,
         employeeCode: employeeCode.trim() || null,
         designation: designation.trim(),
-        qualification: qualificationDegree.trim() || null,
-        password: password.trim(),
-        initialPassword: password.trim(),
-        batchIds: selectedBatchIds,
+        temporaryPassword: password,
 
         // Personal Details
+        personalEmail: personalEmail.trim() || null,
         dob: dob || null,
         gender: gender || null,
-        personalEmail: personalEmail.trim() || null,
 
         // Employment Details
         department: department.trim() || null,
@@ -295,25 +245,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           }
         }
 
-        // If subjects were specifically mapped for batches, save them
-        if (selectedBatchIds.length > 0) {
-          try {
-            const assignments = selectedBatchIds.map((bId) => ({
-              batchId: bId,
-              subjectIds: batchSubjectMap[bId] || [],
-            }));
-            await apiFetch(`/staff/${createdStaff.id}/assignments`, {
-              method: 'POST',
-              body: JSON.stringify({
-                batchIds: selectedBatchIds,
-                assignments,
-              }),
-            });
-          } catch (e) {
-            console.warn('Batch subject mapping save error', e);
-          }
-        }
-
         onSuccess(createdStaff, {
           fullName: createdStaff.user.fullName,
           email: createdStaff.user.email || loginEmail,
@@ -321,11 +252,13 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           employeeCode: createdStaff.employeeCode || employeeCode,
           instituteCode: activeInstituteCode,
         });
+
+        onClose();
       } else {
-        setError(res.error || res.message || 'Failed to create staff member');
+        setError(res.error || 'Failed to create staff member');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create staff member');
+      setError(err.message || 'An error occurred while creating staff member');
     } finally {
       setLoading(false);
     }
@@ -339,6 +272,9 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
           <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-[#D7CCC8] text-[#6D4C41] text-[10px] font-bold uppercase tracking-wider mb-1.5">
+              <User className="w-3 h-3 text-[#4E342E]" /> Step {step} of 4
+            </div>
             <h2 className="text-xl font-extrabold text-[#2D1E18]">
               Provision New Staff & Faculty
             </h2>
@@ -351,42 +287,38 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           </button>
         </div>
 
-        {/* Wizard Step Progress */}
-        <div className="py-5">
+        {/* Wizard Step Progress (4 Steps) */}
+        <div className="py-4">
           <div className="flex items-center justify-between">
             {[
               { num: 1, label: 'Identity' },
               { num: 2, label: 'Employment' },
               { num: 3, label: 'Qualifications' },
-              { num: 4, label: 'Batches' },
-              { num: 5, label: 'Account' },
+              { num: 4, label: 'Account' },
             ].map((s, idx) => (
               <React.Fragment key={s.num}>
                 <div className="flex flex-col items-center">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                      step === s.num
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step === s.num
                         ? 'bg-[#4E342E] text-white ring-4 ring-[#8D6E63]/20 shadow-md'
                         : step > s.num
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
-                    }`}
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
+                      }`}
                   >
                     {step > s.num ? <Check className="w-4 h-4" /> : s.num}
                   </div>
                   <span
-                    className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${
-                      step === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
-                    }`}
+                    className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${step === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
+                      }`}
                   >
                     {s.label}
                   </span>
                 </div>
-                {idx < 4 && (
+                {idx < 3 && (
                   <div
-                    className={`flex-1 h-0.5 mx-2 transition-colors ${
-                      step > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
-                    }`}
+                    className={`flex-1 h-0.5 mx-2 transition-colors ${step > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
+                      }`}
                   />
                 )}
               </React.Fragment>
@@ -459,7 +391,9 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Gender</label>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                  Gender
+                </label>
                 <select
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
@@ -469,7 +403,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                   <option value="Other">Other</option>
-                  <option value="Prefer not to say">Prefer not to say</option>
                 </select>
               </div>
             </div>
@@ -482,25 +415,26 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-[#2D1E18]">Employee Code *</label>
+                  <label className="text-xs font-semibold text-[#2D1E18]">
+                    Employee Code *
+                  </label>
                   <button
                     type="button"
                     onClick={fetchNextCode}
                     className="text-[11px] font-semibold text-[#8D6E63] hover:text-[#4E342E] flex items-center gap-1"
                   >
-                    <Sparkles className="w-3 h-3" /> Auto-generate
+                    <RefreshCw className="w-3 h-3" /> Auto
                   </button>
                 </div>
                 <input
                   type="text"
                   required
-                  value={employeeCode || 'Auto-generated on save'}
+                  value={employeeCode}
                   onChange={(e) => setEmployeeCode(e.target.value)}
-                  placeholder="e.g. APEX-EMP-001"
-                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  placeholder="e.g. APEX-EMP-005"
+                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
-
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
                   Designation / Role *
@@ -525,11 +459,10 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                   type="text"
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. Science / Mathematics / Languages"
+                  placeholder="e.g. Science / Mathematics / Humanities"
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
-
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
                   Employment Type
@@ -539,9 +472,9 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                   onChange={(e) => setEmploymentType(e.target.value)}
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 >
-                  <option value="FULL_TIME">Full-time Faculty</option>
-                  <option value="PART_TIME">Part-time Faculty</option>
-                  <option value="CONTRACT">Contract Basis</option>
+                  <option value="FULL_TIME">Full Time</option>
+                  <option value="PART_TIME">Part Time</option>
+                  <option value="CONTRACT">Contract</option>
                   <option value="VISITING">Visiting Faculty</option>
                 </select>
               </div>
@@ -561,15 +494,18 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                  Campus Location
+                  Work Location / Campus
                 </label>
-                <input
-                  type="text"
-                  value={workLocation}
-                  onChange={(e) => setWorkLocation(e.target.value)}
-                  placeholder="e.g. Main Campus, City Center"
-                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                />
+                <div className="relative">
+                  <Building className="w-4 h-4 text-[#8D6E63] absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    value={workLocation}
+                    onChange={(e) => setWorkLocation(e.target.value)}
+                    placeholder="e.g. Main Campus / South Block"
+                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -580,13 +516,13 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                Highest Academic Qualification
+                Highest Degree / Qualification
               </label>
               <input
                 type="text"
                 value={qualificationDegree}
                 onChange={(e) => setQualificationDegree(e.target.value)}
-                placeholder="e.g. M.Sc. Physics / B.Ed / Ph.D"
+                placeholder="e.g. M.Sc, M.Phil, Ph.D, B.Ed"
                 className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
               />
             </div>
@@ -594,25 +530,25 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                  Specialization / Major
+                  Field of Study / Specialization
                 </label>
                 <input
                   type="text"
                   value={qualificationField}
                   onChange={(e) => setQualificationField(e.target.value)}
-                  placeholder="e.g. Astrophysics, Applied Mathematics"
+                  placeholder="e.g. Theoretical Physics / Pure Mathematics"
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                  University / College
+                  College / University
                 </label>
                 <input
                   type="text"
                   value={qualificationInstitution}
                   onChange={(e) => setQualificationInstitution(e.target.value)}
-                  placeholder="e.g. Delhi University"
+                  placeholder="e.g. University of Delhi"
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
@@ -624,6 +560,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               </label>
               <input
                 type="number"
+                min="0"
                 step="0.5"
                 value={experienceYears}
                 onChange={(e) => setExperienceYears(e.target.value)}
@@ -631,96 +568,14 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                 className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
               />
               <span className="text-[10px] text-[#8D6E63] mt-1 block">
-                Additional qualifications and full employment timeline can also be managed in the employee profile after creation.
+                Additional qualifications, past jobs, and certificates can be added later in the staff profile.
               </span>
             </div>
           </div>
         )}
 
-        {/* Step 4: Batch & Subject Assignments */}
+        {/* Step 4: Account Provisioning & Permanent Password */}
         {step === 4 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#2D1E18]">
-                Assign Batches & Subjects (Optional)
-              </span>
-              <span className="text-[11px] text-[#8D6E63]">
-                {selectedBatchIds.length} batch(es) selected
-              </span>
-            </div>
-
-            {batches.length === 0 ? (
-              <div className="text-center py-8 text-xs text-[#8D6E63] bg-[#FAF8F5] rounded-xl border border-dashed border-[#D7CCC8]">
-                No batches created yet. You can assign batches anytime from the profile.
-              </div>
-            ) : (
-              <div className="max-h-64 overflow-y-auto space-y-2.5 pr-1">
-                {batches.map((b) => {
-                  const isSelected = selectedBatchIds.includes(b.id);
-                  const availableSubjects = b.batchSubjects || [];
-
-                  return (
-                    <div
-                      key={b.id}
-                      className={`p-3 rounded-xl border transition-all ${
-                        isSelected
-                          ? 'border-[#4E342E] bg-[#FAF8F5]'
-                          : 'border-[#EFEBE9] hover:border-[#D7CCC8] bg-white'
-                      }`}
-                    >
-                      <label className="flex items-center gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleBatch(b.id)}
-                          className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
-                        />
-                        <div className="flex-1">
-                          <span className="text-xs font-bold text-[#2D1E18]">{b.name}</span>
-                          <span className="text-[11px] text-[#8D6E63] ml-2 font-mono">
-                            ({b.academicYear})
-                          </span>
-                        </div>
-                      </label>
-
-                      {isSelected && availableSubjects.length > 0 && (
-                        <div className="mt-2.5 pl-6 pt-2 border-t border-[#EFEBE9]">
-                          <span className="text-[10px] text-[#8D6E63] font-bold uppercase tracking-wider block mb-1.5">
-                            Specific Subjects Handled:
-                          </span>
-                          <div className="flex flex-wrap gap-2">
-                            {availableSubjects.map((bs) => {
-                              const isSubChecked = (batchSubjectMap[b.id] || []).includes(
-                                bs.subjectId
-                              );
-                              return (
-                                <button
-                                  type="button"
-                                  key={bs.id}
-                                  onClick={() => handleToggleSubject(b.id, bs.subjectId)}
-                                  className={`text-[10px] font-semibold px-2 py-0.5 rounded transition ${
-                                    isSubChecked
-                                      ? 'bg-[#4E342E] text-white'
-                                      : 'bg-white border border-[#D7CCC8] text-[#6D4C41]'
-                                  }`}
-                                >
-                                  {bs.subject.name}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Step 5: Account Provisioning & Permanent Password */}
-        {step === 5 && (
           <div className="space-y-4">
             <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-3">
               <span className="text-xs font-bold text-[#4E342E] uppercase tracking-wider block">
@@ -740,10 +595,8 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                   <span className="font-semibold text-[#2D1E18]">{designation}</span>
                 </div>
                 <div>
-                  <span className="text-[#8D6E63]">Batches:</span>{' '}
-                  <span className="font-semibold text-[#2D1E18]">
-                    {selectedBatchIds.length} Assigned
-                  </span>
+                  <span className="text-[#8D6E63]">Department:</span>{' '}
+                  <span className="font-semibold text-[#2D1E18]">{department || 'General'}</span>
                 </div>
               </div>
             </div>
@@ -796,7 +649,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                 </button>
               </div>
               <span className="text-[10px] text-[#8D6E63] mt-1 block">
-                Permanent password generated by admin. You will receive a summary to copy after creation.
+                Permanent password generated by admin. You will receive credentials to copy after creation.
               </span>
             </div>
           </div>
@@ -822,14 +675,13 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             </button>
           )}
 
-          {step < 5 ? (
+          {step < 4 ? (
             <button
               type="button"
               onClick={() => {
                 if (step === 1) handleProceedFromStep1();
                 else if (step === 2) handleProceedFromStep2();
                 else if (step === 3) handleProceedFromStep3();
-                else if (step === 4) handleProceedFromStep4();
               }}
               className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
             >
@@ -844,7 +696,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-md shadow-[#3E2723]/25 transition-all disabled:opacity-50"
             >
               {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
-              <span>{loading ? 'Creating Staff Profile...' : 'Complete & Provision'}</span>
+              <span>Create Staff Member</span>
             </button>
           )}
         </div>
@@ -853,4 +705,3 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     document.body
   );
 };
-
