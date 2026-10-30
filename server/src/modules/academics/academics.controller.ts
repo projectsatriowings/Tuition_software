@@ -19,6 +19,7 @@ export const createBatchSchema = z.object({
   schedule: z.string().optional(),
   isActive: z.boolean().optional(),
   staffProfileId: z.string().uuid().optional(),
+  staffProfileIds: z.array(z.string().uuid()).optional(),
 });
 
 export const updateBatchSchema = z.object({
@@ -279,7 +280,7 @@ export async function createBatch(req: AuthenticatedRequest, res: Response) {
     const parse = createBatchSchema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ success: false, error: parse.error.errors[0]?.message });
 
-    const { name, code, academicYear, startDate, endDate, description, schedule, isActive, staffProfileId } = parse.data;
+    const { name, code, academicYear, startDate, endDate, description, schedule, isActive, staffProfileId, staffProfileIds } = parse.data;
 
     // Check unique name + academicYear
     const existing = await prisma.batch.findUnique({
@@ -320,24 +321,47 @@ export async function createBatch(req: AuthenticatedRequest, res: Response) {
       },
     });
 
-    // If an initial staff profile was specified, or if caller is a STAFF member creating it, assign staff
-    let targetStaffProfileId = staffProfileId;
-    if (!targetStaffProfileId && req.user?.role === 'STAFF') {
+    // Collect all initial staff profiles to assign to this batch
+    const targetStaffIds = new Set<string>();
+    if (Array.isArray(staffProfileIds)) {
+      staffProfileIds.filter(Boolean).forEach((id: string) => targetStaffIds.add(id));
+    }
+    if (staffProfileId) {
+      targetStaffIds.add(staffProfileId);
+    }
+    if (targetStaffIds.size === 0 && req.user?.role === 'STAFF') {
       const callerStaff = await prisma.staffProfile.findFirst({
         where: { userId: req.user.userId, instituteId },
       });
       if (callerStaff) {
-        targetStaffProfileId = callerStaff.id;
+        targetStaffIds.add(callerStaff.id);
       }
     }
 
-    if (targetStaffProfileId) {
-      await prisma.staffBatchAssignment.create({
-        data: {
-          staffProfileId: targetStaffProfileId,
-          batchId: batch.id,
+    if (targetStaffIds.size > 0) {
+      const validStaff = await prisma.staffProfile.findMany({
+        where: {
+          id: { in: Array.from(targetStaffIds) },
+          instituteId,
         },
-      }).catch((err) => console.warn('[createBatch staff assignment warn]', err.message));
+        select: { id: true },
+      });
+
+      for (const st of validStaff) {
+        await prisma.staffBatchAssignment.upsert({
+          where: {
+            staffProfileId_batchId: {
+              staffProfileId: st.id,
+              batchId: batch.id,
+            },
+          },
+          create: {
+            staffProfileId: st.id,
+            batchId: batch.id,
+          },
+          update: {},
+        }).catch((err: any) => console.warn('[createBatch staff assignment warn]', err.message));
+      }
     }
 
     return res.status(201).json({ success: true, message: 'Batch created successfully', data: { batch } });

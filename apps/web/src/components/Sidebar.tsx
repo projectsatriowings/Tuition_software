@@ -15,6 +15,7 @@ import {
   CreditCard,
   Bell,
   User,
+  Compass,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,7 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
   `;
 
   return (
-    <aside className="w-64 border-r border-[#4E342E] bg-[#3E2723] p-4 flex flex-col justify-between shrink-0 overflow-y-auto select-none">
+    <aside className="w-64 border-r border-[#4E342E] bg-[#3E2723] h-full p-4 flex flex-col justify-between shrink-0 overflow-y-auto select-none">
       <div className="space-y-1">
         <div className="text-[11px] font-bold uppercase tracking-wider text-[#BCAAA4] px-3 py-2">
           Navigation Menu

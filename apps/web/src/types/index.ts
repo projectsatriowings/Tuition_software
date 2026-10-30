@@ -34,6 +34,49 @@ export interface Institute {
   };
 }
 
+export interface StaffQualification {
+  id: string;
+  staffProfileId: string;
+  degree: string;
+  fieldOfStudy?: string | null;
+  institution: string;
+  yearOfCompletion?: number | null;
+  gradeScore?: string | null;
+  documentUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffExperience {
+  id: string;
+  staffProfileId: string;
+  institution: string;
+  designation: string;
+  subjects?: string | null;
+  totalYears?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isCurrent: boolean;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffDocument {
+  id: string;
+  staffProfileId: string;
+  instituteId: string;
+  documentType: string;
+  displayName: string;
+  fileUrl: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  expiryDate?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
 export interface StaffMember {
   id: string;
   instituteId: string;
@@ -43,7 +86,48 @@ export interface StaffMember {
   qualification?: string | null;
   permissionsJson?: Record<string, any> | null;
   createdAt: string;
+  updatedAt?: string;
   user: User;
+
+  // Personal Info
+  dob?: string | null;
+  gender?: string | null;
+  altPhone?: string | null;
+  personalEmail?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactRelation?: string | null;
+  emergencyContactPhone?: string | null;
+  avatarUrl?: string | null;
+
+  // Address
+  currentAddressLine1?: string | null;
+  currentAddressLine2?: string | null;
+  currentCity?: string | null;
+  currentState?: string | null;
+  currentPostalCode?: string | null;
+  currentCountry?: string | null;
+
+  permanentAddressLine1?: string | null;
+  permanentAddressLine2?: string | null;
+  permanentCity?: string | null;
+  permanentState?: string | null;
+  permanentPostalCode?: string | null;
+  permanentCountry?: string | null;
+  sameAsCurrentAddress?: boolean;
+
+  // Employment Details
+  department?: string | null;
+  employmentType?: string; // 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'VISITING'
+  joiningDate?: string | null;
+  probationEndDate?: string | null;
+  workLocation?: string | null;
+  employmentNotes?: string | null;
+
+  // Relational collections
+  qualifications?: StaffQualification[];
+  experiences?: StaffExperience[];
+  documents?: StaffDocument[];
+
   assignments?: Array<{
     id: string;
     batch: {

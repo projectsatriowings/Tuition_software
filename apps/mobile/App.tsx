@@ -32,7 +32,10 @@ const RootNavigator: React.FC = () => {
     return <LoginScreen />;
   }
 
-  if (needsPasswordChange) {
+  // Student and Parent credentials are staff-managed permanent credentials.
+  // They navigate directly to their respective dashboards and never see forced password changes.
+  const isStudentOrParent = user?.role === 'STUDENT' || user?.role === 'PARENT';
+  if (needsPasswordChange && !isStudentOrParent) {
     return <ChangePasswordScreen />;
   }
 

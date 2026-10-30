@@ -460,7 +460,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                   passwordHash,
                   role: 'STUDENT',
                   isActive: true,
-                  mustChangePassword: true,
+                  mustChangePassword: false, // Staff-managed credentials
                 },
               });
 
@@ -603,7 +603,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
                     passwordHash: parentPasswordHash,
                     role: 'PARENT',
                     isActive: true,
-                    mustChangePassword: true,
+                    mustChangePassword: false, // Staff-managed credentials
                   },
                 });
 
@@ -712,7 +712,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
           email: result.studentUser.email,
           phone: result.studentUser.phone,
           temporaryPassword: result.tempPassword,
-          mustChangePassword: true,
+          mustChangePassword: false,
         } : null,
         parentCredentials: result.parentUser ? {
           fullName: result.parentUser.fullName,
@@ -722,7 +722,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
           email: result.parentUser.email,
           isExistingAccount: result.isExistingParentAccount,
           temporaryPassword: result.parentTempPassword,
-          mustChangePassword: !result.isExistingParentAccount,
+          mustChangePassword: false,
         } : null,
         userAccount: result.studentUser ? {
           id: result.studentUser.id,
@@ -1275,7 +1275,7 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
           passwordHash,
           role: 'STUDENT',
           isActive: true,
-          mustChangePassword: true,
+          mustChangePassword: false,
         },
       });
 
@@ -1299,7 +1299,7 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
         where: { id: targetUserId },
         data: {
           passwordHash,
-          mustChangePassword: true,
+          mustChangePassword: false,
         },
       });
     }
@@ -1347,7 +1347,7 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
       data: {
         temporaryPassword,
         permanentPassword: temporaryPassword,
-        mustChangePassword: true,
+        mustChangePassword: false,
       },
     });
   } catch (err: any) {

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../services/api';
 import { StaffMember, Batch } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { StaffProfileView } from '../components/staff/StaffProfileView';
+import { AddStaffModal } from '../components/staff/AddStaffModal';
 import {
   Users,
   Plus,
@@ -22,8 +25,10 @@ import {
   Building2,
   BookOpen,
   GraduationCap,
-  CheckSquare,
-  Square,
+  User,
+  MoreVertical,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 
 export const StaffManagement: React.FC = () => {
@@ -32,11 +37,25 @@ export const StaffManagement: React.FC = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addLoading, setAddLoading] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
+  const [openMenuStaffId, setOpenMenuStaffId] = useState<string | null>(null);
 
-  // Created credential state
+  // Close 3-dots action menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (openMenuStaffId && !(e.target as HTMLElement).closest('.staff-action-menu')) {
+        setOpenMenuStaffId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openMenuStaffId]);
+
+  // Selected staff profile view state
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+
+  // Add staff modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [createdStaffId, setCreatedStaffId] = useState<string | null>(null);
   const [createdCredential, setCreatedCredential] = useState<{
     fullName: string;
     email: string;
@@ -45,19 +64,6 @@ export const StaffManagement: React.FC = () => {
     instituteCode?: string;
   } | null>(null);
   const [showCreatedPassword, setShowCreatedPassword] = useState(true);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    employeeCode: '',
-    designation: '',
-    qualification: '',
-    password: '',
-    selectedBatchIds: [] as string[],
-  });
-  const [showFormPassword, setShowFormPassword] = useState(true);
 
   // Clipboard toast
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -78,6 +84,30 @@ export const StaffManagement: React.FC = () => {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [staffRes, batchesRes] = await Promise.allSettled([
+        apiFetch(`/staff?search=${encodeURIComponent(search)}`),
+        apiFetch('/academics/batches'),
+      ]);
+      if (staffRes.status === 'fulfilled') {
+        setStaff(staffRes.value.data?.staff || []);
+      }
+      if (batchesRes.status === 'fulfilled') {
+        setBatches(batchesRes.value.data?.batches || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [search]);
 
   const handleOpenAssignmentModal = (item: StaffMember) => {
     setViewingStaffAssignments(item);
@@ -199,134 +229,30 @@ export const StaffManagement: React.FC = () => {
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
-    setTimeout(() => {
-      setCopiedKey(null);
-    }, 2000);
+    setTimeout(() => setCopiedKey(null), 2000);
   };
 
   const copyFormattedCredentials = (
-    fullName: string,
+    name: string,
     email: string,
     pass: string,
     instCode?: string,
     empCode?: string,
-    key = 'all'
+    key: string = 'full'
   ) => {
-    const code = instCode || activeInstitute?.code || 'INST';
-    const empLine = empCode ? `Employee Code: ${empCode}\n` : '';
-    const text = `TuitionOS Staff Login & Password
---------------------------------------
-Staff Member: ${fullName}
-${empLine}Role: Staff / Faculty
-Institute Code: ${code}
-Login Email: ${email}
-Permanent Password: ${pass}
-Login Portal: ${window.location.origin}
---------------------------------------
-Please keep this login and password safe. This is your permanent account password.`;
+    const text =
+      `Staff Login Credentials\n` +
+      `------------------------\n` +
+      `Staff Name: ${name}\n` +
+      (empCode ? `Employee Code: ${empCode}\n` : '') +
+      (instCode ? `Institute Code: ${instCode}\n` : '') +
+      `Login Email: ${email}\n` +
+      `Permanent Password: ${pass}\n` +
+      `Portal: ${window.location.origin}\n` +
+      `------------------------\n` +
+      `Keep this password safe. You can log into TuitionOS with these credentials.`;
 
     copyToClipboard(text, key);
-  };
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [staffRes, batchesRes] = await Promise.allSettled([
-        apiFetch(`/staff?search=${encodeURIComponent(search)}`),
-        apiFetch('/academics/batches'),
-      ]);
-      if (staffRes.status === 'fulfilled') {
-        setStaff(staffRes.value.data?.staff || []);
-      }
-      if (batchesRes.status === 'fulfilled') {
-        setBatches(batchesRes.value.data?.batches || []);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [search]);
-
-  const fetchNextEmployeeCode = async (): Promise<string> => {
-    try {
-      const res = await apiFetch('/staff/next-code');
-      if (res.data?.employeeCode) {
-        return res.data.employeeCode;
-      }
-    } catch (err) {
-      console.error('Failed to fetch next employee code:', err);
-    }
-    const prefix = activeInstitute?.code ? activeInstitute.code.replace(/[^A-Z0-9]/g, '').slice(0, 6) : 'INST';
-    return `${prefix}-EMP-001`;
-  };
-
-  const handleOpenAddModal = async () => {
-    setCreatedCredential(null);
-    setAddError(null);
-    
-    // Auto-generate employee code with academy name
-    const autoCode = await fetchNextEmployeeCode();
-
-    setFormData({
-      fullName: '',
-      email: '',
-      phone: '',
-      employeeCode: autoCode,
-      designation: '',
-      qualification: '',
-      password: '',
-      selectedBatchIds: [],
-    });
-    setShowFormPassword(true);
-    setShowCreatedPassword(true);
-    setShowAddModal(true);
-  };
-
-  const handleRegenerateEmployeeCode = async () => {
-    const code = await fetchNextEmployeeCode();
-    setFormData((prev) => ({ ...prev, employeeCode: code }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    setAddLoading(true);
-
-    try {
-      const res = await apiFetch('/staff', {
-        method: 'POST',
-        body: JSON.stringify({
-          fullName: formData.fullName,
-          email: formData.email,
-          phone: formData.phone || undefined,
-          employeeCode: formData.employeeCode || undefined,
-          designation: formData.designation,
-          qualification: formData.qualification || undefined,
-          password: formData.password,
-          batchIds: formData.selectedBatchIds,
-        }),
-      });
-
-      if (res.success) {
-        setCreatedCredential({
-          fullName: res.data.user.fullName,
-          email: res.data.user.email,
-          employeeCode: res.data.employeeCode || formData.employeeCode,
-          permanentPassword: res.data.permanentPassword || formData.password,
-          instituteCode: res.data.institute?.code || activeInstitute?.code,
-        });
-        fetchData();
-      }
-    } catch (err: any) {
-      setAddError(err.message || 'Failed to create staff account');
-    } finally {
-      setAddLoading(false);
-    }
   };
 
   const handleToggleStatus = async (item: StaffMember) => {
@@ -350,8 +276,8 @@ Please keep this login and password safe. This is your permanent account passwor
 
   const handleOpenCredentialsModal = (item: StaffMember) => {
     setViewingStaffCreds(item);
-    setShowExistingPassword(true); // Show current permanent password by default
-    setResetPasswordInput(''); // Keep blank by default so it never displays any unexpected password
+    setShowExistingPassword(true);
+    setResetPasswordInput('');
     setShowResetInputPassword(true);
     setResetError(null);
     setResetSuccess(null);
@@ -374,7 +300,7 @@ Please keep this login and password safe. This is your permanent account passwor
       const res = await apiFetch(`/staff/${viewingStaffCreds.id}/reset-password`, {
         method: 'POST',
         body: JSON.stringify({
-          password: resetPasswordInput.trim(),
+          newPassword: resetPasswordInput.trim(),
         }),
       });
 
@@ -389,9 +315,7 @@ Please keep this login and password safe. This is your permanent account passwor
         };
         setViewingStaffCreds(updatedStaff);
         setShowExistingPassword(true);
-        setResetPasswordInput(''); // Clear input field after successful update
-
-        // Update in list
+        setResetPasswordInput('');
         setStaff((prev) => prev.map((s) => (s.id === updatedStaff.id ? updatedStaff : s)));
       }
     } catch (err: any) {
@@ -401,17 +325,34 @@ Please keep this login and password safe. This is your permanent account passwor
     }
   };
 
+  // If a staff profile is selected, render the full Profile View
+  if (selectedStaffId) {
+    return (
+      <StaffProfileView
+        staffId={selectedStaffId}
+        onBack={() => {
+          setSelectedStaffId(null);
+          fetchData();
+        }}
+        onUpdated={fetchData}
+        batches={batches}
+        onOpenBatchAssignments={handleOpenAssignmentModal}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-[#2D1E18]">Staff & Faculty Management</h1>
           <p className="text-sm text-[#6D4C41] mt-1">
-            Manage teaching faculty, staff profiles, and login passwords
+            Manage teaching faculty, staff profiles, and login credentials
           </p>
         </div>
         <button
-          onClick={handleOpenAddModal}
+          onClick={() => setShowAddModal(true)}
           className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all self-start"
         >
           <Plus className="w-4 h-4" /> Add New Staff Member
@@ -439,7 +380,7 @@ Please keep this login and password safe. This is your permanent account passwor
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto min-h-[360px]">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[#D7CCC8] text-[#6D4C41] bg-[#F7F2EF] uppercase tracking-wider">
@@ -448,7 +389,7 @@ Please keep this login and password safe. This is your permanent account passwor
                 <th className="py-3 px-4 font-bold">Designation</th>
                 <th className="py-3 px-4 font-bold">Batches Assigned</th>
                 <th className="py-3 px-4 font-bold">Status</th>
-                <th className="py-3 px-4 font-bold text-right">Login & Actions</th>
+                <th className="py-3 px-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EFEBE9]">
@@ -466,9 +407,15 @@ Please keep this login and password safe. This is your permanent account passwor
                 </tr>
               ) : (
                 staff.map((item) => (
-                  <tr key={item.id} className="hover:bg-[#FDFBF7] transition-colors">
+                  <tr
+                    key={item.id}
+                    onClick={() => setSelectedStaffId(item.id)}
+                    className="hover:bg-[#FAF8F5] cursor-pointer transition-colors group"
+                  >
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#2D1E18] text-sm">{item.user.fullName}</div>
+                      <div className="font-bold text-[#2D1E18] text-sm group-hover:underline group-hover:text-[#4E342E] text-left transition-colors">
+                        {item.user.fullName}
+                      </div>
                       <div className="text-[11px] text-[#6D4C41] flex items-center gap-2 mt-0.5">
                         <span className="flex items-center gap-1">
                           <Mail className="w-3 h-3 text-[#8D6E63]" /> {item.user.email}
@@ -489,14 +436,18 @@ Please keep this login and password safe. This is your permanent account passwor
                         '—'
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-[#2D1E18] font-medium">{item.designation}</td>
+                    <td className="py-3.5 px-4 text-[#2D1E18] font-medium">
+                      <div>{item.designation}</div>
+                      {item.department && (
+                        <div className="text-[11px] text-[#8D6E63]">{item.department}</div>
+                      )}
+                    </td>
                     <td className="py-3.5 px-4 text-[#5D4037]">
                       {item.assignments && item.assignments.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5 max-w-xs">
                           {item.assignments.map((a) => {
-                            const assignedSubjectsForBatch = item.batchSubjects?.filter(
-                              (bs) => bs.batchId === a.batch.id
-                            ) || [];
+                            const assignedSubjectsForBatch =
+                              item.batchSubjects?.filter((bs) => bs.batchId === a.batch.id) || [];
 
                             return (
                               <span
@@ -531,33 +482,97 @@ Please keep this login and password safe. This is your permanent account passwor
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="relative inline-block text-left staff-action-menu">
                         <button
-                          onClick={() => handleOpenAssignmentModal(item)}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
-                          title="Assign batches and subjects taught by this staff member"
-                        >
-                          <BookOpen className="w-3.5 h-3.5 text-[#8D6E63]" />
-                          <span>Assign Batches</span>
-                        </button>
-                        <button
-                          onClick={() => handleOpenCredentialsModal(item)}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#4E342E] hover:bg-[#F7F2EF] hover:border-[#8D6E63] transition shadow-sm"
-                          title="View or change staff login and password"
-                        >
-                          <Key className="w-3.5 h-3.5 text-[#8D6E63]" />
-                          <span>Login & Password</span>
-                        </button>
-                        <button
-                          onClick={() => handleToggleStatus(item)}
-                          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
-                            item.user.isActive
-                              ? 'border-rose-300 text-rose-800 hover:bg-rose-50'
-                              : 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuStaffId(openMenuStaffId === item.id ? null : item.id);
+                          }}
+                          className={`p-2 rounded-lg border transition shadow-sm ${
+                            openMenuStaffId === item.id
+                              ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                              : 'bg-white text-[#6D4C41] border-[#D7CCC8] hover:bg-[#FAF8F5] hover:text-[#2D1E18]'
                           }`}
+                          title="Actions menu"
+                          aria-label="Actions menu"
                         >
-                          {item.user.isActive ? 'Deactivate' : 'Activate'}
+                          <MoreVertical className="w-4 h-4" />
                         </button>
+
+                        {openMenuStaffId === item.id && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute right-0 mt-1 w-48 bg-white border border-[#D7CCC8] rounded-xl shadow-xl py-1.5 z-50 text-xs font-medium text-[#2D1E18] text-left"
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                setSelectedStaffId(item.id);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
+                            >
+                              <User className="w-4 h-4 text-[#8D6E63]" />
+                              <span>View Profile</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                handleOpenAssignmentModal(item);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
+                            >
+                              <BookOpen className="w-4 h-4 text-[#8D6E63]" />
+                              <span>Assign Batches</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                handleOpenCredentialsModal(item);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
+                            >
+                              <Key className="w-4 h-4 text-[#8D6E63]" />
+                              <span>Login Credentials</span>
+                            </button>
+
+                            <div className="my-1 border-t border-[#EFEBE9]" />
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuStaffId(null);
+                                handleToggleStatus(item);
+                              }}
+                              className={`w-full text-left px-3.5 py-2 flex items-center gap-2.5 transition-colors ${
+                                item.user.isActive
+                                  ? 'hover:bg-rose-50 text-rose-700'
+                                  : 'hover:bg-emerald-50 text-emerald-700'
+                              }`}
+                            >
+                              {item.user.isActive ? (
+                                <>
+                                  <UserX className="w-4 h-4 text-rose-600" />
+                                  <span>Deactivate Staff</span>
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="w-4 h-4 text-emerald-600" />
+                                  <span>Activate Staff</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -568,335 +583,184 @@ Please keep this login and password safe. This is your permanent account passwor
         </div>
       </div>
 
-      {/* Add Staff Modal */}
-      {showAddModal && (
+      {/* Upgraded Multi-Step Add Staff Modal */}
+      <AddStaffModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        batches={batches}
+        activeInstituteCode={activeInstitute?.code}
+        onSuccess={(newStaff, creds) => {
+          setShowAddModal(false);
+          setCreatedStaffId(newStaff.id);
+          setCreatedCredential(creds);
+          fetchData();
+        }}
+      />
+
+      {/* Created Credential Modal */}
+      {createdCredential && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 shadow-2xl text-[#2D1E18]">
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
               <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                <Users className="w-5 h-5 text-[#4E342E]" /> Provision Staff Account
+                <CheckCircle className="w-5 h-5 text-emerald-600" /> Permanent Staff Login Created
               </h2>
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={() => {
+                  setCreatedCredential(null);
+                  setCreatedStaffId(null);
+                }}
                 className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {createdCredential ? (
-              <div className="my-5 p-5 rounded-2xl bg-emerald-50 border border-emerald-300 text-[#2D1E18] space-y-4">
-                <div className="flex items-center gap-2 font-bold text-emerald-800 text-sm">
-                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /> Permanent Staff Login Created
-                </div>
-                <p className="text-xs text-[#5D4037] leading-relaxed">
-                  The permanent login and password have been created. You can hand over these login details
-                  directly to the staff member. No temporary password change is required.
-                </p>
+            <div className="my-5 p-5 rounded-2xl bg-emerald-50 border border-emerald-300 text-[#2D1E18] space-y-4">
+              <p className="text-xs text-[#5D4037] leading-relaxed">
+                The permanent login account and profile have been created. You can hand over these login
+                details directly to the staff member.
+              </p>
 
-                <div className="p-4 rounded-xl bg-white border border-emerald-200 text-xs space-y-2.5">
+              <div className="p-4 rounded-xl bg-white border border-emerald-200 text-xs space-y-2.5">
+                <div className="flex justify-between items-center py-1 border-b border-emerald-100">
+                  <span className="text-[#6D4C41]">Staff Name:</span>
+                  <span className="font-bold text-[#2D1E18]">{createdCredential.fullName}</span>
+                </div>
+                {createdCredential.employeeCode && (
                   <div className="flex justify-between items-center py-1 border-b border-emerald-100">
-                    <span className="text-[#6D4C41]">Staff Name:</span>
-                    <span className="font-bold text-[#2D1E18]">{createdCredential.fullName}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1 border-b border-emerald-100">
-                    <span className="text-[#6D4C41]">Role:</span>
-                    <span className="font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
-                      Staff / Faculty
+                    <span className="text-[#6D4C41]">Employee Code:</span>
+                    <span className="font-mono font-bold text-[#4E342E] bg-white border border-[#D7CCC8] px-2 py-0.5 rounded text-xs">
+                      {createdCredential.employeeCode}
                     </span>
                   </div>
-                  {createdCredential.employeeCode && (
-                    <div className="flex justify-between items-center py-1 border-b border-emerald-100">
-                      <span className="text-[#6D4C41]">Employee Code:</span>
-                      <span className="font-mono font-bold text-[#4E342E] bg-white border border-[#D7CCC8] px-2 py-0.5 rounded text-xs">
-                        {createdCredential.employeeCode}
-                      </span>
-                    </div>
-                  )}
-                  {createdCredential.instituteCode && (
-                    <div className="flex justify-between items-center py-1 border-b border-emerald-100">
-                      <span className="text-[#6D4C41]">Institute Code:</span>
-                      <span className="font-mono font-bold text-[#4E342E]">
-                        {createdCredential.instituteCode}
-                      </span>
-                    </div>
-                  )}
+                )}
+                {createdCredential.instituteCode && (
                   <div className="flex justify-between items-center py-1 border-b border-emerald-100">
-                    <span className="text-[#6D4C41]">Login Email:</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono font-semibold text-[#2D1E18] select-all">
-                        {createdCredential.email}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(createdCredential.email, 'created_email')}
-                        className="text-[#8D6E63] hover:text-[#2D1E18] p-0.5"
-                        title="Copy email"
-                      >
-                        {copiedKey === 'created_email' ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
+                    <span className="text-[#6D4C41]">Institute Code:</span>
+                    <span className="font-mono font-bold text-[#4E342E]">
+                      {createdCredential.instituteCode}
+                    </span>
                   </div>
-                  <div className="flex justify-between items-center py-1">
-                    <span className="text-[#6D4C41]">Permanent Password:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-[#2D1E18] bg-emerald-50/70 border border-emerald-200 px-2.5 py-0.5 rounded text-xs select-all">
-                        {showCreatedPassword ? createdCredential.permanentPassword : '••••••••••••'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowCreatedPassword(!showCreatedPassword)}
-                        className="text-[#8D6E63] hover:text-[#2D1E18]"
-                        title={showCreatedPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showCreatedPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(createdCredential.permanentPassword, 'created_pass')}
-                        className="text-[#8D6E63] hover:text-emerald-700"
-                        title="Copy password"
-                      >
-                        {copiedKey === 'created_pass' ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
+                )}
+                <div className="flex justify-between items-center py-1 border-b border-emerald-100">
+                  <span className="text-[#6D4C41]">Login Email:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono font-semibold text-[#2D1E18] select-all">
+                      {createdCredential.email}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(createdCredential.email, 'created_email')}
+                      className="text-[#8D6E63] hover:text-[#2D1E18] p-0.5"
+                    >
+                      {copiedKey === 'created_email' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
                   </div>
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      copyFormattedCredentials(
-                        createdCredential.fullName,
-                        createdCredential.email,
-                        createdCredential.permanentPassword,
-                        createdCredential.instituteCode,
-                        createdCredential.employeeCode,
-                        'created_all'
-                      )
-                    }
-                    className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-md transition"
-                  >
-                    {copiedKey === 'created_all' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    {copiedKey === 'created_all' ? 'Copied Login & Password!' : 'Copy Login & Password Details'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold py-2.5 px-5 rounded-xl transition"
-                  >
-                    Done
-                  </button>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-[#6D4C41]">Permanent Password:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-[#2D1E18] bg-emerald-50/70 border border-emerald-200 px-2.5 py-0.5 rounded text-xs select-all">
+                      {showCreatedPassword ? createdCredential.permanentPassword : '••••••••••••'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatedPassword(!showCreatedPassword)}
+                      className="text-[#8D6E63] hover:text-[#2D1E18]"
+                    >
+                      {showCreatedPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(createdCredential.permanentPassword, 'created_pass')}
+                      className="text-[#8D6E63] hover:text-emerald-700"
+                    >
+                      {copiedKey === 'created_pass' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-                {addError && (
-                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2 font-medium">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{addError}</span>
-                  </div>
-                )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Full Name*</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.fullName}
-                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                      placeholder="e.g. Dr. Rajesh Sharma"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Email*</label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="rajesh@academy.edu"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Designation*</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.designation}
-                      onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                      placeholder="e.g. Senior Math Faculty"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-[#4E342E]">Employee Code*</label>
-                      <button
-                        type="button"
-                        onClick={handleRegenerateEmployeeCode}
-                        className="text-[10px] text-[#4E342E] hover:text-[#2D1E18] font-bold flex items-center gap-1 bg-white border border-[#D7CCC8] px-1.5 py-0.5 rounded hover:bg-[#EFEBE9] transition"
-                        title="Auto-generate next employee code with academy name"
-                      >
-                        <Sparkles className="w-2.5 h-2.5 text-[#8D6E63]" /> Auto-generate
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={formData.employeeCode}
-                      onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value.toUpperCase() })}
-                      placeholder="e.g. APEX-EMP-001"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono font-medium text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                    <p className="text-[10px] text-[#8D6E63] mt-1">
-                      Auto-generated with academy name. You can customize if needed.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Permanent Login Password Field */}
-                <div className="p-3.5 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-[#4E342E] flex items-center gap-1.5">
-                      <Lock className="w-3.5 h-3.5 text-[#8D6E63]" /> Permanent Login Password*
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, password: generateStrongPassword() })}
-                      className="text-[11px] text-[#4E342E] hover:text-[#2D1E18] font-bold flex items-center gap-1 bg-white border border-[#D7CCC8] px-2 py-0.5 rounded-md hover:bg-[#EFEBE9] transition"
-                    >
-                      <Sparkles className="w-3 h-3 text-[#8D6E63]" /> Auto-generate
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Key className="w-4 h-4 text-[#8D6E63] absolute left-3 top-2.5" />
-                    <input
-                      type={showFormPassword ? 'text' : 'password'}
-                      required
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="Type permanent password (or click Auto-generate)"
-                      className="w-full bg-white border border-[#D7CCC8] rounded-xl pl-9 pr-10 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowFormPassword(!showFormPassword)}
-                      className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#2D1E18]"
-                      title={showFormPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showFormPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-[#6D4C41] leading-relaxed">
-                    This is the staff member&apos;s permanent password. You will be able to review and copy
-                    this password to give to the staff member.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Phone Number</label>
-                    <input
-                      type="text"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="e.g. 9876543210"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Qualification</label>
-                    <input
-                      type="text"
-                      value={formData.qualification}
-                      onChange={(e) => setFormData({ ...formData, qualification: e.target.value })}
-                      placeholder="e.g. M.Sc. Physics, B.Ed"
-                      className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
-                    />
-                  </div>
-                </div>
-
-                {batches.length > 0 && (
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4E342E] mb-1">Assign to Batches</label>
-                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 bg-[#F7F2EF] rounded-xl border border-[#D7CCC8]">
-                      {batches.map((b) => (
-                        <label key={b.id} className="flex items-center gap-2 text-xs text-[#2D1E18] cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.selectedBatchIds.includes(b.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  selectedBatchIds: [...formData.selectedBatchIds, b.id],
-                                });
-                              } else {
-                                setFormData({
-                                  ...formData,
-                                  selectedBatchIds: formData.selectedBatchIds.filter((id) => id !== b.id),
-                                });
-                              }
-                            }}
-                            className="rounded border-[#D7CCC8] text-[#4E342E] focus:ring-[#8D6E63]"
-                          />
-                          <span>{b.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-4 flex justify-end gap-3">
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyFormattedCredentials(
+                      createdCredential.fullName,
+                      createdCredential.email,
+                      createdCredential.permanentPassword,
+                      createdCredential.instituteCode,
+                      createdCredential.employeeCode,
+                      'created_all'
+                    )
+                  }
+                  className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-md transition"
+                >
+                  {copiedKey === 'created_all' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedKey === 'created_all' ? 'Copied Login & Password!' : 'Copy Login Details'}
+                </button>
+                {createdStaffId && (
                   <button
                     type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+                    onClick={() => {
+                      const id = createdStaffId;
+                      setCreatedCredential(null);
+                      setCreatedStaffId(null);
+                      setSelectedStaffId(id);
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition"
                   >
-                    Cancel
+                    <User className="w-4 h-4" />
+                    <span>View Profile</span>
                   </button>
-                  <button
-                    type="submit"
-                    disabled={addLoading}
-                    className="bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-[#3E2723]/30 transition disabled:opacity-50"
-                  >
-                    {addLoading ? 'Creating...' : 'Create Staff & Permanent Login'}
-                  </button>
-                </div>
-              </form>
-            )}
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreatedCredential(null);
+                    setCreatedStaffId(null);
+                  }}
+                  className="border border-[#D7CCC8] hover:bg-white text-[#4E342E] text-xs font-semibold py-2.5 px-4 rounded-xl transition"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* View & Reset Staff Credentials Modal */}
-      {viewingStaffCreds && (
+      {/* Existing Credentials View / Reset Modal */}
+      {viewingStaffCreds && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
-            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
-                  <Key className="w-5 h-5" />
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-sm">
+                  {viewingStaffCreds.user.fullName
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-[#2D1E18]">Staff Login & Password</h2>
-                  <p className="text-xs text-[#6D4C41]">Manage password for {viewingStaffCreds.user.fullName}</p>
+                  <h2 className="text-base font-bold text-[#2D1E18]">
+                    {viewingStaffCreds.user.fullName}
+                  </h2>
+                  <div className="text-[11px] font-mono text-[#8D6E63]">
+                    {viewingStaffCreds.employeeCode || 'No Employee Code'}
+                  </div>
                 </div>
               </div>
               <button
@@ -970,24 +834,18 @@ Please keep this login and password safe. This is your permanent account passwor
                         type="button"
                         onClick={() => setShowExistingPassword(!showExistingPassword)}
                         className="text-[#8D6E63] hover:text-[#2D1E18]"
-                        title={showExistingPassword ? 'Hide password' : 'Show password'}
                       >
-                        {showExistingPassword ? (
-                          <EyeOff className="w-3.5 h-3.5" />
-                        ) : (
-                          <Eye className="w-3.5 h-3.5" />
-                        )}
+                        {showExistingPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
                       <button
                         type="button"
                         onClick={() =>
                           copyToClipboard(
-                            viewingStaffCreds.permissionsJson?.permanentPassword,
+                            (viewingStaffCreds.permissionsJson as any)?.permanentPassword || '',
                             'view_pass'
                           )
                         }
-                        className="text-[#8D6E63] hover:text-emerald-700"
-                        title="Copy password"
+                        className="text-[#8D6E63] hover:text-[#2D1E18]"
                       >
                         {copiedKey === 'view_pass' ? (
                           <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -998,279 +856,242 @@ Please keep this login and password safe. This is your permanent account passwor
                     </div>
                   ) : (
                     <span className="text-[#8D6E63] italic text-[11px]">
-                      Encrypted (Set new password below)
+                      Not visible (enter new password below to reset)
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Copy Full Credentials Button if Password is Available */}
-              {viewingStaffCreds.permissionsJson?.permanentPassword && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    copyFormattedCredentials(
-                      viewingStaffCreds.user.fullName,
-                      viewingStaffCreds.user.email || '',
-                      viewingStaffCreds.permissionsJson?.permanentPassword || '',
-                      activeInstitute?.code,
-                      viewingStaffCreds.employeeCode || undefined,
-                      'view_all'
-                    )
-                  }
-                  className="w-full inline-flex items-center justify-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow transition"
-                >
-                  {copiedKey === 'view_all' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  {copiedKey === 'view_all' ? 'Copied Login & Password!' : 'Copy Login & Password to Give to Staff'}
-                </button>
-              )}
-
-              {/* Set / Reset Permanent Password Section */}
-              <form onSubmit={handleResetPassword} className="p-4 rounded-2xl border border-[#D7CCC8] space-y-3 bg-white">
+              {/* Set / Reset Password Form */}
+              <form onSubmit={handleResetPassword} className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-[#4E342E] flex items-center gap-1.5">
-                    <RefreshCw className="w-3.5 h-3.5 text-[#8D6E63]" /> Set / Change Permanent Password
-                  </h3>
+                  <label className="text-xs font-bold text-[#4E342E]">Set New Permanent Password</label>
                   <button
                     type="button"
                     onClick={() => {
-                      setResetPasswordInput(generateStrongPassword());
+                      const newPass = generateStrongPassword();
+                      setResetPasswordInput(newPass);
                       setShowResetInputPassword(true);
                     }}
-                    className="text-[11px] text-[#4E342E] hover:text-[#2D1E18] font-bold flex items-center gap-1 bg-[#F7F2EF] border border-[#D7CCC8] px-2 py-0.5 rounded-md hover:bg-[#EFEBE9] transition"
+                    className="text-[11px] font-semibold text-[#8D6E63] hover:text-[#4E342E] flex items-center gap-1"
                   >
-                    <Sparkles className="w-3 h-3 text-[#8D6E63]" /> Auto-generate
+                    <Sparkles className="w-3 h-3" /> Auto-generate
                   </button>
                 </div>
 
                 <div className="relative">
-                  <Key className="w-4 h-4 text-[#8D6E63] absolute left-3 top-2.5" />
                   <input
                     type={showResetInputPassword ? 'text' : 'password'}
                     value={resetPasswordInput}
                     onChange={(e) => setResetPasswordInput(e.target.value)}
-                    placeholder="Type new password (or click Auto-generate)..."
-                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-9 pr-10 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                    placeholder="Type or click Auto-generate"
+                    className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl pl-3 pr-10 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                   />
                   <button
                     type="button"
                     onClick={() => setShowResetInputPassword(!showResetInputPassword)}
-                    className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#2D1E18]"
-                    title={showResetInputPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#4E342E]"
                   >
                     {showResetInputPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
 
-                <p className="text-[11px] text-[#6D4C41]">
-                  Updating this will immediately replace the faculty login password. They can use this new permanent
-                  password right away.
-                </p>
-
-                <div className="pt-1 flex justify-end">
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setViewingStaffCreds(null)}
+                    className="px-4 py-2 border border-[#D7CCC8] rounded-xl text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF]"
+                  >
+                    Close
+                  </button>
                   <button
                     type="submit"
-                    disabled={resetLoading || !resetPasswordInput.trim()}
-                    className="inline-flex items-center gap-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition disabled:opacity-50"
+                    disabled={resetLoading || !resetPasswordInput}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#4E342E] text-white text-xs font-semibold rounded-xl hover:bg-[#3E2723] transition disabled:opacity-50"
                   >
-                    {resetLoading ? 'Saving...' : 'Save Permanent Password'}
+                    {resetLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{resetLoading ? 'Updating...' : 'Update Password'}</span>
                   </button>
                 </div>
               </form>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setViewingStaffCreds(null)}
-                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
-                >
-                  Close
-                </button>
-              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Assign Batches & Subjects Modal */}
-      {viewingStaffAssignments && (
+      {/* Batch & Subject Assignment Modal */}
+      {viewingStaffAssignments && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 shadow-2xl text-[#2D1E18] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
-                  <BookOpen className="w-5 h-5 text-[#4E342E]" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                  {viewingStaffAssignments.user.fullName
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-[#2D1E18]">
                     Assign Batches & Subjects
                   </h2>
                   <p className="text-xs text-[#6D4C41]">
-                    {viewingStaffAssignments.user.fullName} • {viewingStaffAssignments.designation}
+                    {viewingStaffAssignments.user.fullName} ({viewingStaffAssignments.designation})
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setViewingStaffAssignments(null)}
-                className="text-[#8D6E63] hover:text-[#2D1E18] p-1.5 rounded-lg hover:bg-[#F7F2EF] transition"
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mt-4 space-y-4">
-              {assignmentError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{assignmentError}</span>
-                </div>
-              )}
-
-              {assignmentSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{assignmentSuccess}</span>
-                </div>
-              )}
-
-              <div className="p-3 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs text-[#5D4037] leading-relaxed">
-                <span className="font-bold text-[#4E342E]">Staff Permission Scoping:</span> Select the batches and specific subjects this staff member teaches. They will only see attendance, students, homework, and materials for their assigned subjects in these batches.
+            {assignmentSuccess && (
+              <div className="p-3 my-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{assignmentSuccess}</span>
               </div>
+            )}
 
-              <form onSubmit={handleSaveAssignments} className="space-y-4">
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-[#4E342E] uppercase tracking-wider block">
-                    Institute Batches & Curriculum
-                  </label>
+            {assignmentError && (
+              <div className="p-3 my-4 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs">
+                {assignmentError}
+              </div>
+            )}
 
-                  {batches.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-[#8D6E63] border border-dashed border-[#D7CCC8] rounded-2xl bg-[#FDFBF7]">
-                      No active batches found in this institute. Please create a batch in Academics first.
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                      {batches.map((b) => {
-                        const isBatchSelected = assignmentBatchIds.includes(b.id);
-                        const batchSubjects = b.batchSubjects || [];
-                        const selectedSubjectsForBatch = assignmentSubjectMap[b.id] || [];
+            <form onSubmit={handleSaveAssignments} className="mt-4 space-y-4">
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {batches.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-[#8D6E63] bg-[#FAF8F5] rounded-xl border border-dashed border-[#D7CCC8]">
+                    No batches available. Please create batches first in Academic Management.
+                  </div>
+                ) : (
+                  batches.map((b) => {
+                    const isBatchSelected = assignmentBatchIds.includes(b.id);
+                    const batchSubjects = b.batchSubjects || [];
+                    const selectedSubjectsForBatch = assignmentSubjectMap[b.id] || [];
 
-                        return (
-                          <div
-                            key={b.id}
-                            className={`p-3.5 rounded-2xl border transition-all ${
-                              isBatchSelected
-                                ? 'bg-[#FDFBF7] border-[#8D6E63] shadow-sm'
-                                : 'bg-white border-[#EFEBE9] hover:border-[#D7CCC8]'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={isBatchSelected}
-                                  onChange={() => handleToggleBatch(b.id)}
-                                  className="w-4 h-4 rounded text-[#4E342E] border-[#D7CCC8] focus:ring-[#8D6E63] cursor-pointer"
-                                />
-                                <div>
-                                  <div className="font-bold text-xs text-[#2D1E18]">
-                                    {b.name}
-                                  </div>
-                                  <div className="text-[11px] text-[#8D6E63]">
-                                    Year: {b.academicYear} {b.code ? `• Code: ${b.code}` : ''}
-                                  </div>
-                                </div>
-                              </label>
+                    return (
+                      <div
+                        key={b.id}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          isBatchSelected
+                            ? 'bg-[#FDFBF7] border-[#8D6E63] shadow-sm'
+                            : 'bg-white border-[#EFEBE9] hover:border-[#D7CCC8]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isBatchSelected}
+                              onChange={() => handleToggleBatch(b.id)}
+                              className="w-4 h-4 rounded text-[#4E342E] border-[#D7CCC8] focus:ring-[#8D6E63] cursor-pointer"
+                            />
+                            <div>
+                              <div className="font-bold text-xs text-[#2D1E18]">
+                                {b.name}
+                              </div>
+                              <div className="text-[11px] text-[#8D6E63]">
+                                Year: {b.academicYear} {b.code ? `• Code: ${b.code}` : ''}
+                              </div>
+                            </div>
+                          </label>
 
-                              {isBatchSelected && batchSubjects.length > 0 && (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSelectAllSubjectsForBatch(b.id)}
-                                    className="text-[10px] font-semibold text-[#4E342E] hover:underline"
-                                  >
-                                    All Subjects
-                                  </button>
-                                  <span className="text-[#D7CCC8]">|</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleClearSubjectsForBatch(b.id)}
-                                    className="text-[10px] font-semibold text-[#8D6E63] hover:underline"
-                                  >
-                                    Clear
-                                  </button>
-                                </div>
-                              )}
+                          {isBatchSelected && batchSubjects.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAllSubjectsForBatch(b.id)}
+                                className="text-[10px] font-semibold text-[#4E342E] hover:underline"
+                              >
+                                All Subjects
+                              </button>
+                              <span className="text-[#D7CCC8]">|</span>
+                              <button
+                                type="button"
+                                onClick={() => handleClearSubjectsForBatch(b.id)}
+                                className="text-[10px] font-semibold text-[#8D6E63] hover:underline"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Subjects list for this batch */}
+                        {isBatchSelected && (
+                          <div className="mt-3 pt-3 border-t border-[#EFEBE9] pl-6 space-y-2">
+                            <div className="text-[11px] font-bold text-[#6D4C41]">
+                              Subjects taught by this staff member:
                             </div>
 
-                            {/* Subjects list for this batch */}
-                            {isBatchSelected && (
-                              <div className="mt-3 pt-3 border-t border-[#EFEBE9] pl-6 space-y-2">
-                                <div className="text-[11px] font-bold text-[#6D4C41]">
-                                  Subjects taught by this staff member:
-                                </div>
-
-                                {batchSubjects.length === 0 ? (
-                                  <div className="text-[11px] text-[#A1887F] italic">
-                                    No distinct subjects added to this batch. Staff will have general batch access.
-                                  </div>
-                                ) : (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {batchSubjects.map((bs) => {
-                                      const isSubjectSelected = selectedSubjectsForBatch.includes(bs.subjectId);
-                                      return (
-                                        <label
-                                          key={bs.id}
-                                          className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
-                                            isSubjectSelected
-                                              ? 'bg-white border-[#8D6E63] text-[#2D1E18] font-semibold shadow-xs'
-                                              : 'bg-[#F7F2EF]/60 border-transparent text-[#6D4C41]'
-                                          }`}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={isSubjectSelected}
-                                            onChange={() => handleToggleSubject(b.id, bs.subjectId)}
-                                            className="w-3.5 h-3.5 rounded text-[#4E342E] border-[#D7CCC8] focus:ring-[#8D6E63] cursor-pointer"
-                                          />
-                                          <span className="truncate">
-                                            {bs.subject.name}
-                                            {bs.subject.code ? ` (${bs.subject.code})` : ''}
-                                          </span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                )}
+                            {batchSubjects.length === 0 ? (
+                              <div className="text-[11px] text-[#A1887F] italic">
+                                No distinct subjects configured in this batch. Staff will have general batch access.
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {batchSubjects.map((bs) => {
+                                  const isSubjectSelected = selectedSubjectsForBatch.includes(bs.subjectId);
+                                  return (
+                                    <label
+                                      key={bs.id}
+                                      className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                        isSubjectSelected
+                                          ? 'bg-white border-[#8D6E63] text-[#2D1E18] font-semibold shadow-xs'
+                                          : 'bg-[#F7F2EF]/60 border-transparent text-[#6D4C41]'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSubjectSelected}
+                                        onChange={() => handleToggleSubject(b.id, bs.subjectId)}
+                                        className="w-3.5 h-3.5 rounded text-[#4E342E] border-[#D7CCC8] focus:ring-[#8D6E63] cursor-pointer"
+                                      />
+                                      <span className="truncate">
+                                        {bs.subject.name}
+                                        {bs.subject.code ? ` (${bs.subject.code})` : ''}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#EFEBE9]">
-                  <button
-                    type="button"
-                    onClick={() => setViewingStaffAssignments(null)}
-                    disabled={assignmentLoading}
-                    className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={assignmentLoading}
-                    className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-md transition disabled:opacity-50"
-                  >
-                    {assignmentLoading ? 'Saving Assignments...' : 'Save Assignments'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => setViewingStaffAssignments(null)}
+                  disabled={assignmentLoading}
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignmentLoading}
+                  className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-md transition disabled:opacity-50"
+                >
+                  {assignmentLoading ? 'Saving Assignments...' : 'Save Assignments'}
+                </button>
+              </div>
+            </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
