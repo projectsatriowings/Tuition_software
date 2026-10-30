@@ -52,9 +52,9 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
   const markerRef = useRef<L.Marker | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
 
-  // Tile layer instances
+  // Tile layer instances (Zero API key required)
   const streetLayerRef = useRef<L.TileLayer | null>(null);
-  const satelliteGroupRef = useRef<L.LayerGroup | null>(null);
+  const satelliteLayerRef = useRef<L.TileLayer | null>(null);
   const osmLayerRef = useRef<L.TileLayer | null>(null);
 
   const [mapType, setMapType] = useState<'street' | 'satellite' | 'osm'>('street');
@@ -78,47 +78,39 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     if (mapInstanceRef.current) return; // initialize only once
 
     try {
-      // 1. Detailed Street Layer (CartoDB Voyager: crisp, readable street names, building footprints)
+      // 1. Google Streets Layer: 100% free, crisp, familiar, no API key needed
       const streetLayer = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
         {
-          attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-          subdomains: 'abcd',
+          attribution: '&copy; Google Maps',
           maxZoom: 20,
         }
       );
 
-      // 2. Satellite Aerial Layer (Esri World Imagery + Labels overlay)
-      const satBase = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      // 2. Google Hybrid Satellite Layer: Real aerial photography with road and place labels overlaid
+      const satelliteLayer = L.tileLayer(
+        'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
         {
-          attribution: 'Tiles &copy; Esri',
-          maxZoom: 19,
+          attribution: '&copy; Google Maps',
+          maxZoom: 20,
         }
       );
-      const satLabels = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-        {
-          maxZoom: 19,
-        }
-      );
-      const satelliteGroup = L.layerGroup([satBase, satLabels]);
 
-      // 3. OpenStreetMap Standard
-      const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // 3. OpenStreetMap Standard (Clean fallback)
+      const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19,
       });
 
       streetLayerRef.current = streetLayer;
-      satelliteGroupRef.current = satelliteGroup;
+      satelliteLayerRef.current = satelliteLayer;
       osmLayerRef.current = osmLayer;
 
       const map = L.map(mapContainerRef.current, {
         center: [defaultLat, defaultLng],
         zoom: latitude && longitude ? 17 : 13,
         zoomControl: true,
-        layers: [streetLayer], // Default to Detailed Street Map
+        layers: [streetLayer], // Default to Google Streets
       });
 
       // Draggable center pin
@@ -181,7 +173,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
     const street = streetLayerRef.current;
-    const satellite = satelliteGroupRef.current;
+    const satellite = satelliteLayerRef.current;
     const osm = osmLayerRef.current;
 
     if (!street || !satellite || !osm) return;
@@ -220,7 +212,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
   }, [latitude, longitude]);
 
   // Apply specific coordinates to marker, circle, map, and callback
-  const applyCoordinates = (lat: number, lng: number, zoomLevel = 17, sourceLabel = 'Selected Location') => {
+  const applyCoordinates = (lat: number, lng: number, zoomLevel = 18, sourceLabel = 'Selected Location') => {
     if (mapInstanceRef.current && markerRef.current && circleRef.current) {
       const latLng = new L.LatLng(lat, lng);
       markerRef.current.setLatLng(latLng);
@@ -242,15 +234,16 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
 
     const trimmed = searchQuery.trim();
 
-    // 1. Check if user entered direct coordinates e.g. "11.0553, 79.4845" or "11.0553 79.4845"
-    const coordMatch = trimmed.match(/^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?)[,\s]+[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$/);
-    if (coordMatch) {
-      const parts = trimmed.split(/[,\s]+/).filter(Boolean);
-      const lat = parseFloat(parts[0]);
-      const lng = parseFloat(parts[1]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        applyCoordinates(lat, lng, 18, 'Direct GPS Coordinates');
+    // 1. Check if user entered direct coordinates e.g. "10.9602, 79.3844" or "10.9602 79.3844"
+    const coordRegex = /([-+]?\d{1,2}\.\d+)[,\s]+([-+]?\d{1,3}\.\d+)/;
+    const match = trimmed.match(coordRegex);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        applyCoordinates(lat, lng, 18, 'Direct Coordinates');
         setLocationSuccessMsg(`Centered at coordinates: ${lat.toFixed(6)}, ${lng.toFixed(6)}. Click "Save Configuration" to confirm.`);
+        setLocationWarningMsg(null);
         setSearching(false);
         return;
       }
@@ -266,15 +259,16 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
       if (!isNaN(lat) && !isNaN(lng)) {
         applyCoordinates(lat, lng, 18, 'Google Maps Location');
         setLocationSuccessMsg(`Loaded Google Maps location: ${lat.toFixed(6)}, ${lng.toFixed(6)}. Click "Save Configuration" to confirm.`);
+        setLocationWarningMsg(null);
         setSearching(false);
         return;
       }
     }
 
-    // 3. Fallback to OpenStreetMap Nominatim geocoding
+    // 3. Fallback to OpenStreetMap Nominatim geocoding (restricted to India)
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(trimmed)}`,
+        `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=in&q=${encodeURIComponent(trimmed)}`,
         {
           headers: {
             'Accept-Language': 'en',
@@ -290,16 +284,17 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
           const newLng = parseFloat(item.lon);
           applyCoordinates(newLat, newLng, 17, item.display_name.split(',')[0]);
           setLocationSuccessMsg(`Found: ${item.display_name.split(',').slice(0, 3).join(',')}`);
+          setLocationWarningMsg(null);
         } else {
           // Multiple results: show selection dropdown
           setSearchResults(data);
         }
       } else {
-        setSearchError('Location not found. Try searching by city/town, postal PIN code, or paste exact coordinates (e.g. 10.9602, 79.3844).');
+        setSearchError('Location not found. Try searching by town/city name, postal PIN code, or paste exact coordinates (e.g. 10.9602, 79.3844).');
       }
     } catch (err: any) {
       console.error('[GeofenceMapPicker] Search error:', err);
-      setSearchError('Search failed. Please try again or paste direct coordinates.');
+      setSearchError('Search failed. Please try again or paste direct coordinates from Google Maps.');
     } finally {
       setSearching(false);
     }
@@ -311,6 +306,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     const newLng = parseFloat(item.lon);
     applyCoordinates(newLat, newLng, 17, item.display_name.split(',')[0]);
     setLocationSuccessMsg(`Centered at: ${item.display_name.split(',').slice(0, 3).join(',')}`);
+    setLocationWarningMsg(null);
     setSearchResults([]);
     setSearchQuery(item.display_name.split(',').slice(0, 2).join(', '));
   };
@@ -333,37 +329,36 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
         setLocatingCurrent(false);
         const { latitude: curLat, longitude: curLng, accuracy } = pos.coords;
 
-        // If accuracy > 300m (e.g. ±5000m on desktop PC without hardware GPS),
-        // adjust zoom level so user sees surrounding towns rather than empty blank land.
-        const isCoarse = accuracy != null && accuracy > 300;
-        const targetZoom = isCoarse ? (accuracy > 2000 ? 14 : 15) : 18;
+        // Check if accuracy is coarse (e.g. > 1000m like ±50,000m on desktop PC without hardware GPS)
+        if (accuracy != null && accuracy > 1000) {
+          // Desktop computers have no GPS antenna and rely on ISP telecom towers 50km away!
+          setLocationWarningMsg(
+            `Inaccurate PC Location Detected (±${Math.round(accuracy / 1000)} km margin of error): Your laptop does not have a hardware satellite GPS chip, so Windows reported an estimate from your internet provider's regional tower (${curLat.toFixed(4)}, ${curLng.toFixed(4)}), which is ~${Math.round(accuracy / 1000)} km away from your actual academy. To set the exact building, please search your town name or paste coordinates from Google Maps below.`
+          );
 
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.flyTo([curLat, curLng], 12, { duration: 1.2 });
+          }
+          return;
+        }
+
+        // True GPS or high-accuracy location (accuracy <= 1000m, e.g. on mobile phone ±5m to ±25m)
         if (mapInstanceRef.current && markerRef.current && circleRef.current) {
           const latLng = new L.LatLng(curLat, curLng);
           markerRef.current.setLatLng(latLng);
           circleRef.current.setLatLng(latLng);
 
           const accText = accuracy ? `Accuracy: ±${Math.round(accuracy)}m` : '';
-          const noteText = isCoarse
-            ? `<br/><span style="color: #B45309; font-size: 11px; font-weight: bold;">⚠️ Desktop Wi-Fi/IP estimate (±${Math.round(accuracy)}m). Please drag pin to your exact building or switch to Satellite view.</span>`
-            : '';
-
           markerRef.current
-            .bindPopup(`<b>${instituteName}</b><br/>${accText}${noteText}`)
+            .bindPopup(`<b>${instituteName}</b><br/>Locked to Your Current Location (${accText})`)
             .openPopup();
 
-          mapInstanceRef.current.flyTo(latLng, targetZoom, { duration: 1.2 });
+          mapInstanceRef.current.flyTo(latLng, 18, { duration: 1.2 });
           onLocationChange(curLat, curLng);
 
-          if (isCoarse) {
-            setLocationWarningMsg(
-              `Approximate PC Location Detected (±${Math.round(accuracy)}m): Desktop computers estimate location via Wi-Fi/ISP routers without physical satellite GPS chips. The map has been centered on your area. Switch to 🛰️ Satellite view and drag the pin onto your exact building, or search your street name above.`
-            );
-          } else {
-            setLocationSuccessMsg(
-              `High-Accuracy GPS Locked: ${curLat.toFixed(6)}, ${curLng.toFixed(6)} (Accuracy: ±${Math.round(accuracy)}m). Click "Save Configuration" to confirm.`
-            );
-          }
+          setLocationSuccessMsg(
+            `GPS location locked: ${curLat.toFixed(6)}, ${curLng.toFixed(6)} (${accText}). Click "Save Configuration" to confirm.`
+          );
         }
       },
       (err) => {
@@ -415,8 +410,8 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search street, area, PIN code, or paste Lat,Lng (e.g. 10.9602, 79.3844)..."
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
+                  placeholder="Search town, street, area, PIN code, or paste coordinates (e.g. 10.9602, 79.3844)..."
+                  className="w-full pl-9 pr-8 py-2.5 text-xs rounded-xl border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
                 />
                 {searchQuery && (
                   <button
@@ -434,7 +429,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
               <button
                 type="submit"
                 disabled={searching}
-                className="px-3.5 py-2 text-xs font-semibold bg-[#8D6E63] text-white rounded-xl hover:bg-[#6D4C41] disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                className="px-4 py-2.5 text-xs font-semibold bg-[#8D6E63] text-white rounded-xl hover:bg-[#6D4C41] disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
               >
                 {searching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                 <span>Search</span>
@@ -446,8 +441,8 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
               type="button"
               onClick={handleUseCurrentPosition}
               disabled={locatingCurrent}
-              className="px-4 py-2 text-xs font-bold bg-[#4E342E] text-white rounded-xl hover:bg-[#3E2723] disabled:opacity-60 transition-all shadow-sm flex items-center justify-center gap-2 shrink-0 border border-[#3E2723] active:scale-[0.98]"
-              title="Lock geofence using your device's live position"
+              className="px-4 py-2.5 text-xs font-bold bg-[#4E342E] text-white rounded-xl hover:bg-[#3E2723] disabled:opacity-60 transition-all shadow-sm flex items-center justify-center gap-2 shrink-0 border border-[#3E2723] active:scale-[0.98]"
+              title="Lock geofence using your device's live position (Most accurate on mobile phones with GPS)"
             >
               {locatingCurrent ? (
                 <>
@@ -481,7 +476,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                   key={idx}
                   type="button"
                   onClick={() => handleSelectResult(item)}
-                  className="w-full text-left px-3.5 py-2 text-xs hover:bg-stone-50 transition-colors flex items-start gap-2"
+                  className="w-full text-left px-3.5 py-2.5 text-xs hover:bg-stone-50 transition-colors flex items-start gap-2"
                 >
                   <MapPin className="w-3.5 h-3.5 text-[#8D6E63] mt-0.5 shrink-0" />
                   <span className="text-[#2D1E18] line-clamp-1">{item.display_name}</span>
@@ -509,17 +504,24 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
         </div>
       )}
 
-      {/* Notifications: Coarse / Desktop Warning */}
+      {/* Notifications: Inaccurate PC Geolocation Warning */}
       {locationWarningMsg && (
-        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5 animate-fade-in shadow-xs">
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-2 animate-fade-in shadow-xs">
           <div className="flex items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-bold text-amber-950">{locationWarningMsg}</span>
-                <p className="text-[11px] text-amber-800">
-                  💡 <strong>Tip for 100% exact positioning:</strong> Click the <strong>"🛰️ Satellite (Aerial)"</strong> button in the top-right corner of the map to see actual building roofs, then drag the brown pin directly onto your campus.
-                </p>
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+              <div className="space-y-1.5">
+                <span className="font-bold text-amber-950 text-xs block leading-relaxed">
+                  {locationWarningMsg}
+                </span>
+                <div className="text-[11px] text-amber-900 bg-amber-100/60 p-2.5 rounded-lg border border-amber-200 space-y-1">
+                  <div className="font-semibold text-amber-950">How to get your 100% exact location:</div>
+                  <ul className="list-disc list-inside space-y-0.5 text-amber-900">
+                    <li>Type your actual town name in the search bar above (e.g. <em>"Kumbakonam"</em>, <em>"Thanjavur"</em>, <em>"Cuddalore"</em>).</li>
+                    <li>Or open Google Maps, find your tuition building, right-click to copy coordinates (e.g. <code>10.7867, 79.1378</code>), and paste them into the box.</li>
+                    <li>Or switch the map to <strong>"🛰️ Satellite"</strong> and drag the brown pin directly onto your building.</li>
+                  </ul>
+                </div>
               </div>
             </div>
             <button
@@ -561,7 +563,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
           <div ref={mapContainerRef} className="w-full h-full z-0" />
         )}
 
-        {/* Layer Switcher Pill (Top-Right on Map) */}
+        {/* Layer Switcher (Top-Right on Map): Google Streets, Google Satellite, OSM */}
         <div className="absolute top-3 right-3 z-[1000] flex items-center bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-lg border border-[#D7CCC8] text-xs">
           <button
             type="button"
@@ -571,7 +573,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                 ? 'bg-[#4E342E] text-white shadow-sm'
                 : 'text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#FAF8F5]'
             }`}
-            title="Crisp street map with detailed roads, shops, and building outlines"
+            title="Google Street Map with full roads, shops, schools, and landmarks (No API key needed)"
           >
             <Compass className="w-3.5 h-3.5" />
             <span>🗺️ Streets</span>
@@ -585,10 +587,10 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                 ? 'bg-[#4E342E] text-white shadow-sm'
                 : 'text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#FAF8F5]'
             }`}
-            title="High-resolution aerial satellite imagery showing actual buildings and roofs"
+            title="Google Satellite Hybrid view with real building roofs and road labels"
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>🛰️ Satellite (Aerial)</span>
+            <span>🛰️ Satellite</span>
           </button>
 
           <button
@@ -599,7 +601,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                 ? 'bg-[#4E342E] text-white shadow-sm'
                 : 'text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#FAF8F5]'
             }`}
-            title="OpenStreetMap Standard view"
+            title="OpenStreetMap standard view"
           >
             <span>🌐 OSM</span>
           </button>
@@ -635,11 +637,11 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
               href={`https://www.google.com/maps?q=${latitude},${longitude}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1 rounded-md hover:bg-stone-100 text-blue-700 transition-colors flex items-center gap-1"
+              className="p-1 rounded-md hover:bg-stone-100 text-blue-700 transition-colors flex items-center gap-1 font-semibold"
               title="Verify location in Google Maps"
             >
               <ExternalLink className="w-3 h-3" />
-              <span className="text-[10px] font-bold">Google Maps</span>
+              <span className="text-[10px]">Open Google Maps ↗</span>
             </a>
           )}
         </div>
@@ -654,7 +656,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
           </span>
         </p>
         <span className="text-stone-500 italic">
-          Switch to <strong>🛰️ Satellite</strong> to visually see roofs and gates.
+          Switch to <strong>🛰️ Satellite</strong> to visually see building roofs and gates.
         </span>
       </div>
     </div>
