@@ -1,3 +1,4 @@
+import { lookupByPostalCode, lookupByCity } from '../../utils/locationHelper';
 import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../../services/api';
 import { StaffMember, StaffQualification, StaffExperience, StaffDocument, Batch } from '../../types';
@@ -273,6 +274,64 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
   };
 
   // Save Personal Details
+  const handleCurrentPostalCodeChange = async (val: string) => {
+    setPersonalForm((prev) => ({ ...prev, currentPostalCode: val }));
+    const clean = val.trim().replace(/\D/g, '');
+    if (clean.length === 6) {
+      const res = await lookupByPostalCode(clean);
+      if (res) {
+        setPersonalForm((prev) => ({
+          ...prev,
+          currentCity: res.city || prev.currentCity,
+          currentState: res.state || prev.currentState,
+        }));
+      }
+    }
+  };
+
+  const handleCurrentCityChange = async (val: string) => {
+    setPersonalForm((prev) => ({ ...prev, currentCity: val }));
+    if (val.trim().length >= 3) {
+      const res = await lookupByCity(val);
+      if (res && res.state) {
+        setPersonalForm((prev) => ({
+          ...prev,
+          currentState: res.state || prev.currentState,
+          currentPostalCode: prev.currentPostalCode ? prev.currentPostalCode : (res.postalCode || ''),
+        }));
+      }
+    }
+  };
+
+  const handlePermanentPostalCodeChange = async (val: string) => {
+    setPersonalForm((prev) => ({ ...prev, permanentPostalCode: val }));
+    const clean = val.trim().replace(/\D/g, '');
+    if (clean.length === 6) {
+      const res = await lookupByPostalCode(clean);
+      if (res) {
+        setPersonalForm((prev) => ({
+          ...prev,
+          permanentCity: res.city || prev.permanentCity,
+          permanentState: res.state || prev.permanentState,
+        }));
+      }
+    }
+  };
+
+  const handlePermanentCityChange = async (val: string) => {
+    setPersonalForm((prev) => ({ ...prev, permanentCity: val }));
+    if (val.trim().length >= 3) {
+      const res = await lookupByCity(val);
+      if (res && res.state) {
+        setPersonalForm((prev) => ({
+          ...prev,
+          permanentState: res.state || prev.permanentState,
+          permanentPostalCode: prev.permanentPostalCode ? prev.permanentPostalCode : (res.postalCode || ''),
+        }));
+      }
+    }
+  };
+
   const handleSavePersonal = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -1279,9 +1338,7 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
                     <input
                       type="text"
                       value={personalForm.currentCity}
-                      onChange={(e) =>
-                        setPersonalForm({ ...personalForm, currentCity: e.target.value })
-                      }
+                      onChange={(e) => handleCurrentCityChange(e.target.value)}
                       placeholder="City"
                       className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />
@@ -1305,9 +1362,7 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
                     <input
                       type="text"
                       value={personalForm.currentPostalCode}
-                      onChange={(e) =>
-                        setPersonalForm({ ...personalForm, currentPostalCode: e.target.value })
-                      }
+                      onChange={(e) => handleCurrentPostalCodeChange(e.target.value)}
                       placeholder="Postal code / PIN"
                       className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                     />
@@ -1412,9 +1467,7 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
                         <input
                           type="text"
                           value={personalForm.permanentCity}
-                          onChange={(e) =>
-                            setPersonalForm({ ...personalForm, permanentCity: e.target.value })
-                          }
+                          onChange={(e) => handlePermanentCityChange(e.target.value)}
                           placeholder="City"
                           className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                         />
@@ -1438,12 +1491,7 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
                         <input
                           type="text"
                           value={personalForm.permanentPostalCode}
-                          onChange={(e) =>
-                            setPersonalForm({
-                              ...personalForm,
-                              permanentPostalCode: e.target.value,
-                            })
-                          }
+                          onChange={(e) => handlePermanentPostalCodeChange(e.target.value)}
                           placeholder="Postal code / PIN"
                           className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                         />
