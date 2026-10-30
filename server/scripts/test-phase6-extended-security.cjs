@@ -75,10 +75,10 @@ async function runExtendedSecurityAudit() {
   console.log('================================================================\n');
 
   try {
-    const adminUser = await prisma.user.findFirst({ where: { email: 'admin@apexacademy.com' } });
-    const staffUser = await prisma.user.findFirst({ where: { email: 'teacher@apexacademy.com' } });
-    const studentUser = await prisma.user.findFirst({ where: { email: 'student@apexacademy.com' } });
-    const student2User = await prisma.user.findFirst({ where: { email: 'soundher@gmail.com' } });
+    const adminUser = await prisma.user.findFirst({ where: { role: 'ACADEMIC_ADMIN' } });
+    const staffUser = await prisma.user.findFirst({ where: { role: 'STAFF', fullName: { contains: 'Anita' } } }) || await prisma.user.findFirst({ where: { role: 'STAFF' } });
+    const studentUser = await prisma.user.findFirst({ where: { role: 'STUDENT' } });
+    const student2User = await prisma.user.findFirst({ where: { role: 'STUDENT', id: { not: studentUser?.id } } });
     const kanishkaStaff = await prisma.user.findFirst({ where: { fullName: { contains: 'Kanishka' } } });
 
     // Parents

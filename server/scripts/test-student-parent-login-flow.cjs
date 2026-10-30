@@ -94,8 +94,23 @@ async function run() {
     const parentUser = await prisma.user.findFirst({ where: { email: 'parent@apex.example.com' } });
     const staffUser = await prisma.user.findFirst({ where: { email: 'teacher@apex.example.com' } });
     const adminUser = await prisma.user.findFirst({ where: { email: 'admin@apex.example.com' } });
-    const studentProfile = await prisma.student.findFirst({ where: { userId: studentUser?.id } });
-    const parentProfile = await prisma.parentProfile.findFirst({ where: { userId: parentUser?.id } });
+    
+    // Sharika is assigned to Anita Verma's batch
+    const assignedStudent = await prisma.student.findFirst({
+      where: {
+        enrollments: {
+          some: {
+            batchId: 'e519b639-fbdb-41e9-98f8-c636cda46120',
+            subjectId: '7ea0898b-696a-41cf-8c6d-b8ae9c748a31',
+          },
+        },
+      },
+    });
+
+    const assignedParentRel = assignedStudent ? await prisma.studentParentRelation.findFirst({
+      where: { studentId: assignedStudent.id },
+      include: { parent: true },
+    }) : null;
 
     if (!studentUser || !parentUser || !staffUser || !adminUser) {
       throw new Error('Required test accounts not found in database. Please run seed script.');
@@ -223,8 +238,8 @@ async function run() {
       'Parent calling /auth/change-password is strictly rejected with HTTP 403 Forbidden'
     );
 
-    // 6. Authorized Staff Can Still Reset Student & Parent Credentials
-    console.log('\n--- 6. Authorized Staff Credential Management ---');
+    // 6. Authorized Staff & Admin Credential Management
+    console.log('\n--- 6. Authorized Staff & Admin Credential Management ---');
     const staffLoginRes = await request('/auth/login', {
       method: 'POST',
       body: {
@@ -234,40 +249,6 @@ async function run() {
     });
     const staffToken = staffLoginRes.data?.data?.accessToken;
 
-    if (studentProfile) {
-      const resetStudentRes = await request(`/students/${studentProfile.id}/reset-password`, {
-        method: 'POST',
-        token: staffToken,
-        body: { newPassword: 'Password#123' },
-      });
-      assert(
-        resetStudentRes.status === 200 && resetStudentRes.data?.success === true,
-        'Staff can successfully reset Student password via authorized endpoint'
-      );
-      assert(
-        resetStudentRes.data?.data?.mustChangePassword === false,
-        'Reset student credentials sets mustChangePassword: false for permanent staff-managed access'
-      );
-    }
-
-    if (parentProfile) {
-      const resetParentRes = await request(`/parents/${parentProfile.id}/reset-password`, {
-        method: 'POST',
-        token: staffToken,
-        body: { newPassword: 'Password#123' },
-      });
-      assert(
-        resetParentRes.status === 200 && resetParentRes.data?.success === true,
-        'Staff can successfully reset Parent password via authorized endpoint'
-      );
-      assert(
-        resetParentRes.data?.data?.mustChangePassword === false,
-        'Reset parent credentials sets mustChangePassword: false for permanent staff-managed access'
-      );
-    }
-
-    // 7. Academic Admin and Staff Authentication Flow Intact
-    console.log('\n--- 7. Staff & Academic Admin Auth Flows Intact ---');
     const adminLoginRes = await request('/auth/login', {
       method: 'POST',
       body: {
@@ -275,6 +256,55 @@ async function run() {
         password: 'Password#123',
       },
     });
+    const adminToken = adminLoginRes.data?.data?.accessToken;
+
+    if (assignedStudent) {
+      const resetStudentRes = await request(`/students/${assignedStudent.id}/reset-password`, {
+        method: 'POST',
+        token: staffToken,
+        body: { newPassword: 'Password#123' },
+      });
+      assert(
+        resetStudentRes.status === 200 && resetStudentRes.data?.success === true,
+        'Staff can successfully reset Student password for students in their assigned batch'
+      );
+      assert(
+        resetStudentRes.data?.data?.mustChangePassword === false,
+        'Reset student credentials sets mustChangePassword: false for permanent staff-managed access'
+      );
+    }
+
+    if (assignedParentRel?.parent) {
+      const resetParentRes = await request(`/parents/${assignedParentRel.parent.id}/reset-password`, {
+        method: 'POST',
+        token: staffToken,
+        body: { newPassword: 'Password#123' },
+      });
+      assert(
+        resetParentRes.status === 200 && resetParentRes.data?.success === true,
+        'Staff can successfully reset Parent password for parents of assigned students'
+      );
+      assert(
+        resetParentRes.data?.data?.mustChangePassword === false,
+        'Reset parent credentials sets mustChangePassword: false for permanent staff-managed access'
+      );
+    }
+
+    // Admin reset validation
+    if (assignedStudent) {
+      const adminResetRes = await request(`/students/${assignedStudent.id}/reset-password`, {
+        method: 'POST',
+        token: adminToken,
+        body: { newPassword: 'Password#123' },
+      });
+      assert(
+        adminResetRes.status === 200 && adminResetRes.data?.success === true,
+        'Academic Admin has full authority to reset student passwords'
+      );
+    }
+
+    // 7. Academic Admin and Staff Authentication Flow Intact
+    console.log('\n--- 7. Staff & Academic Admin Auth Flows Intact ---');
     assert(
       adminLoginRes.status === 200 && adminLoginRes.data?.data?.user?.role === 'ACADEMIC_ADMIN',
       'Academic Admin logs in successfully and receives ACADEMIC_ADMIN role'
@@ -322,8 +352,8 @@ async function run() {
 
     // 10. Unauthorized Roles Cannot Access Credential Management
     console.log('\n--- 10. Unauthorized Role Protection on Credential Endpoints ---');
-    if (studentProfile) {
-      const studentAttemptReset = await request(`/students/${studentProfile.id}/reset-password`, {
+    if (assignedStudent) {
+      const studentAttemptReset = await request(`/students/${assignedStudent.id}/reset-password`, {
         method: 'POST',
         token: studentToken,
         body: { newPassword: 'HackedPassword#123' },
@@ -334,8 +364,8 @@ async function run() {
       );
     }
 
-    if (parentProfile) {
-      const parentAttemptReset = await request(`/parents/${parentProfile.id}/reset-password`, {
+    if (assignedParentRel?.parent) {
+      const parentAttemptReset = await request(`/parents/${assignedParentRel.parent.id}/reset-password`, {
         method: 'POST',
         token: parentToken,
         body: { newPassword: 'HackedPassword#123' },
