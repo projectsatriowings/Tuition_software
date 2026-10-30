@@ -708,6 +708,26 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
             )}
 
+            {/* Quick GPS Setup Callout */}
+            <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#D7CCC8] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#4E342E] text-amber-300 flex items-center justify-center shrink-0 font-bold text-sm shadow-xs">
+                  📍
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-[#2D1E18]">
+                    Physically at the tuition academy right now?
+                  </h4>
+                  <p className="text-[11px] text-[#6D4C41] mt-0.5">
+                    Click <strong className="text-[#4E342E]">"Use My Current Location"</strong> on the map below to immediately lock the 200m geofence center to your exact coordinates, then click <strong className="text-[#4E342E]">"Save Configuration"</strong>.
+                  </p>
+                </div>
+              </div>
+              <div className="text-[11px] font-semibold text-[#8D6E63] shrink-0 bg-white px-2.5 py-1 rounded-lg border border-[#D7CCC8] self-start sm:self-auto">
+                Geofence: {formRadius}m radius
+              </div>
+            </div>
+
             {/* Interactive Map Section */}
             <div>
               <label className="block text-xs font-bold text-[#2D1E18] mb-1.5">

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Search, MapPin, Locate, AlertTriangle, Layers } from 'lucide-react';
+import { Search, MapPin, Locate, AlertTriangle, Layers, Navigation, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 // Fix leaflet default icon URLs in Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -35,7 +35,9 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
+  const [locatingCurrent, setLocatingCurrent] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [locationSuccessMsg, setLocationSuccessMsg] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
 
   // Fallback coords: Chennai/Bengaluru/Delhi central
@@ -175,28 +177,63 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     }
   };
 
-  // Locate current position
+  // Locate current position using device GPS
   const handleUseCurrentPosition = () => {
     if (!navigator.geolocation) {
-      setSearchError('Geolocation is not supported by your browser.');
+      setSearchError('Geolocation is not supported by your browser or device.');
       return;
     }
 
+    setLocatingCurrent(true);
+    setSearchError(null);
+    setLocationSuccessMsg(null);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const { latitude: curLat, longitude: curLng } = pos.coords;
+        setLocatingCurrent(false);
+        const { latitude: curLat, longitude: curLng, accuracy } = pos.coords;
+
         if (mapInstanceRef.current && markerRef.current && circleRef.current) {
           const latLng = new L.LatLng(curLat, curLng);
           markerRef.current.setLatLng(latLng);
           circleRef.current.setLatLng(latLng);
+
+          const accText = accuracy ? ` (Accuracy: ±${Math.round(accuracy)}m)` : '';
+          markerRef.current
+            .bindPopup(`<b>${instituteName}</b><br/>Locked to Your Current Location${accText}`)
+            .openPopup();
+
           mapInstanceRef.current.flyTo(latLng, 18, { duration: 1.2 });
           onLocationChange(curLat, curLng);
+          setLocationSuccessMsg(
+            `GPS location locked: ${curLat.toFixed(6)}, ${curLng.toFixed(6)}${accText}. Click "Save Configuration" to confirm.`
+          );
         }
       },
       (err) => {
-        setSearchError(`Failed to get location: ${err.message}`);
+        setLocatingCurrent(false);
+        console.warn('[GeofenceMapPicker] Geolocation error:', err);
+        if (err.code === 1) {
+          setSearchError(
+            'Location access permission was denied. Please click the padlock or site settings icon in your browser address bar, set Location to "Allow", and try again.'
+          );
+        } else if (err.code === 2) {
+          setSearchError(
+            'Unable to determine physical location. Please check that Windows Location Services are turned ON and device has internet/GPS connectivity.'
+          );
+        } else if (err.code === 3) {
+          setSearchError(
+            'GPS request timed out. Please click "Use My Current Location" again or search for your address.'
+          );
+        } else {
+          setSearchError(`Failed to get location: ${err.message}`);
+        }
       },
-      { enableHighAccuracy: true }
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000,
+      }
     );
   };
 
@@ -204,7 +241,7 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     <div className="space-y-3">
       {/* Top Search & Actions bar */}
       {!readOnly && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
           <form onSubmit={handleSearch} className="flex-1 flex gap-2">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-[#8D6E63] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -213,34 +250,72 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search address, landmark or area (e.g., T. Nagar, Chennai)..."
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
               />
             </div>
             <button
               type="submit"
               disabled={searching}
-              className="px-3 py-2 text-xs font-semibold bg-[#4E342E] text-white rounded-lg hover:bg-[#3E2723] disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+              className="px-3.5 py-2 text-xs font-semibold bg-[#8D6E63] text-white rounded-xl hover:bg-[#6D4C41] disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
             >
               {searching ? 'Searching...' : 'Search'}
             </button>
           </form>
 
+          {/* Prominent Current Location Button */}
           <button
             type="button"
             onClick={handleUseCurrentPosition}
-            className="px-3 py-2 text-xs font-semibold bg-[#FAF8F5] text-[#4E342E] border border-[#D7CCC8] rounded-lg hover:bg-[#EFEBE9] transition-colors flex items-center justify-center gap-1.5 shrink-0"
-            title="Use my current browser GPS location"
+            disabled={locatingCurrent}
+            className="px-4 py-2 text-xs font-bold bg-[#4E342E] text-white rounded-xl hover:bg-[#3E2723] disabled:opacity-60 transition-all shadow-sm flex items-center justify-center gap-2 shrink-0 border border-[#3E2723] active:scale-[0.98]"
+            title="Lock academy geofence to your exact current physical GPS location"
           >
-            <Locate className="w-3.5 h-3.5" />
-            <span>Use Current GPS</span>
+            {locatingCurrent ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                <span>Acquiring GPS...</span>
+              </>
+            ) : (
+              <>
+                <Navigation className="w-3.5 h-3.5 text-amber-300" />
+                <span>Use My Current Location</span>
+              </>
+            )}
           </button>
         </div>
       )}
 
+      {/* Success Notification */}
+      {locationSuccessMsg && (
+        <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <span className="font-medium">{locationSuccessMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocationSuccessMsg(null)}
+            className="text-emerald-700 hover:text-emerald-950 font-bold text-xs ml-3 shrink-0 underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Error Notification */}
       {searchError && (
-        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span>{searchError}</span>
+        <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+            <span>{searchError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSearchError(null)}
+            className="text-red-700 hover:text-red-950 font-bold text-xs ml-3 shrink-0 underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
