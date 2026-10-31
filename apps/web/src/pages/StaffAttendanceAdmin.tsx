@@ -186,8 +186,13 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
   // ==========================================
 
   // Save Config
-  const handleSaveConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
+
+
+
+
+
+  const handleSaveConfig = async (e?: React.FormEvent) => {
+    if (e?.preventDefault) e.preventDefault();
     try {
       setConfigSaving(true);
       setConfigError(null);
@@ -396,7 +401,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 <Compass className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-[#2D1E18]">Staff Attendance & 200m Geofencing</h1>
+                <h1 className="text-xl font-bold text-[#2D1E18]">Staff Attendance</h1>
                 <p className="text-xs text-[#6D4C41]">
                   GPS-verified check-ins, automated geodesic range verification, live register & audited adjustments.
                 </p>
@@ -671,7 +676,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
       {/* TAB 2: LOCATION & GEOFENCE CONFIGURATION   */}
       {/* ========================================== */}
       {activeTab === 'settings' && (
-        <form onSubmit={handleSaveConfig} className="space-y-6">
+        <div className="space-y-6">
           <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#D7CCC8] gap-2">
               <div>
@@ -685,7 +690,8 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleSaveConfig}
                 disabled={configSaving}
                 className="px-4 py-2 text-xs font-bold bg-[#4E342E] text-white rounded-xl hover:bg-[#3E2723] disabled:opacity-50 transition-colors shadow-sm flex items-center gap-2 self-start sm:self-auto"
               >
@@ -731,7 +737,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
             {/* Interactive Map Section */}
             <div>
               <label className="block text-xs font-bold text-[#2D1E18] mb-1.5">
-                Institute Building Location & 200-Metre Geofence
+                Institute Building Location & Geofence
               </label>
               <GeofenceMapPicker
                 latitude={formLat}
@@ -822,7 +828,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                     ±{formAccuracyThreshold}m
                   </span>
                 </div>
-                <span className="text-[11px] text-[#8D6E63]">Readings with accuracy worse than ±{formAccuracyThreshold}m are rejected.</span>
+                <span className="text-[11px] text-[#8D6E63]">Readings worse than ±{formAccuracyThreshold}m rejected. (Set ±150m–200m for indoor laptops/Wi-Fi).</span>
               </div>
 
               <div>
@@ -909,7 +915,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
             </div>
           </div>
-        </form>
+        </div>
       )}
 
       {/* ========================================== */}

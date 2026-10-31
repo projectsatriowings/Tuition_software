@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Info,
   HelpCircle,
+  Copy,
 } from 'lucide-react';
 
 // Client-side Haversine for instant UI visual feedback (server always recalculates authoritatively)
@@ -45,6 +46,7 @@ export const StaffMyAttendance: React.FC = () => {
   // GPS Device State
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [copiedCoords, setCopiedCoords] = useState(false);
   const [deviceCoords, setDeviceCoords] = useState<{
     latitude: number;
     longitude: number;
@@ -142,6 +144,14 @@ export const StaffMyAttendance: React.FC = () => {
     verifyLocation();
   }, [verifyLocation]);
 
+  const handleCopyCoords = () => {
+    if (deviceCoords) {
+      navigator.clipboard.writeText(`${deviceCoords.latitude.toFixed(6)}, ${deviceCoords.longitude.toFixed(6)}`);
+      setCopiedCoords(true);
+      setTimeout(() => setCopiedCoords(false), 2000);
+    }
+  };
+
   // Calculated distance & eligibility
   const institute = data?.institute;
   const session = data?.session;
@@ -165,13 +175,10 @@ export const StaffMyAttendance: React.FC = () => {
   }, [deviceCoords, institute]);
 
   const isWithinRadius = clientDistance != null && institute ? clientDistance <= institute.geofenceRadius : false;
-  const isAccuracyGood = deviceCoords?.accuracy != null && institute ? deviceCoords.accuracy <= institute.gpsAccuracyThreshold : false;
-
   const canCheckIn =
     status === 'NOT_CHECKED_IN' &&
     deviceCoords != null &&
     isWithinRadius &&
-    isAccuracyGood &&
     !actionSubmitting;
 
   const canCheckOut =
@@ -401,7 +408,7 @@ export const StaffMyAttendance: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Compass className="w-4 h-4 text-[#8D6E63]" />
-              <span className="text-xs font-bold text-[#2D1E18]">Institute Geofence Range (200m)</span>
+              <span className="text-xs font-bold text-[#2D1E18]">Institute Geofence Range</span>
             </div>
 
             <button
@@ -422,8 +429,8 @@ export const StaffMyAttendance: React.FC = () => {
                 <p className="text-[11px] mt-0.5">Please ensure GPS is enabled and permissions are granted.</p>
               </div>
             </div>
-          ) : deviceCoords ? (
-            <div className="space-y-2">
+                    ) : deviceCoords ? (
+            <div className="space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#6D4C41]">Geodesic Distance to Institute:</span>
                 <span
@@ -437,27 +444,48 @@ export const StaffMyAttendance: React.FC = () => {
 
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#6D4C41]">Device GPS Accuracy:</span>
-                <span
-                  className={`font-mono font-semibold text-xs ${
-                    isAccuracyGood ? 'text-emerald-700' : 'text-amber-700'
-                  }`}
-                >
+                <span className="font-mono font-semibold text-xs text-stone-700">
                   {deviceCoords.accuracy != null ? `±${Math.round(deviceCoords.accuracy)}m` : 'N/A'}
-                  {isAccuracyGood ? ' (Good)' : ' (Low — step outside)'}
                 </span>
               </div>
 
-              <div className="pt-2 border-t border-[#D7CCC8]/60 flex items-center gap-2 text-[11px]">
+              {/* Detected Coordinates readout */}
+              <div className="flex items-center justify-between text-xs pt-1.5 border-t border-[#D7CCC8]/40">
+                <span className="text-[#8D6E63]">Detected Device Location:</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] font-semibold text-[#4E342E]">
+                    {deviceCoords.latitude.toFixed(6)}, {deviceCoords.longitude.toFixed(6)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyCoords}
+                    className="text-[11px] text-[#8D6E63] hover:text-[#4E342E] flex items-center gap-0.5 bg-white border border-[#D7CCC8] px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                    title="Copy your exact coordinates to clipboard"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedCoords ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[#D7CCC8]/60 flex items-start gap-2 text-[11px]">
                 {isWithinRadius ? (
                   <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Within permitted 200m radius. Ready to record attendance.
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    Within permitted {institute?.geofenceRadius || 200}m radius ({clientDistance}m away). Ready to record attendance.
                   </span>
                 ) : (
-                  <span className="text-red-700 font-semibold flex items-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Outside 200m geofence. Move within institute boundaries to check in.
-                  </span>
+                  <div className="text-red-900 bg-red-50 p-2.5 rounded-lg border border-red-200 flex items-start gap-2 w-full">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-red-950">
+                        Outside Geofence: {clientDistance} metres away (Allowed: {institute?.geofenceRadius || 200}m)
+                      </p>
+                      <p className="text-[11px] text-red-900 leading-normal">
+                        Your device is currently outside the {institute?.geofenceRadius || 200}m institute boundary. Move within {institute?.geofenceRadius || 200}m to check in.
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

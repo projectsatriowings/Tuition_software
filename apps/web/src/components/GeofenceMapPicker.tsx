@@ -65,6 +65,11 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [locationSuccessMsg, setLocationSuccessMsg] = useState<string | null>(null);
   const [locationWarningMsg, setLocationWarningMsg] = useState<string | null>(null);
+  const [pendingCoarseLocation, setPendingCoarseLocation] = useState<{
+    lat: number;
+    lng: number;
+    accuracy: number;
+  } | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [copiedCoords, setCopiedCoords] = useState(false);
 
@@ -224,8 +229,10 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
   };
 
   // Handle Search: supports direct Lat,Lng coordinates, Google Maps links, and text queries
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleSearch = async (e?: React.FormEvent | React.SyntheticEvent) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     if (!searchQuery.trim()) return;
 
     setSearching(true);
@@ -266,28 +273,101 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     }
 
     // 3. Fallback to OpenStreetMap Nominatim geocoding (restricted to India)
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=in&q=${encodeURIComponent(trimmed)}`,
-        {
-          headers: {
-            'Accept-Language': 'en',
-          },
-        }
-      );
+    const queryNominatim = async (queryText: string): Promise<SearchResultItem[]> => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=in&q=${encodeURIComponent(queryText)}`,
+          {
+            headers: {
+              'Accept-Language': 'en',
+            },
+          }
+        );
+        if (!res.ok) return [];
+        return await res.json();
+      } catch {
+        return [];
+      }
+    };
 
-      const data: SearchResultItem[] = await res.json();
+    try {
+      let data = await queryNominatim(trimmed);
+      let matchedLocality = '';
+
+      // If no exact match (common with Indian door numbers / plot numbers),
+      // progressively try broader parts of the address
+      if (!data || data.length === 0) {
+        const candidates: string[] = [];
+
+        // Check if there is an Indian postal code or Chennai area suffix like "chennai-19" -> "600019"
+        const pincodeMatch = trimmed.match(/\b(\d{6})\b/) || trimmed.match(/chennai\s*-\s*(\d{1,2})\b/i);
+        if (pincodeMatch) {
+          const pin = pincodeMatch[1].length <= 2 ? `6000${pincodeMatch[1].padStart(2, '0')}` : pincodeMatch[1];
+          candidates.push(pin);
+        }
+
+        // Split by comma
+        const parts = trimmed
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean);
+
+        if (parts.length > 1) {
+          // Drop door number prefixes (e.g. "no 9/44", "plot 12", "flat 3b", "#14", "door no 5")
+          const nonDoorParts = parts.filter(
+            (p) => !/^(no\.?|plot|door\s*no\.?|flat|d\.?\s*no\.?|#)\s*[\d/A-Za-z-]+/i.test(p)
+          );
+          if (nonDoorParts.length > 0 && nonDoorParts.length < parts.length) {
+            candidates.push(nonDoorParts.join(', '));
+          }
+
+          // Try the last 2 parts (usually locality/town + city, e.g. "thiruvottiyur, chennai")
+          const lastTwo = parts
+            .slice(-2)
+            .map((p) => p.replace(/-\d+$/, ''))
+            .join(', ');
+          candidates.push(lastTwo);
+
+          // Try just the area name + city
+          if (parts.length >= 3) {
+            const area = parts[parts.length - 2].replace(/-\d+$/, '');
+            const city = parts[parts.length - 1].replace(/-\d+$/, '');
+            candidates.push(`${area}, ${city}`);
+            candidates.push(area);
+          }
+        }
+
+        for (const candidate of candidates) {
+          if (!candidate || candidate.toLowerCase() === trimmed.toLowerCase()) continue;
+          const res = await queryNominatim(candidate);
+          if (res && res.length > 0) {
+            data = res;
+            matchedLocality = candidate;
+            break;
+          }
+        }
+      }
+
       if (data && data.length > 0) {
         if (data.length === 1) {
           const item = data[0];
           const newLat = parseFloat(item.lat);
           const newLng = parseFloat(item.lon);
           applyCoordinates(newLat, newLng, 17, item.display_name.split(',')[0]);
-          setLocationSuccessMsg(`Found: ${item.display_name.split(',').slice(0, 3).join(',')}`);
+          if (matchedLocality) {
+            setLocationSuccessMsg(
+              `Centered at: ${item.display_name.split(',').slice(0, 3).join(', ')} (matched "${matchedLocality}"). Note: exact door numbers are not indexed in OpenStreetMap, so please drag the pin to your building or paste Google Maps coordinates.`
+            );
+          } else {
+            setLocationSuccessMsg(`Found: ${item.display_name.split(',').slice(0, 3).join(',')}`);
+          }
           setLocationWarningMsg(null);
         } else {
           // Multiple results: show selection dropdown
           setSearchResults(data);
+          if (matchedLocality) {
+            setLocationSuccessMsg(`Showing matches for: "${matchedLocality}"`);
+          }
         }
       } else {
         setSearchError('Location not found. Try searching by town/city name, postal PIN code, or paste exact coordinates (e.g. 10.9602, 79.3844).');
@@ -298,6 +378,18 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
     } finally {
       setSearching(false);
     }
+  };
+
+  // Allow applying coarse PC location if user insists
+  const handleApplyCoarseLocation = () => {
+    if (!pendingCoarseLocation) return;
+    const { lat, lng, accuracy } = pendingCoarseLocation;
+    applyCoordinates(lat, lng, 16, `PC Estimated Location (±${Math.round(accuracy / 1000)}km)`);
+    setLocationSuccessMsg(
+      `Locked to PC estimated position: ${lat.toFixed(6)}, ${lng.toFixed(6)} (±${Math.round(accuracy / 1000)}km). Click "Save Configuration" to confirm.`
+    );
+    setLocationWarningMsg(null);
+    setPendingCoarseLocation(null);
   };
 
   // Select a result from dropdown
@@ -403,13 +495,20 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
         <div className="relative space-y-2">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
             {/* Search Input Box */}
-            <form onSubmit={handleSearch} className="flex-1 flex gap-2">
+            <div className="flex-1 flex gap-2">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-[#8D6E63] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSearch();
+                    }
+                  }}
                   placeholder="Search town, street, area, PIN code, or paste coordinates (e.g. 10.9602, 79.3844)..."
                   className="w-full pl-9 pr-8 py-2.5 text-xs rounded-xl border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
                 />
@@ -427,14 +526,15 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                 )}
               </div>
               <button
-                type="submit"
+                type="button"
+                onClick={() => handleSearch()}
                 disabled={searching}
-                className="px-4 py-2.5 text-xs font-semibold bg-[#8D6E63] text-white rounded-xl hover:bg-[#6D4C41] disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                className="px-4 py-2.5 text-xs font-semibold bg-[#8D6E63] text-white rounded-xl hover:bg-[#6D4C41] disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
                 {searching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                 <span>Search</span>
               </button>
-            </form>
+            </div>
 
             {/* Current Location Button */}
             <button
@@ -522,12 +622,29 @@ export const GeofenceMapPicker: React.FC<GeofenceMapPickerProps> = ({
                     <li>Or switch the map to <strong>"🛰️ Satellite"</strong> and drag the brown pin directly onto your building.</li>
                   </ul>
                 </div>
+                {pendingCoarseLocation && (
+                  <div className="pt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleApplyCoarseLocation}
+                      className="px-3 py-1.5 text-xs font-bold bg-[#4E342E] hover:bg-[#3E2723] text-amber-300 rounded-lg transition-colors shadow-xs cursor-pointer"
+                    >
+                      Use Estimated Location Anyway ({pendingCoarseLocation.lat.toFixed(4)}, {pendingCoarseLocation.lng.toFixed(4)})
+                    </button>
+                    <span className="text-[11px] text-amber-800 italic">
+                      (Accepts laptop's detected location)
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
             <button
               type="button"
-              onClick={() => setLocationWarningMsg(null)}
-              className="text-amber-800 hover:text-amber-950 font-bold text-xs shrink-0 underline ml-2"
+              onClick={() => {
+                setLocationWarningMsg(null);
+                setPendingCoarseLocation(null);
+              }}
+              className="text-amber-800 hover:text-amber-950 font-bold text-xs shrink-0 underline ml-2 cursor-pointer"
             >
               Dismiss
             </button>

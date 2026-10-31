@@ -152,7 +152,7 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({ 
               Staff Attendance
             </h3>
             <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
-              Monitor GPS geofenced check-ins, daily staff register, and 200m radius.
+              Monitor GPS geofenced check-ins, daily staff register, and geofence radius.
             </p>
             <span className="inline-flex items-center gap-1 text-xs font-bold text-purple-800 mt-4">
               View Register <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />

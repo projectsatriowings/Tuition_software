@@ -101,28 +101,7 @@ export function validateStaffLocation(params: {
     };
   }
 
-  // 3. Verify GPS Accuracy threshold
-  const reportedAccuracy = staffCoords.accuracy;
-  const isAccuracyGood =
-    reportedAccuracy == null ||
-    (typeof reportedAccuracy === 'number' &&
-      !isNaN(reportedAccuracy) &&
-      reportedAccuracy <= gpsAccuracyThreshold);
-
-  if (!isAccuracyGood) {
-    return {
-      isValid: false,
-      distanceMetres: 0,
-      isWithinRadius: false,
-      accuracyAcceptable: false,
-      reason: `GPS accuracy is insufficient (reported ±${Math.round(
-        reportedAccuracy!
-      )}m, required ±${gpsAccuracyThreshold}m or better). Please move outdoors or near a window for better satellite reception.`,
-      code: 'ACCURACY_TOO_LOW',
-    };
-  }
-
-  // 4. Calculate geodesic distance
+  // 3. Calculate geodesic distance first
   const distance = calculateHaversineDistance(
     instituteCoords.latitude,
     instituteCoords.longitude,
@@ -145,6 +124,7 @@ export function validateStaffLocation(params: {
     };
   }
 
+  // Teacher is inside the permitted geofence radius (e.g. 200m)
   return {
     isValid: true,
     distanceMetres: distance,
