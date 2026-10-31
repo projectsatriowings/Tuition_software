@@ -26,23 +26,56 @@ import { pageTransitionVariants } from './utils/animations';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
-  const [currentTab, setCurrentTab] = useState<string>('academic_dashboard');
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    const raw = window.location.pathname.replace(/^\//, '').trim();
+    if (raw && raw !== '/') {
+      return raw === 'learning_materials' ? 'materials' : raw;
+    }
+    return 'academic_dashboard';
+  });
 
   useEffect(() => {
     if (user) {
-      if (user.role === 'SUPER_ADMIN') {
-        setCurrentTab('super_admin_dashboard');
-      } else if (user.role === 'ACADEMIC_ADMIN') {
-        setCurrentTab((prev) => (prev === 'materials' || prev === 'homework' ? 'academic_dashboard' : prev));
-      } else if (user.role === 'STAFF') {
-        setCurrentTab('my_attendance');
-      } else if (user.role === 'PARENT') {
-        setCurrentTab('parent_dashboard');
-      } else if (user.role === 'STUDENT') {
-        setCurrentTab('student_portal');
+      const raw = window.location.pathname.replace(/^\//, '').trim();
+      if (raw && raw !== '/') {
+        setCurrentTab(raw === 'learning_materials' ? 'materials' : raw);
+      } else {
+        if (user.role === 'SUPER_ADMIN') {
+          setCurrentTab('super_admin_dashboard');
+        } else if (user.role === 'ACADEMIC_ADMIN') {
+          setCurrentTab('academic_dashboard');
+        } else if (user.role === 'STAFF') {
+          setCurrentTab('attendance');
+        } else if (user.role === 'PARENT') {
+          setCurrentTab('parent_dashboard');
+        } else if (user.role === 'STUDENT') {
+          setCurrentTab('student_portal');
+        }
       }
     }
   }, [user]);
+
+  useEffect(() => {
+    const handleTabChange = (e: any) => {
+      const { tab } = e.detail || {};
+      if (tab) {
+        setCurrentTab(tab === 'learning_materials' ? 'materials' : tab);
+      }
+    };
+    const handlePopState = () => {
+      const raw = window.location.pathname.replace(/^\//, '').trim();
+      if (raw) {
+        setCurrentTab(raw === 'learning_materials' ? 'materials' : raw);
+      }
+    };
+
+    window.addEventListener('tuitionos:tab-change', handleTabChange);
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('tuitionos:tab-change', handleTabChange);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   useEffect(() => {
     if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework')) {
@@ -73,7 +106,7 @@ const AppContent: React.FC = () => {
       <Navbar />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar currentTab={currentTab} onSelectTab={(tab) => setCurrentTab(tab)} />
+        <Sidebar currentTab={currentTab} onSelectTab={(tab) => { setCurrentTab(tab); window.history.pushState({}, '', `/${tab}`); }} />
 
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#F7F2EF]">
           <div className="max-w-7xl mx-auto">
@@ -143,13 +176,16 @@ const AppContent: React.FC = () => {
 };
 
 import { ToastProvider } from './context/ToastContext';
+import { BrowserRouter } from 'react-router-dom';
 
 export default function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </ToastProvider>
+    <BrowserRouter>
+      <ToastProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ToastProvider>
+    </BrowserRouter>
   );
 }

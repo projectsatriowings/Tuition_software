@@ -1,4 +1,7 @@
+import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useEffect, useState, useRef } from 'react';
+import { AudioWavePlayer } from '../components/AudioWavePlayer';
+import { fixWebmDuration } from '@fix-webm-duration/fix';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -61,6 +64,7 @@ export const MessagingInbox: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
 
@@ -78,6 +82,7 @@ export const MessagingInbox: React.FC = () => {
   useEffect(() => {
     if (selectedConversation?.id) {
       loadMessages(selectedConversation.id);
+      markNotificationEntityAsRead('MESSAGE', selectedConversation.id);
     } else {
       setMessages([]);
     }
@@ -315,6 +320,7 @@ export const MessagingInbox: React.FC = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
+      recordingStartTimeRef.current = Date.now();
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
 
@@ -327,8 +333,15 @@ export const MessagingInbox: React.FC = () => {
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
         if (audioChunksRef.current.length > 0) {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, {
+          const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const durationMs = Math.max(1000, Date.now() - recordingStartTimeRef.current);
+          let finalBlob = rawBlob;
+          try {
+            finalBlob = await fixWebmDuration(rawBlob, durationMs);
+          } catch (fixErr) {
+            console.warn('[WebM Duration Fix]', fixErr);
+          }
+          const audioFile = new File([finalBlob], `voice_note_${Date.now()}.webm`, {
             type: 'audio/webm',
           });
           await handleFileUpload(audioFile);
@@ -703,20 +716,11 @@ export const MessagingInbox: React.FC = () => {
 
                           {/* Voice Note Audio Attachment */}
                           {msg.attachmentType === 'AUDIO' && msg.attachmentUrl && (
-                            <div
-                              className={`p-2.5 rounded-xl flex flex-col gap-1.5 ${
-                                isMe ? 'bg-black/20' : 'bg-[#F7F2EF] border border-[#D7CCC8]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Volume2 className="w-4 h-4 text-[#8D6E63]" />
-                                <span className="font-semibold text-[11px]">Voice Note</span>
-                              </div>
-                              <audio
-                                controls
+                            <div className="w-full max-w-sm">
+                              <AudioWavePlayer
                                 src={msg.attachmentUrl}
-                                className="w-full h-8"
-                                preload="metadata"
+                                title="Voice Note"
+                                className="!p-2.5 !rounded-xl !bg-white/80"
                               />
                             </div>
                           )}
@@ -784,16 +788,30 @@ export const MessagingInbox: React.FC = () => {
 
               {/* Active Voice Recording Bar */}
               {isRecording ? (
-                <div className="p-4 border-t border-[#D7CCC8] bg-rose-50 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2.5">
+                <div className="p-4 border-t border-[#D7CCC8] bg-gradient-to-r from-rose-50 via-white to-rose-50 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2.5 shrink-0">
                     <span className="w-3 h-3 rounded-full bg-rose-600 animate-ping" />
-                    <span className="text-xs font-bold text-rose-800">
-                      Recording Audio... {Math.floor(recordingSeconds / 60)}:
+                    <span className="text-xs font-bold text-rose-800 font-mono">
+                      Recording: {Math.floor(recordingSeconds / 60)}:
                       {String(recordingSeconds % 60).padStart(2, '0')}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  {/* Animated Voice Equalizer Wave */}
+                  <div className="flex items-center gap-1 h-6 flex-1 max-w-xs justify-center px-4">
+                    {[40, 75, 50, 90, 60, 30, 85, 45, 95, 70, 35, 80, 55, 65, 90, 40].map((h, i) => (
+                      <span
+                        key={i}
+                        style={{
+                          height: `${h}%`,
+                          animationDelay: `${(i % 5) * 0.12}s`,
+                        }}
+                        className="w-1 bg-rose-500 rounded-full animate-pulse transition-all"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={cancelRecording}

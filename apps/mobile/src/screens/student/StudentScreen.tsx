@@ -54,6 +54,86 @@ export const StudentScreen: React.FC = () => {
   const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
   const [activeTakingQuiz, setActiveTakingQuiz] = useState<any | null>(null);
 
+
+  const handleNavigateToEntity = async (entityType: string, entityId: string, metadata?: any) => {
+    const eType = String(entityType || '').toUpperCase();
+
+    // Normal navigation sync: mark matching notification as read
+    mobileApiFetch('/notifications/mark-read-by-entity', {
+      method: 'POST',
+      body: { entityType: eType, entityId },
+    }).then((res) => {
+      if (res.success && res.data?.unreadCount !== undefined) {
+        setUnreadNotifCount(res.data.unreadCount);
+      }
+    }).catch(() => {});
+
+    if (eType === 'HOMEWORK') {
+      setActiveTab('academics');
+      const hw = homeworkList.find((h: any) => h.id === entityId);
+      if (hw) {
+        setSubmittingHw(hw);
+      } else {
+        const singleHwRes = await mobileApiFetch(`/homework/${entityId}`);
+        if (singleHwRes.success && singleHwRes.data) {
+          setSubmittingHw(singleHwRes.data);
+        } else {
+          Alert.alert('Content Unavailable', 'This homework assignment is no longer accessible or has been deleted.');
+        }
+      }
+    } else if (eType === 'MATERIAL') {
+      setActiveTab('academics');
+      const mat = materials.find((m: any) => m.id === entityId);
+      if (mat) {
+        setPreviewMaterial(mat);
+      } else {
+        const singleMatRes = await mobileApiFetch(`/materials/${entityId}`);
+        if (singleMatRes.success && singleMatRes.data) {
+          setPreviewMaterial(singleMatRes.data);
+        } else {
+          Alert.alert('Content Unavailable', 'This learning material is no longer accessible or has been deleted.');
+        }
+      }
+    } else if (eType === 'QUIZ') {
+      setActiveTab('academics');
+      const quiz = quizzes.find((q: any) => q.id === entityId);
+      if (quiz) {
+        setActiveTakingQuiz(quiz);
+      } else {
+        const singleQuizRes = await mobileApiFetch(`/quizzes/${entityId}`);
+        if (singleQuizRes.success && singleQuizRes.data) {
+          setActiveTakingQuiz(singleQuizRes.data);
+        } else {
+          Alert.alert('Content Unavailable', 'This quiz is no longer accessible or has been deleted.');
+        }
+      }
+    } else if (eType === 'EXAM') {
+      setActiveTab('academics');
+    } else if (eType === 'ATTENDANCE') {
+      setActiveTab('attendance');
+    } else if (eType === 'FEE') {
+      setActiveTab('overview');
+      if (metadata?.paymentId && feeStatement?.recentPayments) {
+        const p = feeStatement.recentPayments.find((pay: any) => pay.id === metadata.paymentId);
+        if (p) {
+          setSelectedReceipt(p);
+          setShowReceiptModal(true);
+        }
+      }
+    } else if (eType === 'PROGRESS_REPORT') {
+      setActiveTab('academics');
+    }
+  };
+
+  useEffect(() => {
+    const unsub = PushNotificationService.addTapListener((payload) => {
+      if (payload.entityType && payload.entityId) {
+        handleNavigateToEntity(payload.entityType, payload.entityId, payload.metadata);
+      }
+    });
+    return unsub;
+  }, [homeworkList, materials, quizzes, feeStatement]);
+
   const formatKolkataTime = (isoString?: string | null) => {
     if (!isoString) return 'Not available';
     try {
@@ -714,6 +794,7 @@ export const StudentScreen: React.FC = () => {
         visible={showNotificationModal}
         onClose={() => setShowNotificationModal(false)}
         onUnreadCountChange={setUnreadNotifCount}
+        onNavigateToEntity={handleNavigateToEntity}
       />
       <MaterialViewerModal
         visible={!!previewMaterial}

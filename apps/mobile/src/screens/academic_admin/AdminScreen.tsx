@@ -18,6 +18,7 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { NotificationModal } from '../../components/NotificationModal';
 import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
@@ -29,6 +30,8 @@ export const AdminScreen: React.FC = () => {
   const { showToast } = useMobileToast();
 
   const [activeTab, setActiveTab] = useState<'kpi' | 'batches' | 'staff' | 'students' | 'finance' | 'manualPayment'>('kpi');
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -882,6 +885,11 @@ export const AdminScreen: React.FC = () => {
         onClose={() => setShowStaffModal(false)}
         batches={batches}
         onStaffCreated={fetchAdminData}
+      />
+      <NotificationModal
+        visible={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        onUnreadCountChange={setUnreadNotifCount}
       />
     </View>
   );

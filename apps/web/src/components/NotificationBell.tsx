@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { apiFetch } from '../services/api';
+import { verifyNotificationTarget } from '../services/notificationService';
 import {
   Bell,
   CheckCheck,
   CheckCircle2,
   LogOut,
-  Calendar,
   Clock,
-  X,
-  Volume2,
+  BookOpen,
+  FileCheck,
+  HelpCircle,
+  CreditCard,
+  MessageSquare,
+  Award,
 } from 'lucide-react';
 
 interface NotificationItem {
@@ -18,6 +23,10 @@ interface NotificationItem {
   message: string;
   type: string;
   link?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  metadata?: any;
+  studentId?: string | null;
   eventType?: 'CHECK_IN' | 'CHECK_OUT' | null;
   eventTime?: string | null;
   timeFormatted?: string;
@@ -34,6 +43,7 @@ interface NotificationItem {
 
 export const NotificationBell: React.FC = () => {
   const { user } = useAuth();
+  const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -45,7 +55,7 @@ export const NotificationBell: React.FC = () => {
     if (!user) return;
     try {
       setLoading(true);
-      const res = await apiFetch(`/notifications?limit=25${filterUnread ? '&unreadOnly=true' : ''}`);
+      const res = await apiFetch(`/notifications?limit=30${filterUnread ? '&unreadOnly=true' : ''}`);
       if (res.success && res.data) {
         setNotifications(res.data.notifications || []);
         setUnreadCount(res.data.unreadCount || 0);
@@ -78,6 +88,19 @@ export const NotificationBell: React.FC = () => {
             const newNotif = payload.data;
             setNotifications((prev) => [newNotif, ...prev]);
             setUnreadCount((c) => c + 1);
+          } else if (payload.type === 'UNREAD_COUNT_UPDATED') {
+            if (typeof payload.unreadCount === 'number') {
+              setUnreadCount(payload.unreadCount);
+            }
+            if (payload.entityType && payload.entityId) {
+              setNotifications((prev) =>
+                prev.map((n) =>
+                  n.entityType === payload.entityType && n.entityId === payload.entityId
+                    ? { ...n, isRead: true }
+                    : n
+                )
+              );
+            }
           }
         } catch (e) {
           // Ignore parse errors on keepalives
@@ -99,7 +122,7 @@ export const NotificationBell: React.FC = () => {
             setUnreadCount(res.data.unreadCount);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }, 20000);
 
     return () => {
@@ -145,6 +168,198 @@ export const NotificationBell: React.FC = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleNotificationClick = async (notif: NotificationItem) => {
+    // 1. Mark as read immediately on click
+    if (!notif.isRead) {
+      handleMarkAsRead(notif.id);
+    }
+    setIsOpen(false);
+
+    // 2. Target Verification
+    if (notif.entityType && notif.entityId) {
+      try {
+        const verify = await verifyNotificationTarget(notif.entityType, notif.entityId);
+        if (verify && verify.available === false) {
+          toast.error('Content Unavailable: The requested item may have been deleted, unpublished, or is no longer accessible.');
+          return;
+        }
+      } catch {
+        // If verification check fails, proceed with navigation
+      }
+    }
+
+    // 3. Exact Role-Based Deep Linking
+    const role = user?.role;
+    let targetUrl = notif.link || '/';
+
+    if (notif.entityType && notif.entityId) {
+      const eType = notif.entityType.toUpperCase();
+      const eId = notif.entityId;
+
+      if (role === 'PARENT') {
+        const studentParam = notif.studentId ? `&studentId=${notif.studentId}` : '';
+        switch (eType) {
+          case 'HOMEWORK':
+            targetUrl = `/parent_academics?homeworkId=${eId}${studentParam}`;
+            break;
+          case 'MATERIAL':
+            targetUrl = `/parent_academics?materialId=${eId}${studentParam}`;
+            break;
+          case 'EXAM':
+            targetUrl = `/parent_test_results?examId=${eId}${studentParam}`;
+            break;
+          case 'ATTENDANCE':
+            targetUrl = `/parent_attendance${notif.studentId ? `?studentId=${notif.studentId}` : ''}`;
+            break;
+          case 'FEE':
+            targetUrl = `/parent_fees?paymentId=${eId}`;
+            break;
+          case 'MESSAGE':
+            targetUrl = `/parent_communication?conversationId=${eId}`;
+            break;
+          case 'PROGRESS_REPORT':
+            targetUrl = `/parent_academics?reportId=${eId}${studentParam}`;
+            break;
+          default:
+            targetUrl = notif.link || '/parent';
+        }
+      } else if (role === 'STUDENT') {
+        switch (eType) {
+          case 'HOMEWORK':
+            targetUrl = `/homework?homeworkId=${eId}`;
+            break;
+          case 'MATERIAL':
+            targetUrl = `/learning_materials?materialId=${eId}`;
+            break;
+          case 'QUIZ':
+            targetUrl = `/homework?quizId=${eId}`;
+            break;
+          case 'EXAM':
+            targetUrl = `/exams?examId=${eId}`;
+            break;
+          case 'ATTENDANCE':
+            targetUrl = `/attendance`;
+            break;
+          case 'MESSAGE':
+            targetUrl = `/messaging?conversationId=${eId}`;
+            break;
+          case 'PROGRESS_REPORT':
+            targetUrl = `/progress_reviews?reportId=${eId}`;
+            break;
+          default:
+            targetUrl = notif.link || '/';
+        }
+      } else {
+        // STAFF / ACADEMIC_ADMIN / SUPER_ADMIN
+        switch (eType) {
+          case 'HOMEWORK':
+            targetUrl = `/homework?homeworkId=${eId}${notif.metadata?.submissionId ? `&submissionId=${notif.metadata.submissionId}` : ''}`;
+            break;
+          case 'MATERIAL':
+            targetUrl = `/learning_materials?materialId=${eId}`;
+            break;
+          case 'QUIZ':
+            targetUrl = `/homework?quizId=${eId}`;
+            break;
+          case 'EXAM':
+            targetUrl = `/exams?examId=${eId}`;
+            break;
+          case 'ATTENDANCE':
+            targetUrl = `/attendance`;
+            break;
+          case 'FEE':
+            targetUrl = `/fees?paymentId=${eId}`;
+            break;
+          case 'MESSAGE':
+            targetUrl = `/messaging?conversationId=${eId}`;
+            break;
+          case 'PROGRESS_REPORT':
+            targetUrl = `/progress_reviews?reportId=${eId}`;
+            break;
+          default:
+            targetUrl = notif.link || '/';
+        }
+      }
+    }
+
+    // Dispatch tab change event and update browser history
+    const [pathPart, searchPart] = targetUrl.split('?');
+    const tab = pathPart.replace(/^\//, '');
+    const search = searchPart ? `?${searchPart}` : '';
+    window.history.pushState({}, '', targetUrl);
+    window.dispatchEvent(new CustomEvent('tuitionos:tab-change', { detail: { tab, search } }));
+  };
+
+  const getNotificationIcon = (notif: NotificationItem) => {
+    const isCheckIn = notif.eventType === 'CHECK_IN' || notif.title?.includes('Check-in') || notif.title?.includes('Checked In');
+    const isCheckOut = notif.eventType === 'CHECK_OUT' || notif.title?.includes('Check-out') || notif.title?.includes('Checked Out');
+
+    if (isCheckIn) {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-emerald-50 text-emerald-700 border-emerald-200">
+          <CheckCircle2 className="w-4 h-4" />
+        </div>
+      );
+    }
+    if (isCheckOut) {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-amber-50 text-amber-700 border-amber-200">
+          <LogOut className="w-4 h-4" />
+        </div>
+      );
+    }
+
+    const eType = notif.entityType?.toUpperCase();
+    if (eType === 'HOMEWORK') {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-indigo-50 text-indigo-700 border-indigo-200">
+          <FileCheck className="w-4 h-4" />
+        </div>
+      );
+    }
+    if (eType === 'MATERIAL') {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-blue-50 text-blue-700 border-blue-200">
+          <BookOpen className="w-4 h-4" />
+        </div>
+      );
+    }
+    if (eType === 'QUIZ') {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-purple-50 text-purple-700 border-purple-200">
+          <HelpCircle className="w-4 h-4" />
+        </div>
+      );
+    }
+    if (eType === 'EXAM') {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-rose-50 text-rose-700 border-rose-200">
+          <Award className="w-4 h-4" />
+        </div>
+      );
+    }
+    if (eType === 'FEE') {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-emerald-50 text-emerald-700 border-emerald-200">
+          <CreditCard className="w-4 h-4" />
+        </div>
+      );
+    }
+    if (eType === 'MESSAGE') {
+      return (
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-sky-50 text-sky-700 border-sky-200">
+          <MessageSquare className="w-4 h-4" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border bg-[#4E342E]/10 text-[#4E342E] border-[#D7CCC8]">
+        <Bell className="w-4 h-4" />
+      </div>
+    );
   };
 
   if (!user) return null;
@@ -195,21 +410,19 @@ export const NotificationBell: React.FC = () => {
           <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EFEBE9] bg-white text-xs">
             <button
               onClick={() => setFilterUnread(false)}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                !filterUnread
+              className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${!filterUnread
                   ? 'bg-[#4E342E] text-white shadow-xs'
                   : 'text-[#6D4C41] hover:bg-[#F7F2EF]'
-              }`}
+                }`}
             >
               All
             </button>
             <button
               onClick={() => setFilterUnread(true)}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                filterUnread
+              className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${filterUnread
                   ? 'bg-[#4E342E] text-white shadow-xs'
                   : 'text-[#6D4C41] hover:bg-[#F7F2EF]'
-              }`}
+                }`}
             >
               Unread only
             </button>
@@ -230,84 +443,56 @@ export const NotificationBell: React.FC = () => {
                 </p>
               </div>
             ) : (
-              notifications.map((notif) => {
-                const isCheckIn = notif.eventType === 'CHECK_IN' || notif.title?.includes('Check-in') || notif.title?.includes('Checked In');
-                const isCheckOut = notif.eventType === 'CHECK_OUT' || notif.title?.includes('Check-out') || notif.title?.includes('Checked Out');
-
-                return (
-                  <div
-                    key={notif.id}
-                    onClick={() => {
-                      if (!notif.isRead) handleMarkAsRead(notif.id);
-                      setIsOpen(false);
-                      if (notif.link) {
-                        window.location.href = notif.link;
-                      }
-                    }}
-                    className={`p-3.5 hover:bg-[#F7F2EF]/70 transition-colors cursor-pointer flex items-start gap-3 ${
-                      !notif.isRead ? 'bg-[#F7F2EF]/40 font-medium' : 'bg-white'
+              notifications.map((notif) => (
+                <div
+                  key={notif.id}
+                  onClick={() => handleNotificationClick(notif)}
+                  className={`p-3.5 hover:bg-[#F7F2EF]/70 transition-colors cursor-pointer flex items-start gap-3 ${!notif.isRead ? 'bg-[#F7F2EF]/40 font-medium' : 'bg-white'
                     }`}
-                  >
-                    {/* Icon */}
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isCheckIn
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : isCheckOut
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-[#4E342E]/10 text-[#4E342E] border-[#D7CCC8]'
-                      }`}
-                    >
-                      {isCheckIn ? (
-                        <CheckCircle2 className="w-4 h-4" />
-                      ) : isCheckOut ? (
-                        <LogOut className="w-4 h-4" />
-                      ) : (
-                        <Bell className="w-4 h-4" />
+                >
+                  {/* Icon */}
+                  {getNotificationIcon(notif)}
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-[#2D1E18] truncate">
+                        {notif.title}
+                      </span>
+                      {!notif.isRead && (
+                        <span className="w-2 h-2 rounded-full bg-[#B91C1C] shrink-0" />
                       )}
                     </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold text-[#2D1E18] truncate">
-                          {notif.title}
-                        </span>
-                        {!notif.isRead && (
-                          <span className="w-2 h-2 rounded-full bg-[#B91C1C] shrink-0" />
-                        )}
-                      </div>
+                    <p className="text-xs text-[#5D4037] mt-0.5 leading-snug break-words">
+                      {notif.message}
+                    </p>
 
-                      <p className="text-xs text-[#5D4037] mt-0.5 leading-snug break-words">
-                        {notif.message}
-                      </p>
-
-                      <div className="flex items-center gap-2 mt-1.5 text-[10px] text-[#8D6E63]">
-                        <span className="flex items-center gap-1 font-semibold text-[#4E342E]">
-                          <Clock className="w-3 h-3 text-[#6D4C41]" />
-                          {notif.timeFormatted ||
-                            new Intl.DateTimeFormat('en-IN', {
-                              timeZone: 'Asia/Kolkata',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: true,
-                            }).format(new Date(notif.eventTime || notif.createdAt))}
-                        </span>
-                        {notif.student && (
-                          <span>&bull; {notif.student.firstName}</span>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-2 mt-1.5 text-[10px] text-[#8D6E63]">
+                      <span className="flex items-center gap-1 font-semibold text-[#4E342E]">
+                        <Clock className="w-3 h-3 text-[#6D4C41]" />
+                        {notif.timeFormatted ||
+                          new Intl.DateTimeFormat('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                          }).format(new Date(notif.eventTime || notif.createdAt))}
+                      </span>
+                      {notif.student && (
+                        <span>&bull; {notif.student.firstName}</span>
+                      )}
                     </div>
                   </div>
-                );
-              })
+                </div>
+              ))
             )}
           </div>
 
           {/* Footer */}
           <div className="p-2.5 bg-[#F7F2EF]/60 border-t border-[#EFEBE9] text-center text-[10px] text-[#8D6E63] font-medium flex items-center justify-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Real-time in-app attendance notifications active
+            Real-time in-app attendance & academic notifications active
           </div>
         </div>
       )}

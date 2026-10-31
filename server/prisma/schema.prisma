@@ -607,27 +607,29 @@ model SmsNotification {
 }
 
 model Notification {
-  id                String             @id @default(uuid())
-  instituteId       String
-  userId            String
-  role              UserRole
-  title             String
-  message           String
-  type              NotificationType   @default(ATTENDANCE)
-  studentId         String?
-  attendanceEventId String?
-  eventType         AttendanceType?
-  eventTime         DateTime?
-  isRead            Boolean            @default(false)
-  readAt            DateTime?
-  pushStatus        PushDeliveryStatus @default(PENDING)
-  pushError         String?
-  link              String?
-  idempotencyKey    String?            @unique
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-
-  institute       Institute        @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(uuid())
+  instituteId        String
+  userId             String
+  role               UserRole
+  title              String
+  message            String
+  type               NotificationType   @default(ATTENDANCE)
+  studentId          String?
+  attendanceEventId  String?
+  eventType          AttendanceType?
+  eventTime          DateTime?
+  isRead             Boolean            @default(false)
+  readAt             DateTime?
+  pushStatus         PushDeliveryStatus @default(PENDING)
+  pushError          String?
+  link               String?
+  entityType         String?
+  entityId           String?
+  metadata           Json?
+  idempotencyKey     String?            @unique
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  institute          Institute        @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   student         Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   attendanceEvent AttendanceEvent? @relation(fields: [attendanceEventId], references: [id], onDelete: Cascade)
@@ -636,6 +638,7 @@ model Notification {
   @@index([instituteId, createdAt])
   @@index([attendanceEventId])
   @@index([studentId])
+  @@index([entityType, entityId])
 }
 
 model DevicePushToken {
@@ -1058,6 +1061,9 @@ model InAppNotification {
   title       String
   message     String
   link        String?
+  entityType  String?
+  entityId    String?
+  metadata    Json?
   isRead      Boolean   @default(false)
   readAt      DateTime?
   createdAt   DateTime  @default(now())

@@ -148,6 +148,209 @@ export async function markNotificationRead(req: AuthenticatedRequest, res: Respo
 /**
  * Mark all notifications as read for current user
  */
+
+/**
+ * Mark notifications as read for a specific target entity (Normal Navigation Sync)
+ */
+export async function markReadByEntity(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const { entityType, entityId, studentId } = req.body;
+    if (!entityType || !entityId) {
+      return res.status(400).json({ success: false, error: 'entityType and entityId are required' });
+    }
+
+    const now = new Date();
+    const normalizedType = String(entityType).toUpperCase();
+    const normalizedId = String(entityId);
+
+    const whereClause: any = {
+      userId,
+      entityType: normalizedType,
+      entityId: normalizedId,
+      isRead: false,
+    };
+    if (studentId) {
+      whereClause.studentId = String(studentId);
+    }
+
+    const [updatedNotifs, updatedInApps] = await Promise.all([
+      prisma.notification.updateMany({
+        where: whereClause,
+        data: { isRead: true, readAt: now },
+      }),
+      prisma.inAppNotification.updateMany({
+        where: {
+          userId,
+          entityType: normalizedType,
+          entityId: normalizedId,
+          isRead: false,
+          ...(studentId ? { studentId: String(studentId) } : {}),
+        },
+        data: { isRead: true, readAt: now },
+      }),
+    ]);
+
+    const totalMarked = updatedNotifs.count + updatedInApps.count;
+
+    const unreadCount = await prisma.notification.count({
+      where: { userId, isRead: false },
+    });
+
+    // Notify connected SSE sessions about the updated unread count
+    InAppNotificationService.broadcastToUser(userId, {
+      type: 'UNREAD_COUNT_UPDATED',
+      unreadCount,
+      entityType: normalizedType,
+      entityId: normalizedId,
+      markedReadCount: totalMarked,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        markedReadCount: totalMarked,
+        unreadCount,
+      },
+    });
+  } catch (err: any) {
+    console.error('[markReadByEntity Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to mark entity notifications as read' });
+  }
+}
+
+/**
+ * Verify whether a notification target exists and is accessible
+ */
+export async function verifyNotificationTarget(req: AuthenticatedRequest, res: Response) {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const entityType = String(req.query.entityType || '').toUpperCase();
+    const entityId = String(req.query.entityId || '');
+
+    if (!entityType || !entityId) {
+      return res.status(400).json({ success: false, error: 'entityType and entityId query parameters are required' });
+    }
+
+    let isAvailable = false;
+    let details: any = null;
+
+    switch (entityType) {
+      case 'HOMEWORK': {
+        const hw = await prisma.learningMaterial.findUnique({
+          where: { id: entityId },
+          select: { id: true, title: true, isPublished: true, instituteId: true, batchId: true, type: true },
+        });
+        if (hw && hw.isPublished) {
+          isAvailable = true;
+          details = hw;
+        }
+        break;
+      }
+      case 'MATERIAL': {
+        const mat = await prisma.learningMaterial.findUnique({
+          where: { id: entityId },
+          select: { id: true, title: true, isPublished: true, instituteId: true, batchId: true, type: true },
+        });
+        if (mat && mat.isPublished) {
+          isAvailable = true;
+          details = mat;
+        }
+        break;
+      }
+      case 'QUIZ': {
+        const quiz = await prisma.quiz.findUnique({
+          where: { id: entityId },
+          select: { id: true, title: true, isPublished: true, instituteId: true, batchId: true },
+        });
+        if (quiz && quiz.isPublished) {
+          isAvailable = true;
+          details = quiz;
+        }
+        break;
+      }
+      case 'EXAM': {
+        const exam = await prisma.examination.findUnique({
+          where: { id: entityId },
+          select: { id: true, title: true, isPublished: true, status: true, instituteId: true, batchId: true },
+        });
+        if (exam) {
+          isAvailable = true;
+          details = exam;
+        }
+        break;
+      }
+      case 'ATTENDANCE': {
+        const att = await prisma.attendanceEvent.findUnique({
+          where: { id: entityId },
+          select: { id: true, eventType: true, eventTime: true, studentId: true, instituteId: true },
+        });
+        if (att) {
+          isAvailable = true;
+          details = att;
+        }
+        break;
+      }
+      case 'FEE': {
+        const payment = await prisma.payment.findUnique({
+          where: { id: entityId },
+          select: { id: true, amountPaid: true, receiptNumber: true, studentId: true },
+        });
+        if (payment) {
+          isAvailable = true;
+          details = payment;
+        }
+        break;
+      }
+      case 'MESSAGE': {
+        const convo = await prisma.conversation.findUnique({
+          where: { id: entityId },
+          select: { id: true, studentId: true, instituteId: true },
+        });
+        if (convo) {
+          isAvailable = true;
+          details = convo;
+        }
+        break;
+      }
+      case 'PROGRESS_REPORT': {
+        const report = await prisma.progressFeedback.findUnique({
+          where: { id: entityId },
+          select: { id: true, termName: true, studentId: true, instituteId: true },
+        });
+        if (report) {
+          isAvailable = true;
+          details = report;
+        }
+        break;
+      }
+      default:
+        isAvailable = true;
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        available: isAvailable,
+        entityType,
+        entityId,
+        details,
+      },
+    });
+  } catch (err: any) {
+    console.error('[verifyNotificationTarget Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to verify notification target' });
+  }
+}
+
 export async function markAllNotificationsRead(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user?.userId;

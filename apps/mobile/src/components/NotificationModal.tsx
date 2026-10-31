@@ -13,11 +13,15 @@ import {
 import { mobileApiFetch } from '../services/api';
 import { themeTokens } from '@tuition/shared';
 
-interface NotificationItem {
+export interface NotificationItem {
   id: string;
   title: string;
   message: string;
   type: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  metadata?: any;
+  studentId?: string | null;
   eventType?: 'CHECK_IN' | 'CHECK_OUT' | null;
   eventTime?: string | null;
   timeFormatted?: string;
@@ -35,12 +39,14 @@ interface NotificationModalProps {
   visible: boolean;
   onClose: () => void;
   onUnreadCountChange?: (count: number) => void;
+  onNavigateToEntity?: (entityType: string, entityId: string, metadata?: any) => void;
 }
 
 export const NotificationModal: React.FC<NotificationModalProps> = ({
   visible,
   onClose,
   onUnreadCountChange,
+  onNavigateToEntity,
 }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -91,6 +97,20 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     }
   };
 
+  const handleNotificationPress = async (notif: NotificationItem) => {
+    if (!notif.isRead) {
+      handleMarkAsRead(notif.id);
+    }
+    onClose();
+
+    const eType = notif.entityType || (notif.eventType ? 'ATTENDANCE' : notif.type);
+    const eId = notif.entityId || notif.studentId;
+
+    if (eType && eId && onNavigateToEntity) {
+      onNavigateToEntity(eType, eId, notif.metadata);
+    }
+  };
+
   const handleMarkAllAsRead = async () => {
     try {
       await mobileApiFetch('/notifications/mark-all-read', { method: 'POST' });
@@ -117,6 +137,89 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     } catch {
       return '';
     }
+  };
+
+  const renderBadge = (notif: NotificationItem) => {
+    const isCheckIn =
+      notif.eventType === 'CHECK_IN' ||
+      notif.title?.includes('Check-in') ||
+      notif.title?.includes('Checked In');
+    const isCheckOut =
+      notif.eventType === 'CHECK_OUT' ||
+      notif.title?.includes('Check-out') ||
+      notif.title?.includes('Checked Out');
+
+    if (isCheckIn) {
+      return (
+        <View style={[styles.typeBadge, styles.checkInBadge]}>
+          <Text style={[styles.typeBadgeText, styles.checkInBadgeText]}>✓ CHECK-IN</Text>
+        </View>
+      );
+    }
+    if (isCheckOut) {
+      return (
+        <View style={[styles.typeBadge, styles.checkOutBadge]}>
+          <Text style={[styles.typeBadgeText, styles.checkOutBadgeText]}>⇥ CHECK-OUT</Text>
+        </View>
+      );
+    }
+
+    const eType = (notif.entityType || notif.type || '').toUpperCase();
+    if (eType === 'HOMEWORK') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#4338CA' }]}>✎ HOMEWORK</Text>
+        </View>
+      );
+    }
+    if (eType === 'MATERIAL') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#1D4ED8' }]}>📖 MATERIAL</Text>
+        </View>
+      );
+    }
+    if (eType === 'QUIZ') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#FAF5FF', borderColor: '#E9D5FF' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#7E22CE' }]}>❓ QUIZ</Text>
+        </View>
+      );
+    }
+    if (eType === 'EXAM' || eType === 'TEST_RESULT') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#FFF1F2', borderColor: '#FECDD3' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#BE123C' }]}>🏆 EXAM</Text>
+        </View>
+      );
+    }
+    if (eType === 'FEE' || eType === 'FEE_DUE' || eType === 'FEE_PAID') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#047857' }]}>💳 FEE</Text>
+        </View>
+      );
+    }
+    if (eType === 'MESSAGE' || eType === 'NEW_MESSAGE') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#0369A1' }]}>💬 MESSAGE</Text>
+        </View>
+      );
+    }
+    if (eType === 'PROGRESS_REPORT') {
+      return (
+        <View style={[styles.typeBadge, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+          <Text style={[styles.typeBadgeText, { color: '#B45309' }]}>📊 REPORT</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={[styles.typeBadge, styles.generalBadge]}>
+        <Text style={[styles.typeBadgeText, styles.generalBadgeText]}>ℹ ALERT</Text>
+      </View>
+    );
   };
 
   return (
@@ -185,69 +288,40 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                 </Text>
               </View>
             ) : (
-              notifications.map((notif) => {
-                const isCheckIn =
-                  notif.eventType === 'CHECK_IN' ||
-                  notif.title?.includes('Check-in') ||
-                  notif.title?.includes('Checked In');
-                const isCheckOut =
-                  notif.eventType === 'CHECK_OUT' ||
-                  notif.title?.includes('Check-out') ||
-                  notif.title?.includes('Checked Out');
-
-                return (
-                  <TouchableOpacity
-                    key={notif.id}
-                    onPress={() => !notif.isRead && handleMarkAsRead(notif.id)}
-                    style={[styles.card, !notif.isRead && styles.unreadCard]}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.cardHeader}>
-                      <View style={styles.badgeRow}>
-                        <View
-                          style={[
-                            styles.typeBadge,
-                            isCheckIn
-                              ? styles.checkInBadge
-                              : isCheckOut
-                              ? styles.checkOutBadge
-                              : styles.generalBadge,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.typeBadgeText,
-                              isCheckIn
-                                ? styles.checkInBadgeText
-                                : isCheckOut
-                                ? styles.checkOutBadgeText
-                                : styles.generalBadgeText,
-                            ]}
-                          >
-                            {isCheckIn ? '✓ CHECK-IN' : isCheckOut ? '⇥ CHECK-OUT' : 'ℹ ALERT'}
-                          </Text>
-                        </View>
-                        {!notif.isRead && <View style={styles.dot} />}
-                      </View>
-
-                      <Text style={styles.timeText}>
-                        {notif.timeFormatted || formatKolkataTime(notif.eventTime || notif.createdAt)}
-                      </Text>
+              notifications.map((notif) => (
+                <TouchableOpacity
+                  key={notif.id}
+                  onPress={() => handleNotificationPress(notif)}
+                  style={[styles.card, !notif.isRead && styles.unreadCard]}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={styles.badgeRow}>
+                      {renderBadge(notif)}
+                      {!notif.isRead && <View style={styles.dot} />}
                     </View>
 
-                    <Text style={styles.cardTitle}>{notif.title}</Text>
-                    <Text style={styles.cardMessage}>{notif.message}</Text>
+                    <Text style={styles.timeText}>
+                      {notif.timeFormatted || formatKolkataTime(notif.eventTime || notif.createdAt)}
+                    </Text>
+                  </View>
 
-                    {notif.student && (
-                      <View style={styles.studentInfoRow}>
-                        <Text style={styles.studentName}>
-                          Student: {notif.student.firstName} {notif.student.lastName} ({notif.student.admissionNumber})
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })
+                  <Text style={styles.cardTitle}>{notif.title}</Text>
+                  <Text style={styles.cardMessage}>{notif.message}</Text>
+
+                  {notif.student && (
+                    <View style={styles.studentInfoRow}>
+                      <Text style={styles.studentName}>
+                        Student: {notif.student.firstName} {notif.student.lastName} ({notif.student.admissionNumber})
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.tapToOpenRow}>
+                    <Text style={styles.tapToOpenText}>Tap to open content →</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
             )}
           </ScrollView>
         )}
@@ -283,9 +357,9 @@ const styles = StyleSheet.create({
   },
   unreadPill: {
     backgroundColor: '#4E342E',
+    borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 12,
   },
   unreadPillText: {
     color: '#FFFFFF',
@@ -302,13 +376,13 @@ const styles = StyleSheet.create({
   },
   closeBtnText: {
     fontSize: 16,
-    fontWeight: '700',
     color: '#5D4037',
+    fontWeight: '700',
   },
   actionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: '#FFFFFF',
@@ -317,12 +391,12 @@ const styles = StyleSheet.create({
   },
   filterGroup: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   filterChip: {
     paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 20,
     backgroundColor: '#F7F2EF',
   },
   filterChipActive: {
@@ -379,42 +453,35 @@ const styles = StyleSheet.create({
   },
   typeBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   typeBadgeText: {
     fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.3,
   },
   checkInBadge: {
     backgroundColor: '#ECFDF5',
-    borderWidth: 1,
     borderColor: '#A7F3D0',
   },
   checkInBadgeText: {
     color: '#065F46',
-    fontSize: 10,
-    fontWeight: '800',
   },
   checkOutBadge: {
     backgroundColor: '#FFFBEB',
-    borderWidth: 1,
     borderColor: '#FDE68A',
   },
   checkOutBadgeText: {
     color: '#92400E',
-    fontSize: 10,
-    fontWeight: '800',
   },
   generalBadge: {
     backgroundColor: '#F7F2EF',
-    borderWidth: 1,
     borderColor: '#D7CCC8',
   },
   generalBadgeText: {
-    color: '#4E342E',
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#5D4037',
   },
   dot: {
     width: 7,
@@ -434,7 +501,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardMessage: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#5D4037',
     lineHeight: 18,
   },
@@ -442,12 +509,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#EFEBE9',
+    borderTopColor: '#F7F2EF',
   },
   studentName: {
     fontSize: 11,
-    fontWeight: '600',
     color: '#6D4C41',
+    fontWeight: '600',
+  },
+  tapToOpenRow: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  tapToOpenText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4E342E',
   },
   centerBox: {
     flex: 1,
@@ -458,27 +534,27 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 13,
     color: '#8D6E63',
+    fontWeight: '600',
   },
   emptyBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
     paddingVertical: 60,
-    paddingHorizontal: 30,
+    alignItems: 'center',
+    gap: 8,
   },
   emptyIcon: {
     fontSize: 40,
-    marginBottom: 12,
+    color: '#D7CCC8',
+    marginBottom: 8,
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#2D1E18',
-    marginBottom: 4,
+    color: '#5D4037',
   },
   emptySubtitle: {
     fontSize: 12,
     color: '#8D6E63',
     textAlign: 'center',
-    lineHeight: 18,
+    paddingHorizontal: 32,
   },
 });
