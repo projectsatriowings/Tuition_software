@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../../services/api';
 import {
   Bell,
@@ -22,11 +22,12 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [filterUnreadOnly, setFilterUnreadOnly] = useState<boolean>(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch(`/notifications/in-app?unreadOnly=${filterUnreadOnly}`);
+      const res = await apiFetch(`/notifications?limit=50${filterUnreadOnly ? '&unreadOnly=true' : ''}`);
       if (res.success && res.data) {
         setNotifications(res.data.notifications || []);
         setUnreadCount(res.data.unreadCount || 0);
@@ -42,9 +43,61 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
     fetchNotifications();
   }, [filterUnreadOnly]);
 
+  // Real-time SSE listener for parent alerts
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'NOTIFICATION_CREATED' && payload.data) {
+            const newNotif = payload.data;
+            setNotifications((prev) => {
+              if (prev.some((n) => n.id === newNotif.id)) return prev;
+              return [newNotif, ...prev];
+            });
+            setUnreadCount((c) => c + 1);
+          }
+        } catch (e) {
+          // ignore keepalive parse
+        }
+      };
+
+      es.onerror = () => {
+        // SSE error - EventSource automatically attempts reconnection
+      };
+    } catch (err) {
+      console.warn('[ParentNotificationsView] SSE connection error:', err);
+    }
+
+    // Polling fallback every 25 seconds
+    const interval = setInterval(() => {
+      apiFetch(`/notifications/unread-count`).then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadCount(res.data.unreadCount);
+        }
+      }).catch(() => {});
+    }, 25000);
+
+    return () => {
+      clearInterval(interval);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
   const handleMarkAsRead = async (id: string, link?: string | null) => {
     try {
-      await apiFetch(`/notifications/in-app/${id}/read`, { method: 'PATCH' });
+      await apiFetch(`/notifications/${id}/read`, { method: 'PATCH' }).catch(() => {
+        return apiFetch(`/notifications/in-app/${id}/read`, { method: 'PATCH' });
+      });
+
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
       );
@@ -53,8 +106,9 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
       if (link) {
         if (link.includes('fees')) onNavigateTab('fees');
         else if (link.includes('attendance')) onNavigateTab('attendance');
-        else if (link.includes('messaging')) onNavigateTab('communication');
-        else if (link.includes('exams')) onNavigateTab('results');
+        else if (link.includes('messaging') || link.includes('communication')) onNavigateTab('communication');
+        else if (link.includes('exams') || link.includes('results')) onNavigateTab('results');
+        else if (link.includes('academics')) onNavigateTab('academics');
       }
     } catch (err) {
       console.error(err);
@@ -63,7 +117,9 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
 
   const handleMarkAllRead = async () => {
     try {
-      await apiFetch('/notifications/in-app/mark-all-read', { method: 'POST' });
+      await apiFetch('/notifications/read-all', { method: 'PATCH' }).catch(() => {
+        return apiFetch('/notifications/mark-all-read', { method: 'POST' });
+      });
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch (err) {
@@ -112,7 +168,7 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
             <Bell className="w-5 h-5 text-[#6D4C41]" /> In-App Notification Center
           </h2>
           <p className="text-xs text-[#6D4C41] mt-0.5">
-            Attendance alerts, fee reminders, teacher updates, and examination result notifications
+            Real-time attendance alerts, fee reminders, teacher updates, and examination results
           </p>
         </div>
 
@@ -130,7 +186,7 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#4E342E] inline-flex items-center gap-1.5 transition-colors shadow-xs"
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#4E342E] inline-flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
             >
               <CheckCheck className="w-4 h-4" /> Mark All as Read
             </button>
@@ -166,11 +222,11 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <h4 className="text-xs font-bold text-[#2D1E18]">{n.title}</h4>
-                    <span className="text-[10px] text-[#8D6E63] shrink-0">
-                      {formatKolkataTime(n.createdAt)}
+                    <span className="text-[10px] text-[#8D6E63] shrink-0 font-medium">
+                      {n.timeFormatted || formatKolkataTime(n.createdAt)}
                     </span>
                   </div>
-                  <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">{n.message}</p>
+                  <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed font-normal">{n.message}</p>
                   {!n.isRead && (
                     <div className="mt-2 flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-[#4E342E]"></span>

@@ -80,6 +80,35 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({ initialTab = 'dashbo
     loadPortalData();
   }, []);
 
+  // Real-time SSE listener to automatically sync attendance updates & alerts into dashboard
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'ATTENDANCE_RECORDED' || payload.type === 'NOTIFICATION_CREATED') {
+            apiFetch('/parents/my/dashboard-summary').then((res) => {
+              if (res.success && res.data) {
+                setDashboardSummary(res.data);
+              }
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      };
+    } catch (err) {
+      console.warn('[ParentPortal SSE Error]', err);
+    }
+
+    return () => {
+      es?.close();
+    };
+  }, []);
+
   // Fetch student fee statement whenever active child changes
   const loadStudentFeeStatement = async (studentId: string) => {
     try {
