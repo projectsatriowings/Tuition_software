@@ -40,7 +40,7 @@ export const ProgressReviewsManagement: React.FC = () => {
   const isStaffOrAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ACADEMIC_ADMIN' || user?.role === 'STAFF';
 
   // Sub-tabs
-  const [activeTab, setActiveTab] = useState<'progress' | 'log-report' | 'inquiries'>('progress');
+  const [activeTab, setActiveTab] = useState<'progress' | 'log-report' | 'parent_inquiries' | 'inquiries'>('progress');
   const [activeFormSection, setActiveFormSection] = useState<'all' | 'target' | 'metrics' | 'remarks'>('all');
   // Enforce role visibility
   useEffect(() => {
@@ -599,6 +599,18 @@ export const ProgressReviewsManagement: React.FC = () => {
             }`}
           >
             <Plus className="w-4 h-4" /> {editingFeedbackId ? 'Edit Progress Report' : 'Log Academic Report'}
+          </button>
+        )}
+        {isStaffOrAdmin && (
+          <button
+            onClick={() => setActiveTab('parent_inquiries')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeTab === 'parent_inquiries'
+                ? 'bg-[#4E342E] text-white shadow-sm'
+                : 'text-[#6D4C41] hover:text-[#2D1E18]'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" /> Parent Feedback & Inquiries
           </button>
         )}
         {!isStudent && (
