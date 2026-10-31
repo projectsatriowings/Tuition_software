@@ -54,6 +54,51 @@ export const ParentScreen: React.FC = () => {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
+
+  const handleNavigateToEntity = async (entityType: string, entityId: string, metadata?: any) => {
+    const eType = String(entityType || '').toUpperCase();
+
+    // Normal navigation sync: mark matching notification as read
+    mobileApiFetch('/notifications/mark-read-by-entity', {
+      method: 'POST',
+      body: { entityType: eType, entityId },
+    }).then((res) => {
+      if (res.success && res.data?.unreadCount !== undefined) {
+        setUnreadNotifCount(res.data.unreadCount);
+      }
+    }).catch(() => {});
+
+    if (eType === 'ATTENDANCE') {
+      setActiveTab('children');
+    } else if (eType === 'EXAM' || eType === 'TEST_RESULT') {
+      setActiveTab('academics');
+    } else if (eType === 'FEE' || eType === 'FEE_DUE' || eType === 'FEE_PAID') {
+      setActiveTab('fees');
+      if (metadata?.paymentId && childStatement?.recentPayments) {
+        const p = childStatement.recentPayments.find((pay: any) => pay.id === metadata.paymentId);
+        if (p) {
+          setSelectedReceipt(p);
+          setShowReceiptModal(true);
+        }
+      }
+    } else if (eType === 'MESSAGE' || eType === 'NEW_MESSAGE') {
+      setActiveTab('messages');
+    } else if (eType === 'PROGRESS_REPORT') {
+      setActiveTab('reviews');
+    } else if (eType === 'HOMEWORK' || eType === 'MATERIAL') {
+      setActiveTab('academics');
+    }
+  };
+
+  useEffect(() => {
+    const unsub = PushNotificationService.addTapListener((payload) => {
+      if (payload.entityType && payload.entityId) {
+        handleNavigateToEntity(payload.entityType, payload.entityId, payload.metadata);
+      }
+    });
+    return unsub;
+  }, [childStatement]);
+
   const formatKolkataTime = (isoString?: string | null) => {
     if (!isoString) return 'Not available';
     try {
@@ -880,6 +925,7 @@ export const ParentScreen: React.FC = () => {
         visible={showNotificationModal}
         onClose={() => setShowNotificationModal(false)}
         onUnreadCountChange={setUnreadNotifCount}
+        onNavigateToEntity={handleNavigateToEntity}
       />
     </View>
   );

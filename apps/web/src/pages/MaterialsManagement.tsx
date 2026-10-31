@@ -1,4 +1,8 @@
+import { markNotificationEntityAsRead } from '../services/notificationService';
 import { MaterialViewerModal } from '../components/MaterialViewerModal';
+import { AudioWavePlayer } from '../components/AudioWavePlayer';
+import { LiveAudioVisualizer } from '../components/LiveAudioVisualizer';
+import { fixWebmDuration } from '@fix-webm-duration/fix';
 import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch, getMaterialDownloadUrl, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -70,6 +74,8 @@ export const MaterialsManagement: React.FC = () => {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<any>(null);
 
@@ -96,21 +102,34 @@ export const MaterialsManagement: React.FC = () => {
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      recordingStartTimeRef.current = Date.now();
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
+      mediaRecorder.onstop = async () => {
+        const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const durationMs = Math.max(1000, Date.now() - recordingStartTimeRef.current);
+        let finalBlob = rawBlob;
+        try {
+          finalBlob = await fixWebmDuration(rawBlob, durationMs);
+        } catch (fixErr) {
+          console.warn('[WebM Duration Fix]', fixErr);
+        }
+
+        const audioUrl = URL.createObjectURL(finalBlob);
         setRecordedAudioUrl(audioUrl);
-        const recordedFile = new File([audioBlob], `voice-lesson-${Date.now()}.webm`, { type: 'audio/webm' });
+        const recordedFile = new File([finalBlob], `voice-lesson-${Date.now()}.webm`, { type: 'audio/webm' });
         setFile(recordedFile);
-        stream.getTracks().forEach((track) => track.stop());
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
       };
 
       mediaRecorder.start(250);
@@ -139,6 +158,10 @@ export const MaterialsManagement: React.FC = () => {
   function discardRecording() {
     if (recordedAudioUrl) {
       URL.revokeObjectURL(recordedAudioUrl);
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
     }
     setRecordedAudioUrl(null);
     setRecordingDuration(0);
@@ -454,28 +477,29 @@ export const MaterialsManagement: React.FC = () => {
           {filteredMaterials.map((mat) => (
             <div
               key={mat.id}
-              className={`p-5 rounded-2xl bg-white border shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
-                !mat.isPublished ? 'border-amber-300 bg-amber-50/15' : 'border-[#D7CCC8]'
+              className={`group rounded-2xl bg-white border transition-all duration-200 hover:shadow-lg flex flex-col justify-between overflow-hidden ${
+                !mat.isPublished ? 'border-amber-300/80 bg-amber-50/10' : 'border-[#D7CCC8]/80 hover:border-[#BCAAA4]'
               }`}
             >
-              <div className="space-y-3">
-                {/* Header: Icon, Type & Status Badge (Left), Quick Action Buttons (Right) */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9] shrink-0 text-[#4E342E]">
+              {/* Card Main Body */}
+              <div className="p-5 space-y-3.5">
+                {/* Header: Icon, Type & Status Badges (Left), Quick Action Buttons (Right) */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-[#F7F2EF] border border-[#EFEBE9] flex items-center justify-center shrink-0">
                       {getTypeIcon(mat.type)}
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
-                        {mat.type}
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8]/60 whitespace-nowrap">
+                        {mat.type.replace('_', ' ')}
                       </span>
                       {mat.isPublished ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Published
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Published
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-                          <Clock className="w-3 h-3 text-amber-600" /> Draft
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Draft
                         </span>
                       )}
                     </div>
@@ -486,18 +510,18 @@ export const MaterialsManagement: React.FC = () => {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => handleTogglePublish(mat)}
-                        className={`p-1.5 rounded-lg border text-xs transition-colors ${
+                        className={`p-1.5 rounded-lg border text-xs transition-all active:scale-95 ${
                           mat.isPublished
-                            ? 'border-amber-200 text-amber-800 bg-amber-50 hover:bg-amber-100'
-                            : 'border-emerald-200 text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+                            ? 'border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100'
+                            : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
                         }`}
-                        title={mat.isPublished ? 'Unpublish to Draft' : 'Publish to Students'}
+                        title={mat.isPublished ? 'Unpublish (Save as Draft)' : 'Publish to Students'}
                       >
                         {mat.isPublished ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
                       <button
                         onClick={() => handleDelete(mat.id)}
-                        className="p-1.5 rounded-lg border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
+                        className="p-1.5 rounded-lg border border-rose-200/80 text-rose-600 bg-rose-50 hover:bg-rose-100 hover:border-rose-300 transition-all active:scale-95"
                         title="Delete Material"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -508,64 +532,82 @@ export const MaterialsManagement: React.FC = () => {
 
                 {/* Title & Description */}
                 <div>
-                  <h3 className="font-bold text-[#2D1E18] text-base leading-snug line-clamp-1">{mat.title}</h3>
-                  {mat.description && (
-                    <p className="text-xs text-[#6D4C41] mt-1 line-clamp-2">{mat.description}</p>
+                  <h3
+                    className="font-bold text-[#2D1E18] text-base leading-snug line-clamp-1 group-hover:text-[#4E342E] transition-colors"
+                    title={mat.title}
+                  >
+                    {mat.title}
+                  </h3>
+                  {mat.description ? (
+                    <p className="text-xs text-[#6D4C41] mt-1 line-clamp-2 leading-relaxed">
+                      {mat.description}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-[#A1887F] italic mt-1">No description provided</p>
                   )}
                   {mat.content && (
-                    <p className="text-xs text-[#8D6E63] mt-1 line-clamp-2 font-mono bg-[#F7F2EF] p-2 rounded-lg border border-[#EFEBE9]">
+                    <p className="text-xs text-[#8D6E63] mt-2 line-clamp-2 font-mono bg-[#F7F2EF] p-2.5 rounded-xl border border-[#EFEBE9] leading-relaxed">
                       {mat.content}
                     </p>
                   )}
                 </div>
 
                 {/* Batch & Subject Chips */}
-                <div className="pt-1 flex flex-wrap gap-1.5 text-[11px] text-[#6D4C41]">
-                  <span className="px-2 py-0.5 rounded-md bg-[#F7F2EF] border border-[#D7CCC8] font-medium">
-                    {mat.batch?.name || 'Class Batch'}
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F7F2EF] border border-[#D7CCC8]/70 text-[11px] font-medium text-[#4E342E]">
+                    <Users className="w-3 h-3 text-[#8D6E63]" />
+                    <span>{mat.batch?.name || 'Class Batch'}</span>
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-[#F7F2EF] border border-[#D7CCC8] font-medium">
-                    {mat.subject?.name ? mat.subject.name : 'Entire Batch (All Subjects)'}
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F7F2EF] border border-[#D7CCC8]/70 text-[11px] font-medium text-[#4E342E]">
+                    <BookOpen className="w-3 h-3 text-[#8D6E63]" />
+                    <span>{mat.subject?.name ? mat.subject.name : 'Entire Batch (All Subjects)'}</span>
                   </span>
                 </div>
               </div>
 
-              {/* Card Footer: Date & Analytics Button (Left), Primary Actions (Right) */}
-              <div className="pt-3 border-t border-[#EFEBE9] flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[#8D6E63]">
-                    {new Date(mat.createdAt).toLocaleDateString()}
+              {/* Card Footer: Divided into 2 clean, spacious rows */}
+              <div className="px-5 py-3.5 bg-[#FAF7F5]/80 border-t border-[#EFEBE9] space-y-2.5">
+                {/* Meta Row: Date & Analytics Views */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-[#8D6E63] font-medium">
+                    <Clock className="w-3.5 h-3.5 text-[#A1887F]" />
+                    {new Date(mat.createdAt).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
                   </span>
+
                   {isStaffOrAdmin && (
                     <button
                       onClick={() => openAnalyticsModal(mat)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-medium text-[11px] transition-colors"
-                      title="View student engagement & interaction analytics"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200/90 font-semibold text-[11px] transition-colors whitespace-nowrap active:scale-95"
+                      title="View student engagement analytics"
                     >
-                      <BarChart2 className="w-3 h-3 text-sky-600" />
+                      <BarChart2 className="w-3 h-3 text-sky-600 shrink-0" />
                       <span>{mat._count?.interactions !== undefined ? `${mat._count.interactions} views` : 'Analytics'}</span>
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                {/* Action Buttons Row: Symmetrical, equal width, 100% inside container */}
+                <div className="flex items-center gap-2 pt-0.5">
                   <button
-                    onClick={() => setPreviewMaterial(mat)}
-                    className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] text-[#4E342E] border border-[#D7CCC8] flex items-center gap-1 transition-colors font-medium text-xs"
+                    onClick={() => { setPreviewMaterial(mat); markNotificationEntityAsRead('MATERIAL', mat.id); }}
+                    className={`py-2 px-3 rounded-xl bg-white hover:bg-[#F7F2EF] text-[#4E342E] border border-[#D7CCC8] flex items-center justify-center gap-1.5 font-semibold text-xs transition-all active:scale-95 shadow-sm hover:border-[#BCAAA4] ${
+                      mat.fileUrl ? 'flex-1' : 'w-full'
+                    }`}
                     title="Open in-page modal preview"
                   >
-                    <Eye className="w-3.5 h-3.5" /> Preview
+                    <Eye className="w-3.5 h-3.5 text-[#6D4C41]" />
+                    <span>Preview</span>
                   </button>
 
                   {mat.fileUrl && (
                     <button
                       onClick={() => handleSaveToDevice(mat.id, mat.fileName || `${mat.title}.${(mat.type || 'bin').toLowerCase()}`)}
                       disabled={downloadingId === mat.id}
-                      className="px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white border border-[#4E342E] flex items-center gap-1 transition-colors font-medium text-xs shadow-sm disabled:opacity-50"
+                      className="flex-1 py-2 px-3 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white flex items-center justify-center gap-1.5 font-semibold text-xs shadow transition-all active:scale-95 disabled:opacity-50"
                       title="Download and save directly to your device"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      {downloadingId === mat.id ? 'Saving...' : 'Download'}
+                      <span>{downloadingId === mat.id ? 'Saving...' : 'Download'}</span>
                     </button>
                   )}
                 </div>
@@ -806,7 +848,7 @@ export const MaterialsManagement: React.FC = () => {
                           <button
                             type="button"
                             onClick={startRecording}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs shadow transition-all"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs shadow transition-all active:scale-95"
                           >
                             <Mic className="w-4 h-4 animate-bounce" />
                             Start Recording
@@ -815,23 +857,12 @@ export const MaterialsManagement: React.FC = () => {
                       )}
 
                       {isRecording && (
-                        <div className="text-center py-4 space-y-3">
-                          <div className="flex items-center justify-center gap-3">
-                            <span className="w-3 h-3 rounded-full bg-rose-600 animate-ping"></span>
-                            <span className="text-sm font-bold text-rose-700 font-mono tracking-wider">
-                              Recording: {formatDuration(recordingDuration)}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-[#8D6E63]">Speak clearly into your microphone...</p>
-                          <button
-                            type="button"
-                            onClick={stopRecording}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl font-semibold text-xs shadow transition-all"
-                          >
-                            <Square className="w-3.5 h-3.5 fill-current" />
-                            Stop Recording
-                          </button>
-                        </div>
+                        <LiveAudioVisualizer
+                          stream={mediaStreamRef.current}
+                          duration={recordingDuration}
+                          onStop={stopRecording}
+                          formatDuration={formatDuration}
+                        />
                       )}
 
                       {recordedAudioUrl && !isRecording && (
@@ -844,17 +875,23 @@ export const MaterialsManagement: React.FC = () => {
                             <button
                               type="button"
                               onClick={discardRecording}
-                              className="text-rose-600 hover:underline flex items-center gap-1 font-medium text-xs"
+                              className="text-rose-600 hover:underline flex items-center gap-1 font-medium text-xs transition-colors"
                             >
                               <RotateCcw className="w-3.5 h-3.5" /> Discard & Re-record
                             </button>
                           </div>
-                          <audio controls src={recordedAudioUrl} className="w-full h-10 rounded-xl" />
+
+                          {/* Animated Audio Line & Waveform Player */}
+                          <AudioWavePlayer
+                            src={recordedAudioUrl}
+                            duration={recordingDuration}
+                            title="Recorded Voice Lesson"
+                          />
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div>
+                    <div className="space-y-3">
                       <input
                         type="file"
                         required={!file}
@@ -862,9 +899,22 @@ export const MaterialsManagement: React.FC = () => {
                         onChange={(e) => setFile(e.target.files?.[0] || null)}
                         className="w-full text-xs text-[#6D4C41] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#4E342E] file:text-white hover:file:bg-[#3E2723]"
                       />
-                      <p className="text-[11px] text-[#8D6E63] mt-1">
+                      <p className="text-[11px] text-[#8D6E63]">
                         Upload MP3, WAV, AAC, or M4A audio files up to 25MB.
                       </p>
+
+                      {file && (
+                        <div className="pt-2">
+                          <p className="text-xs font-semibold text-[#4E342E] mb-2 flex items-center gap-1.5">
+                            <Headphones className="w-3.5 h-3.5 text-[#8D6E63]" />
+                            Selected Audio Preview: {file.name}
+                          </p>
+                          <AudioWavePlayer
+                            src={URL.createObjectURL(file)}
+                            title={file.name}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -56,6 +56,11 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
   const containerRef = useRef<HTMLDivElement | null>(null);
   const downloadUrl = material.id ? getMaterialDownloadUrl(material.id) : '';
 
+  const isAudio = material.type === 'AUDIO' || material.type === 'VOICE_NOTE';
+  const isImage = material.type === 'IMAGE' || (material.mimeType && material.mimeType.startsWith('image/'));
+  const isPdf = material.type === 'PDF' || material.mimeType === 'application/pdf' || material.fileName?.toLowerCase().endsWith('.pdf');
+  const isText = material.type === 'TEXT' || (!material.fileUrl && !!material.content);
+
   // Track initial material open (separated from completion)
   useEffect(() => {
     if (material.id) {
@@ -87,11 +92,19 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       const cur = audioRef.current.currentTime;
-      const dur = audioRef.current.duration || 0;
       setCurrentTime(cur);
 
-      if (dur > 0) {
-        const percent = (cur / dur) * 100;
+      const audioDur = audioRef.current.duration;
+      if (isFinite(audioDur) && !isNaN(audioDur) && audioDur > 0 && (!duration || !isFinite(duration) || duration <= 0)) {
+        setDuration(audioDur);
+      }
+
+      const effectiveDur = (duration && isFinite(duration) && duration > 0)
+        ? duration
+        : (isFinite(audioDur) && audioDur > 0 ? audioDur : 0);
+
+      if (effectiveDur > 0) {
+        const percent = (cur / effectiveDur) * 100;
         if (percent >= 95 && !audioCompleted) {
           setAudioCompleted(true);
           apiFetch(`/materials/${material.id}/track`, {
@@ -99,13 +112,44 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
             body: JSON.stringify({
               eventType: 'AUDIO_COMPLETED',
               progressPercent: 100,
-              durationSeconds: dur,
+              durationSeconds: effectiveDur,
             }),
           }).catch(() => {});
         }
       }
     }
   };
+
+  // Resolve true duration for WebM blobs and streaming files where audio.duration is Infinity
+  useEffect(() => {
+    if (!downloadUrl || !isAudio) return;
+
+    let isMounted = true;
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtx) {
+      fetch(downloadUrl)
+        .then((res) => res.arrayBuffer())
+        .then((buf) => {
+          const ctx = new AudioCtx();
+          return ctx.decodeAudioData(buf).then((decoded) => {
+            ctx.close().catch(() => {});
+            return decoded.duration;
+          });
+        })
+        .then((dur) => {
+          if (isMounted && dur && isFinite(dur) && dur > 0) {
+            setDuration(dur);
+          }
+        })
+        .catch((err) => {
+          console.warn('[AudioContext Decode Duration Fallback]', err);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [downloadUrl, isAudio]);
 
   const togglePlay = () => {
     if (audioRef.current) {
@@ -136,7 +180,7 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
   };
 
   const formatSeconds = (sec: number) => {
-    if (isNaN(sec) || sec < 0) return '0:00';
+    if (!sec || !isFinite(sec) || isNaN(sec) || sec <= 0) return '0:00';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -148,11 +192,6 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
-
-  const isAudio = material.type === 'AUDIO' || material.type === 'VOICE_NOTE';
-  const isImage = material.type === 'IMAGE' || (material.mimeType && material.mimeType.startsWith('image/'));
-  const isPdf = material.type === 'PDF' || material.mimeType === 'application/pdf' || material.fileName?.toLowerCase().endsWith('.pdf');
-  const isText = material.type === 'TEXT' || (!material.fileUrl && !!material.content);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-sm animate-fade-in">
@@ -310,7 +349,27 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
                 src={downloadUrl}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={(e) => {
-                  setDuration(e.currentTarget.duration);
+                  const el = e.currentTarget;
+                  const audioDur = el.duration;
+                  if (isFinite(audioDur) && !isNaN(audioDur) && audioDur > 0) {
+                    setDuration(audioDur);
+                  } else {
+                    // Chromium seek-to-end fallback for WebM Infinity duration
+                    const onSeeked = () => {
+                      el.removeEventListener('seeked', onSeeked);
+                      const computedDur = isFinite(el.duration) && el.duration > 0
+                        ? el.duration
+                        : el.currentTime;
+                      if (isFinite(computedDur) && computedDur > 0) {
+                        setDuration(computedDur);
+                      }
+                      el.currentTime = 0;
+                    };
+                    el.addEventListener('seeked', onSeeked);
+                    try {
+                      el.currentTime = 1e101;
+                    } catch (_) {}
+                  }
                   setLoading(false);
                 }}
                 onEnded={() => {
@@ -327,21 +386,78 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({ materi
                 }}
               />
 
-              {/* Scrubber */}
-              <div className="space-y-1.5">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  value={currentTime}
-                  onChange={handleSeek}
-                  className="w-full accent-[#4E342E] cursor-pointer"
-                />
-                <div className="flex justify-between text-xs font-mono text-[#8D6E63]">
-                  <span>{formatSeconds(currentTime)}</span>
-                  <span>{formatSeconds(duration)}</span>
-                </div>
-              </div>
+              {/* Scrubber with Animated Audio Waveform Line */}
+              {(() => {
+                const safeDuration = (duration && isFinite(duration) && duration > 0)
+                  ? duration
+                  : (audioRef.current && isFinite(audioRef.current.duration) && audioRef.current.duration > 0)
+                  ? audioRef.current.duration
+                  : Math.max(currentTime, 1);
+
+                const progressPercent = safeDuration > 0
+                  ? Math.min(100, Math.max(0, (currentTime / safeDuration) * 100))
+                  : 0;
+
+                return (
+                  <div className="space-y-2">
+                    <div
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        const newTime = ratio * safeDuration;
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = newTime;
+                          setCurrentTime(newTime);
+                        }
+                      }}
+                      className="group relative h-12 flex flex-col justify-center cursor-pointer p-1 rounded-xl hover:bg-[#F7F2EF] transition-colors"
+                    >
+                      {/* Waveform Bars */}
+                      <div className="w-full h-8 flex items-center justify-between gap-[3px] pointer-events-none px-1">
+                        {[
+                          0.25, 0.4, 0.6, 0.8, 0.45, 0.9, 0.75, 0.5, 0.85, 0.65,
+                          0.35, 0.7, 0.95, 0.8, 0.4, 0.6, 0.85, 0.7, 0.5, 0.9,
+                          0.65, 0.45, 0.8, 0.95, 0.7, 0.4, 0.65, 0.8, 0.55, 0.35,
+                          0.6, 0.75, 0.45, 0.3
+                        ].map((barHeight, idx) => {
+                          const barPercent = (idx / 33) * 100;
+                          const isPassed = barPercent <= progressPercent;
+                          return (
+                            <div key={idx} className="flex-1 flex items-center justify-center h-full">
+                              <span
+                                style={{
+                                  height: `${Math.round(barHeight * 100)}%`,
+                                  animationDelay: isPlaying ? `${(idx % 6) * 0.12}s` : '0s',
+                                }}
+                                className={`w-full max-w-[4px] rounded-full transition-all duration-150 ${
+                                  isPassed
+                                    ? 'bg-[#4E342E]'
+                                    : 'bg-[#D7CCC8]/60 group-hover:bg-[#BCAAA4]'
+                                }`}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Audio Line Track */}
+                      <div className="relative w-full h-1.5 rounded-full bg-[#EFEBE9] mt-1 pointer-events-none">
+                        <div
+                          style={{ width: `${progressPercent}%` }}
+                          className="absolute left-0 top-0 bottom-0 rounded-full bg-[#4E342E]"
+                        >
+                          <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#4E342E] shadow-sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between text-xs font-mono text-[#8D6E63] px-1">
+                      <span>{formatSeconds(currentTime)}</span>
+                      <span>{formatSeconds(duration && isFinite(duration) && duration > 0 ? duration : (safeDuration > 1 ? safeDuration : 0))}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Controls */}
               <div className="flex items-center justify-center gap-4">

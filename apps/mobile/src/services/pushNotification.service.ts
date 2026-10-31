@@ -4,7 +4,52 @@ import { Platform } from 'react-native';
 
 const DEVICE_PUSH_TOKEN_KEY = 'tuition_mobile_device_push_token';
 
+export interface NotificationPayload {
+  notificationId?: string;
+  entityType?: string;
+  entityId?: string;
+  studentId?: string;
+  metadata?: any;
+  link?: string;
+}
+
+type NotificationTapHandler = (payload: NotificationPayload) => void;
+const tapListeners = new Set<NotificationTapHandler>();
+let pendingColdStartPayload: NotificationPayload | null = null;
+
 export class PushNotificationService {
+  /**
+   * Register a tap listener for notifications
+   */
+  static addTapListener(listener: NotificationTapHandler): () => void {
+    tapListeners.add(listener);
+    if (pendingColdStartPayload) {
+      const payload = pendingColdStartPayload;
+      pendingColdStartPayload = null;
+      setTimeout(() => listener(payload), 50);
+    }
+    return () => {
+      tapListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Dispatch a notification tap event (called from notification response listeners or cold start)
+   */
+  static dispatchNotificationTap(payload: NotificationPayload): void {
+    if (tapListeners.size === 0) {
+      pendingColdStartPayload = payload;
+    } else {
+      tapListeners.forEach((listener) => {
+        try {
+          listener(payload);
+        } catch (e) {
+          console.warn('[PushNotificationService] Error executing tap listener:', e);
+        }
+      });
+    }
+  }
+
   /**
    * Get or generate a persistent device token for push notification routing
    */

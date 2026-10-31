@@ -1,6 +1,8 @@
+import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useEffect, useState } from 'react';
 import { apiFetch, getMaterialDownloadUrl } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import {
   Award,
   Calendar,
@@ -22,11 +24,13 @@ import {
   Filter,
   CheckCircle2,
   Sparkles,
+  BookOpen,
 } from 'lucide-react';
 import { MaterialViewerModal } from '../components/MaterialViewerModal';
 
 export const ExaminationsManagement: React.FC = () => {
   const { user } = useAuth();
+  const toast = useToast();
   const isStaffOrAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ACADEMIC_ADMIN' || user?.role === 'STAFF';
   const isStudent = user?.role === 'STUDENT';
   const isParent = user?.role === 'PARENT';
@@ -117,7 +121,7 @@ export const ExaminationsManagement: React.FC = () => {
   async function handleCreateExam(e: React.FormEvent) {
     e.preventDefault();
     if (Number(passingMarks) > Number(totalMarks)) {
-      alert('Passing marks cannot exceed maximum marks.');
+      toast.warning('Passing marks cannot exceed maximum marks.');
       return;
     }
 
@@ -147,12 +151,13 @@ export const ExaminationsManagement: React.FC = () => {
       });
 
       if (res.success) {
+        toast.success('Examination scheduled successfully!');
         setShowCreateModal(false);
         resetForm();
         loadExams();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to schedule exam');
+      toast.error(err.message || 'Failed to schedule exam');
     } finally {
       setSubmitting(false);
     }
@@ -224,7 +229,7 @@ export const ExaminationsManagement: React.FC = () => {
         });
 
       if (marksPayload.length === 0) {
-        alert('Please enter marks or select Absent for at least one student.');
+        toast.warning('Please enter marks or select Absent for at least one student.');
         return;
       }
 
@@ -234,12 +239,12 @@ export const ExaminationsManagement: React.FC = () => {
       });
 
       if (res.success) {
-        alert(res.message || 'Marks saved successfully');
+        toast.success(res.message || (asDraft ? 'Marks saved as draft.' : 'Marks submitted successfully.'));
         openMarksEntry(selectedExamForMarks);
         loadExams();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to save marks');
+      toast.error(err.message || 'Failed to save marks');
     } finally {
       setSavingMarks(false);
     }
@@ -257,14 +262,14 @@ export const ExaminationsManagement: React.FC = () => {
         method: 'PATCH',
       });
       if (res.success) {
-        alert(res.message || 'Results published successfully!');
+        toast.success(res.message || 'Results published successfully!');
         if (selectedExamForMarks?.id === exam.id) {
           setSelectedExamForMarks(null);
         }
         loadExams();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to publish results');
+      toast.error(err.message || 'Failed to publish results');
     } finally {
       setPublishingResults(false);
     }
@@ -276,11 +281,11 @@ export const ExaminationsManagement: React.FC = () => {
         method: 'PATCH',
       });
       if (res.success) {
-        alert('Exam schedule published. Notifications sent to students & parents.');
+        toast.success('Exam schedule published! Notifications sent to students & parents.');
         loadExams();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to publish schedule');
+      toast.error(err.message || 'Failed to publish schedule');
     }
   }
 
@@ -289,10 +294,11 @@ export const ExaminationsManagement: React.FC = () => {
     try {
       const res = await apiFetch(`/exams/${examId}`, { method: 'DELETE' });
       if (res.success) {
+        toast.success('Exam deleted successfully.');
         loadExams();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to delete exam');
+      toast.error(err.message || 'Failed to delete exam');
     }
   }
 
@@ -446,84 +452,128 @@ export const ExaminationsManagement: React.FC = () => {
             return (
               <div
                 key={ex.id}
-                className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"
+                className="group rounded-2xl bg-white border border-[#D7CCC8]/80 hover:border-[#BCAAA4] transition-all duration-200 hover:shadow-lg flex flex-col justify-between overflow-hidden"
               >
-                <div className="space-y-3">
-                  {/* Status Badges */}
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4]">
-                      {ex.examType}
-                    </span>
+                {/* Main Card Content */}
+                <div className="p-5 space-y-3.5">
+                  {/* Header: Exam Type & Status Badges (Left), Quick Action Icons (Right) */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8]/60 whitespace-nowrap">
+                        {ex.examType?.replace('_', ' ') || 'EXAM'}
+                      </span>
 
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        isResultsPub
-                          ? 'bg-purple-100 text-purple-900 border border-purple-300'
-                          : isSchedPub
-                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                          : 'bg-amber-100 text-amber-900 border border-amber-300'
-                      }`}
-                    >
-                      {isResultsPub ? 'Results Published' : isSchedPub ? 'Scheduled' : 'Draft'}
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="font-bold text-[#2D1E18] text-base leading-snug">{ex.title}</h3>
-                    <div className="text-xs text-[#6D4C41] mt-1 flex items-center gap-1.5 flex-wrap">
-                      <span className="font-semibold text-[#2D1E18]">{ex.subject?.name}</span>
-                      <span>&bull;</span>
-                      <span>{ex.batch?.name}</span>
-                    </div>
-                  </div>
-
-                  {ex.description && (
-                    <p className="text-xs text-[#6D4C41] line-clamp-2 italic">{ex.description}</p>
-                  )}
-
-                  {/* Marks & Date Info Grid */}
-                  <div className="pt-2 grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
-                      <span className="text-[10px] text-[#8D6E63] block uppercase font-semibold">Max Marks</span>
-                      <strong className="text-[#2D1E18] font-mono text-sm">{ex.totalMarks}</strong>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
-                      <span className="text-[10px] text-[#8D6E63] block uppercase font-semibold">Pass Marks</span>
-                      <strong className="text-emerald-800 font-mono text-sm">{ex.passingMarks}</strong>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5 pt-1 text-xs text-[#6D4C41]">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <Calendar className="w-3.5 h-3.5 text-[#8D6E63]" />
-                      <span>{formatExamDate(ex.examDate)}</span>
+                      {isResultsPub ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Results Published
+                        </span>
+                      ) : isSchedPub ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-500" /> Scheduled
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Draft
+                        </span>
+                      )}
                     </div>
 
-                    {(ex.startTime || ex.endTime) && (
-                      <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#8D6E63]">
-                        <Clock className="w-3 h-3 text-[#8D6E63]" />
-                        <span>{ex.startTime || 'Start'} &ndash; {ex.endTime || 'End'}</span>
+                    {/* Staff Quick Action Icons */}
+                    {isStaffOrAdmin && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => openClassAnalytics(ex)}
+                          className="p-1.5 rounded-lg border border-[#EFEBE9] bg-[#FAF7F5] hover:bg-[#F7F2EF] text-[#6D4C41] hover:text-[#2D1E18] transition-all active:scale-95"
+                          title="View Class Analytics & Performance Breakdown"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteExam(ex.id)}
+                          className="p-1.5 rounded-lg border border-rose-200/80 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:border-rose-300 transition-all active:scale-95"
+                          title="Delete Examination"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     )}
                   </div>
 
-                  {/* Attachment Preview Link if available */}
-                  {ex.fileUrl && (
-                    <button
-                      onClick={() => setPreviewMaterial({
-                        id: ex.id,
-                        title: `${ex.title} - Attachment`,
-                        fileUrl: ex.fileUrl,
-                        fileName: ex.fileName,
-                        type: 'DOCUMENT',
-                        subject: ex.subject,
-                        batch: ex.batch,
-                      })}
-                      className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:underline font-semibold"
+                  {/* Title & Batch/Subject Chips */}
+                  <div>
+                    <h3
+                      className="font-bold text-[#2D1E18] text-base leading-snug line-clamp-1 group-hover:text-[#4E342E] transition-colors"
+                      title={ex.title}
                     >
-                      <Eye className="w-3.5 h-3.5" /> View Question Paper / Syllabus
-                    </button>
-                  )}
+                      {ex.title}
+                    </h3>
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F7F2EF] border border-[#D7CCC8]/70 text-[11px] font-medium text-[#4E342E]">
+                        <BookOpen className="w-3 h-3 text-[#8D6E63]" />
+                        <span>{ex.subject?.name || 'Subject'}</span>
+                      </span>
+
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F7F2EF] border border-[#D7CCC8]/70 text-[11px] font-medium text-[#4E342E]">
+                        <Users className="w-3 h-3 text-[#8D6E63]" />
+                        <span>{ex.batch?.name || 'Class Batch'}</span>
+                      </span>
+                    </div>
+
+                    {ex.description && (
+                      <p className="text-xs text-[#6D4C41] mt-2 line-clamp-2 leading-relaxed">
+                        {ex.description}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Marks Info Cards */}
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-0.5">
+                    <div className="p-2.5 rounded-xl bg-[#FAF7F5] border border-[#EFEBE9] flex items-center justify-between">
+                      <span className="text-[10px] text-[#8D6E63] uppercase font-bold tracking-wider">Max Marks</span>
+                      <strong className="text-[#2D1E18] font-mono text-sm">{ex.totalMarks}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-[#FAF7F5] border border-[#EFEBE9] flex items-center justify-between">
+                      <span className="text-[10px] text-[#8D6E63] uppercase font-bold tracking-wider">Pass Marks</span>
+                      <strong className="text-emerald-700 font-mono text-sm">{ex.passingMarks}</strong>
+                    </div>
+                  </div>
+
+                  {/* Date, Time & Question Paper */}
+                  <div className="space-y-2 pt-1 text-xs">
+                    <div className="flex items-center justify-between text-[11px] text-[#6D4C41]">
+                      <span className="inline-flex items-center gap-1.5 font-medium">
+                        <Calendar className="w-3.5 h-3.5 text-[#8D6E63]" />
+                        <span>{formatExamDate(ex.examDate)}</span>
+                      </span>
+
+                      {(ex.startTime || ex.endTime) && (
+                        <span className="inline-flex items-center gap-1.5 font-mono text-[#8D6E63]">
+                          <Clock className="w-3 h-3 text-[#8D6E63]" />
+                          <span>{ex.startTime || 'Start'} &ndash; {ex.endTime || 'End'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {ex.fileUrl && (
+                      <button
+                        onClick={() => setPreviewMaterial({
+                          id: ex.id,
+                          title: `${ex.title} - Question Paper / Syllabus`,
+                          fileUrl: ex.fileUrl,
+                          fileName: ex.fileName,
+                          type: 'DOCUMENT',
+                          subject: ex.subject,
+                          batch: ex.batch,
+                        })}
+                        className="inline-flex items-center gap-1.5 text-xs text-[#4E342E] hover:text-[#2D1E18] hover:underline font-semibold pt-0.5"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#8D6E63]" />
+                        <span>View Question Paper / Syllabus</span>
+                      </button>
+                    )}
+                  </div>
 
                   {/* Student View Score Result Card */}
                   {isStudent && (
@@ -554,54 +604,48 @@ export const ExaminationsManagement: React.FC = () => {
                   )}
                 </div>
 
-                {/* Staff / Admin Actions */}
+                {/* Staff / Admin Actions Footer */}
                 {isStaffOrAdmin && (
-                  <div className="pt-3 border-t border-[#EFEBE9] flex flex-col gap-2 text-xs">
-                    <div className="flex items-center justify-between gap-1.5">
+                  <div className="px-5 py-3.5 bg-[#FAF7F5]/80 border-t border-[#EFEBE9] space-y-2">
+                    {/* Action Row 1: Enter/Review Marks + Publish/Resend Schedule */}
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => openMarksEntry(ex)}
-                        className="px-3 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white font-semibold text-xs shadow-xs"
+                        className={`py-2 px-3 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white flex items-center justify-center gap-1.5 font-semibold text-xs shadow-sm transition-all active:scale-95 whitespace-nowrap ${
+                          isResultsPub ? 'w-full' : 'flex-1'
+                        }`}
+                        title="Enter and grade student examination marks"
                       >
-                        Enter Marks
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>{isResultsPub ? 'Review Marks' : 'Enter Marks'}</span>
                       </button>
 
-                      <div className="flex items-center gap-1.5">
+                      {!isResultsPub && (
                         <button
-                          onClick={() => openClassAnalytics(ex)}
-                          className="p-1.5 rounded-lg border border-[#D7CCC8] hover:bg-[#F7F2EF] text-[#6D4C41]"
-                          title="View Class Analytics"
+                          onClick={() => handlePublishSchedule(ex)}
+                          className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-[#F7F2EF] text-[#4E342E] border border-[#D7CCC8] flex items-center justify-center gap-1.5 font-semibold text-xs transition-all active:scale-95 whitespace-nowrap shadow-sm hover:border-[#BCAAA4]"
+                          title={isSchedPub ? 'Resend schedule notification to students & parents' : 'Publish schedule to students & parents'}
                         >
-                          <TrendingUp className="w-3.5 h-3.5" />
+                          <Send className="w-3.5 h-3.5 text-[#6D4C41]" />
+                          <span>{isSchedPub ? 'Resend Schedule' : 'Publish Schedule'}</span>
                         </button>
-
-                        {!isResultsPub && (
-                          <button
-                            onClick={() => handlePublishSchedule(ex)}
-                            className="px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] hover:bg-[#F7F2EF] text-[#4E342E] font-semibold text-[11px]"
-                            title="Publish exam schedule notifications"
-                          >
-                            {isSchedPub ? 'Resend Sched' : 'Publish Sched'}
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handlePublishResults(ex)}
-                          disabled={publishingResults}
-                          className="px-2.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-semibold text-[11px] shadow-xs"
-                          title="Publish official marks to students and parents"
-                        >
-                          {isResultsPub ? 'Republish Results' : 'Publish Results'}
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteExam(ex.id)}
-                          className="p-1.5 rounded-lg text-rose-700 hover:bg-rose-50"
-                          title="Delete Exam"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      )}
                     </div>
+
+                    {/* Action Row 2: Publish / Republish Official Results */}
+                    <button
+                      onClick={() => handlePublishResults(ex)}
+                      disabled={publishingResults}
+                      className={`w-full py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 font-semibold text-xs transition-all active:scale-95 shadow-sm disabled:opacity-50 whitespace-nowrap ${
+                        isResultsPub
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-[#6D4C41] hover:bg-[#4E342E] text-white'
+                      }`}
+                      title={isResultsPub ? 'Republish verified results with any mark updates' : 'Publish official results to students & parents'}
+                    >
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${isResultsPub ? 'text-emerald-600' : 'text-amber-300'}`} />
+                      <span>{isResultsPub ? 'Republish Official Results' : 'Publish Official Results'}</span>
+                    </button>
                   </div>
                 )}
               </div>

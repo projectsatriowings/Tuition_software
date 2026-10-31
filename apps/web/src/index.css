@@ -182,6 +182,24 @@
   background: #BCAAA4;
 }
 
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes audio-wave {
+  0% {
+    transform: scaleY(0.7);
+  }
+  100% {
+    transform: scaleY(1.15);
+  }
+}
+
 /* Accessibility: Respect Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,

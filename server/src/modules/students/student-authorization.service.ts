@@ -177,7 +177,7 @@ export async function getAuthorizedStudentScope(
     };
   }
 
-  // 3. STAFF: Strict isolation — only students enrolled in batches and subjects assigned to this staff
+  // 3. STAFF: Strict isolation â€” only students enrolled in batches and subjects assigned to this staff
   if (role === 'STAFF') {
     const assignments = await getAuthorizedStaffAssignments(req, prismaClient);
 
@@ -516,5 +516,23 @@ export async function isStaffAssignedToBatchSubject(
   if (assignedSubjects.length === 0) {
     return true;
   }
-  return assignedSubjects.includes(subjectId);
+  if (assignedSubjects.includes(subjectId)) {
+    return true;
+  }
+
+  // Fallback: Check if the staff member is directly allocated to this batch and subject
+  if (assignments.staffProfileId) {
+    const directAllocation = await prismaClient.batchSubject.findFirst({
+      where: {
+        batchId,
+        subjectId,
+        staffProfileId: assignments.staffProfileId,
+      },
+    });
+    if (directAllocation) {
+      return true;
+    }
+  }
+
+  return false;
 }

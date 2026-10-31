@@ -618,6 +618,9 @@ model Notification {
   pushStatus         PushDeliveryStatus @default(PENDING)
   pushError          String?
   link               String?
+  entityType         String?
+  entityId           String?
+  metadata           Json?
   idempotencyKey     String?            @unique
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -631,6 +634,7 @@ model Notification {
   @@index([instituteId, createdAt])
   @@index([attendanceEventId])
   @@index([studentId])
+  @@index([entityType, entityId])
 }
 
 model DevicePushToken {
@@ -1053,6 +1057,9 @@ model InAppNotification {
   title       String
   message     String
   link        String?
+  entityType  String?
+  entityId    String?
+  metadata    Json?
   isRead      Boolean   @default(false)
   readAt      DateTime?
   createdAt   DateTime  @default(now())

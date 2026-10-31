@@ -10,6 +10,8 @@ import {
   listInAppNotifications,
   markInAppNotificationRead,
   markAllInAppNotificationsRead,
+  markReadByEntity,
+  verifyNotificationTarget,
   listSmsNotifications,
   getSmsNotificationById,
   retrySmsNotification,
@@ -31,6 +33,8 @@ router.get('/stream', streamNotifications);
 router.patch('/read-all', markAllNotificationsRead);
 router.post('/mark-all-read', markAllNotificationsRead);
 router.patch('/:id/read', markNotificationRead);
+router.post('/mark-read-by-entity', markReadByEntity);
+router.get('/verify-target', verifyNotificationTarget);
 
 // Device Push Token registration
 router.post('/push-token', registerPushToken);
