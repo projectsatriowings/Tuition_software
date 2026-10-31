@@ -25,6 +25,7 @@ import {
   Edit3,
   Clock,
   Check,
+  CheckCircle2,
   MessageSquare,
   ChevronDown,
   ArrowLeft,
@@ -41,7 +42,6 @@ export const ProgressReviewsManagement: React.FC = () => {
   // Sub-tabs
   const [activeTab, setActiveTab] = useState<'progress' | 'log-report' | 'inquiries'>('progress');
   const [activeFormSection, setActiveFormSection] = useState<'all' | 'target' | 'metrics' | 'remarks'>('all');
-
   // Enforce role visibility
   useEffect(() => {
     if (isStudent && activeTab !== 'progress') {
@@ -54,6 +54,15 @@ export const ProgressReviewsManagement: React.FC = () => {
   // Loading & Error states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Staff Parent Feedback State
+  const [parentFeedbacks, setParentFeedbacks] = useState<any[]>([]);
+  const [feedbackFilterStatus, setFeedbackFilterStatus] = useState<string>('ALL');
+  const [feedbackFilterCategory, setFeedbackFilterCategory] = useState<string>('ALL');
+  const [respondingFeedback, setRespondingFeedback] = useState<any | null>(null);
+  const [staffResponseText, setStaffResponseText] = useState<string>('');
+  const [staffResponseStatus, setStaffResponseStatus] = useState<'RESPONDED' | 'RESOLVED'>('RESPONDED');
+  const [submittingStaffResponse, setSubmittingStaffResponse] = useState<boolean>(false);
 
   // Tab 1: Academic Progress Reports
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
@@ -108,8 +117,99 @@ export const ProgressReviewsManagement: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [activeTab, selectedBatchFilter, selectedSubjectFilter, selectedStatusFilter, selectedPeriodFilter]);
+    if (activeTab === 'parent_inquiries') {
+      loadParentFeedbacks();
+    } else {
+      loadData();
+    }
+  }, [activeTab, selectedBatchFilter, selectedSubjectFilter, selectedStatusFilter, selectedPeriodFilter, feedbackFilterStatus, feedbackFilterCategory]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'FEEDBACK_CREATED' || payload.type === 'FEEDBACK_UPDATED') {
+            if (activeTab === 'parent_inquiries') {
+              loadParentFeedbacks();
+            }
+          }
+        } catch (e) {}
+      };
+    } catch (err) {}
+
+    return () => {
+      if (es) es.close();
+    };
+  }, [activeTab, feedbackFilterStatus, feedbackFilterCategory]);
+
+  async function loadParentFeedbacks() {
+    try {
+      setLoading(true);
+      let queryParams: string[] = [];
+      if (feedbackFilterStatus && feedbackFilterStatus !== 'ALL') {
+        queryParams.push(`status=${feedbackFilterStatus}`);
+      }
+      if (feedbackFilterCategory && feedbackFilterCategory !== 'ALL') {
+        queryParams.push(`category=${encodeURIComponent(feedbackFilterCategory)}`);
+      }
+      const qs = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+      const res = await apiFetch(`/feedback${qs}`);
+      if (res.success && res.data?.feedbacks) {
+        setParentFeedbacks(res.data.feedbacks);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStaffSubmitResponse(e: React.FormEvent) {
+    e.preventDefault();
+    if (!respondingFeedback || !staffResponseText.trim() || submittingStaffResponse) return;
+
+    try {
+      setSubmittingStaffResponse(true);
+      const res = await apiFetch(`/feedback/${respondingFeedback.id}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({
+          response: staffResponseText.trim(),
+          status: staffResponseStatus,
+        }),
+      });
+
+      if (res.success) {
+        setRespondingFeedback(null);
+        setStaffResponseText('');
+        setStaffResponseStatus('RESPONDED');
+        await loadParentFeedbacks();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit response');
+    } finally {
+      setSubmittingStaffResponse(false);
+    }
+  }
+
+  async function handleStaffUpdateStatus(id: string, status: 'OPEN' | 'RESPONDED' | 'RESOLVED') {
+    try {
+      const res = await apiFetch(`/feedback/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (res.success) {
+        await loadParentFeedbacks();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to update feedback status');
+    }
+  }
 
   // Load batch/subject filters and linked children
   async function loadInitialFilters() {
@@ -501,7 +601,6 @@ export const ProgressReviewsManagement: React.FC = () => {
             <Plus className="w-4 h-4" /> {editingFeedbackId ? 'Edit Progress Report' : 'Log Academic Report'}
           </button>
         )}
-
         {!isStudent && (
           <button
             onClick={() => setActiveTab('inquiries')}
@@ -835,6 +934,250 @@ export const ProgressReviewsManagement: React.FC = () => {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Parent Feedback & Inquiries */}
+      {activeTab === 'parent_inquiries' && (
+        <div className="space-y-6">
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-[#D7CCC8] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-[#4E342E] uppercase tracking-wider flex items-center gap-1.5 mr-1">
+                <Filter className="w-3.5 h-3.5" /> Status:
+              </span>
+              {(['ALL', 'OPEN', 'RESPONDED', 'RESOLVED'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setFeedbackFilterStatus(st)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    feedbackFilterStatus === st
+                      ? 'bg-[#4E342E] text-white shadow-xs'
+                      : 'bg-[#F7F2EF] text-[#6D4C41] hover:bg-[#EFEBE9]'
+                  }`}
+                >
+                  {st === 'ALL' ? 'All Feedback' : st === 'OPEN' ? 'Open / Pending' : st}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-[#6D4C41]">Category:</label>
+              <select
+                value={feedbackFilterCategory}
+                onChange={(e) => setFeedbackFilterCategory(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] text-[#2D1E18] text-xs font-semibold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="Academic Progress">Academic Progress</option>
+                <option value="Teaching Method">Teaching Method</option>
+                <option value="Attendance">Attendance</option>
+                <option value="Student Behaviour">Student Behaviour</option>
+                <option value="Homework">Homework</option>
+                <option value="General Feedback">General Feedback</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Feedback List */}
+          {loading ? (
+            <div className="p-12 text-center text-[#8D6E63] text-sm">Loading parent feedback & inquiries...</div>
+          ) : parentFeedbacks.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm space-y-2">
+              <MessageSquare className="w-8 h-8 mx-auto text-[#BCAAA4]" />
+              <p>No parent feedback found matching the selected filters.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {parentFeedbacks.map((fb) => (
+                <div
+                  key={fb.id}
+                  className="bg-white border border-[#D7CCC8] rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EFEBE9] pb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#4E342E]/10 text-[#4E342E] border border-[#D7CCC8]">
+                        {fb.category}
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          fb.status === 'RESOLVED'
+                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                            : fb.status === 'RESPONDED'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}
+                      >
+                        {fb.status === 'OPEN' ? 'Awaiting Response' : fb.status}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#8D6E63]">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>
+                        {new Intl.DateTimeFormat('en-IN', {
+                          timeZone: 'Asia/Kolkata',
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        }).format(new Date(fb.createdAt))}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-[#8D6E63]">Student:</span>{' '}
+                      <strong className="text-[#2D1E18]">
+                        {fb.student?.firstName} {fb.student?.lastName}
+                      </strong>{' '}
+                      {fb.student?.admissionNumber && (
+                        <span className="text-[11px] text-[#6D4C41]">({fb.student.admissionNumber})</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[#8D6E63]">Submitted By:</span>{' '}
+                      <strong className="text-[#2D1E18]">
+                        {fb.parent?.user?.fullName || 'Parent'}
+                      </strong>
+                      {fb.parent?.user?.phone && (
+                        <span className="text-[11px] text-[#6D4C41] ml-1">({fb.parent.user.phone})</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Feedback Text */}
+                  <div className="p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs text-[#2D1E18] leading-relaxed">
+                    "{fb.feedbackText}"
+                  </div>
+
+                  {/* Teacher Response Display */}
+                  {fb.teacherResponse && (
+                    <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900 mb-1">
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                          Faculty Response {fb.respondedBy?.fullName ? `(${fb.respondedBy.fullName})` : ''}:
+                        </span>
+                        {fb.respondedAt && (
+                          <span className="text-[10px] font-normal text-emerald-700">
+                            {new Intl.DateTimeFormat('en-IN', {
+                              timeZone: 'Asia/Kolkata',
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }).format(new Date(fb.respondedAt))}
+                          </span>
+                        )}
+                      </div>
+                      <p className="leading-relaxed">{fb.teacherResponse}</p>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {isStaffOrAdmin && (
+                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2 border-t border-[#EFEBE9]">
+                      {fb.status !== 'RESOLVED' && (
+                        <button
+                          onClick={() => handleStaffUpdateStatus(fb.id, 'RESOLVED')}
+                          className="px-3 py-1.5 rounded-xl border border-[#D7CCC8] text-xs font-semibold text-[#6D4C41] hover:bg-[#F7F2EF] transition-all"
+                        >
+                          Mark as Resolved
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setRespondingFeedback(fb);
+                          setStaffResponseText(fb.teacherResponse || '');
+                          setStaffResponseStatus(fb.status === 'RESOLVED' ? 'RESOLVED' : 'RESPONDED');
+                        }}
+                        className="px-4 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        {fb.teacherResponse ? 'Update Response' : 'Reply to Parent'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Response Modal for Parent Feedback */}
+      {respondingFeedback && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-[#D7CCC8] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
+              <h3 className="text-sm font-bold text-[#2D1E18] flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-[#4E342E]" /> Respond to Parent Feedback
+              </h3>
+              <button
+                onClick={() => setRespondingFeedback(null)}
+                className="p-1 rounded-lg text-[#8D6E63] hover:bg-[#F7F2EF]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs text-[#2D1E18] space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-[#6D4C41] font-semibold">
+                <span>Student: {respondingFeedback.student?.firstName} {respondingFeedback.student?.lastName}</span>
+                <span>Category: {respondingFeedback.category}</span>
+              </div>
+              <p className="italic">"{respondingFeedback.feedbackText}"</p>
+            </div>
+
+            <form onSubmit={handleStaffSubmitResponse} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">Your Response *</label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Provide detailed feedback or resolution actions for the parent..."
+                  value={staffResponseText}
+                  onChange={(e) => setStaffResponseText(e.target.value)}
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl p-3 text-xs text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs">
+                  <label className="text-[11px] text-[#6D4C41] font-semibold">Update Status:</label>
+                  <select
+                    value={staffResponseStatus}
+                    onChange={(e) => setStaffResponseStatus(e.target.value as any)}
+                    className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-2.5 py-1 text-xs font-semibold text-[#2D1E18]"
+                  >
+                    <option value="RESPONDED">Responded</option>
+                    <option value="RESOLVED">Resolved</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRespondingFeedback(null)}
+                    className="px-3 py-1.5 text-xs text-[#6D4C41] hover:bg-[#F7F2EF] rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingStaffResponse}
+                    className="px-4 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {submittingStaffResponse ? 'Saving...' : 'Submit Response'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

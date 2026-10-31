@@ -152,6 +152,9 @@ export class NotificationService {
    * Process pending / queued notifications safely with concurrency lock and backoff
    */
   static async processPendingNotifications() {
+    if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.startsWith('postgres')) {
+      return;
+    }
     if (this.isProcessing) {
       return; // Concurrency protection: already executing an outbox batch
     }

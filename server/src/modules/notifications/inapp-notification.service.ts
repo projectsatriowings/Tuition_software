@@ -1,4 +1,4 @@
-import { UserRole, AttendanceType  } from '@prisma/client';
+import { UserRole, AttendanceType } from '@prisma/client';
 import { prisma } from '../../prisma.js';
 import { Response } from 'express';
 
@@ -56,7 +56,10 @@ export class InAppNotificationService {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-    }).format(date);
+    })
+      .format(date)
+      .replace(/[\u202F\u00A0\s]+/g, ' ')
+      .toUpperCase();
   }
 
   /**
@@ -106,6 +109,9 @@ export class InAppNotificationService {
 
   /**
    * Create Attendance In-App and Push Notifications for verified parent(s) and student
+   * Formats exact required message strings:
+   *   - Check-in: "Your child [Student Name] checked in at [Time]."
+   *   - Check-out: "Your child [Student Name] checked out at [Time]."
    */
   static async createAttendanceNotifications(params: {
     attendanceEventId: string;
@@ -142,19 +148,22 @@ export class InAppNotificationService {
     }
 
     const timeStr = this.formatKolkataTime(eventTime);
-    const title = eventType === 'CHECK_IN' ? 'Student Checked In' : 'Student Checked Out';
-    const message = `${student.firstName} ${eventType === 'CHECK_IN' ? 'checked in' : 'checked out'} at ${timeStr}.`;
+    const title = eventType === 'CHECK_IN' ? 'Student Check-in Alert' : 'Student Check-out Alert';
+    const studentFullName = `${student.firstName} ${student.lastName}`.trim();
 
-    // Collect eligible recipient accounts
-    const recipients: { userId: string; role: UserRole }[] = [];
+    // Collect eligible recipient accounts with role-specific message formatting
+    const recipients: { userId: string; role: UserRole; message: string }[] = [];
 
-    // Linked parents
+    // Linked parents: "Your child [Student Name] checked in at [Time]."
     if (student.parentRelations && student.parentRelations.length > 0) {
       for (const rel of student.parentRelations) {
         if (rel.canReceiveSms !== false && rel.parent?.user?.isActive) {
           recipients.push({
             userId: rel.parent.user.id,
             role: 'PARENT',
+            message: eventType === 'CHECK_IN'
+              ? `Your child ${studentFullName} checked in at ${timeStr}.`
+              : `Your child ${studentFullName} checked out at ${timeStr}.`,
           });
         }
       }
@@ -165,6 +174,9 @@ export class InAppNotificationService {
       recipients.push({
         userId: student.user.id,
         role: 'STUDENT',
+        message: eventType === 'CHECK_IN'
+          ? `You checked in at ${timeStr}.`
+          : `You checked out at ${timeStr}.`,
       });
     }
 
@@ -198,7 +210,7 @@ export class InAppNotificationService {
           userId: recipient.userId,
           role: recipient.role,
           title,
-          message: recipient.role === 'PARENT' ? `Your child (${student.firstName}) ${eventType === 'CHECK_IN' ? 'checked in' : 'checked out'} at ${timeStr}.` : message,
+          message: recipient.message,
           type: 'ATTENDANCE',
           studentId,
           attendanceEventId,
@@ -220,14 +232,30 @@ export class InAppNotificationService {
       // Real-time SSE dispatch to active sessions
       this.broadcastToUser(recipient.userId, {
         type: 'NOTIFICATION_CREATED',
-        data: notif,
+        data: {
+          ...notif,
+          timeFormatted: timeStr,
+        },
+      });
+
+      // Also dispatch dedicated ATTENDANCE_RECORDED event for immediate dashboard live update
+      this.broadcastToUser(recipient.userId, {
+        type: 'ATTENDANCE_RECORDED',
+        data: {
+          studentId,
+          studentName: studentFullName,
+          eventType,
+          eventTime,
+          timeFormatted: timeStr,
+          message: recipient.message,
+        },
       });
 
       // Background push delivery if tokens configured
       if (deviceTokens.length > 0) {
         setTimeout(async () => {
           for (const dt of deviceTokens) {
-            const pushResult = await this.sendPushNotification(dt.token, title, message, {
+            const pushResult = await this.sendPushNotification(dt.token, title, recipient.message, {
               notificationId: notif.id,
               studentId,
               attendanceEventId,
@@ -240,7 +268,7 @@ export class InAppNotificationService {
                 pushStatus: pushResult.status === 'DELIVERED' ? 'DELIVERED' : 'FAILED',
                 pushError: pushResult.error || null,
               },
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }, 50);
       }
@@ -661,6 +689,27 @@ export class InAppNotificationService {
         conversationId,
         notification: notif,
         messageId,
+      });
+
+      this.broadcastToUser(recipientUserId, {
+        type: 'MESSAGE_CREATED',
+        data: {
+          conversationId,
+          message: {
+            id: messageId,
+            conversationId,
+            senderId,
+            body,
+            attachmentType,
+            createdAt: new Date().toISOString(),
+            sender: { fullName: senderName, role: 'STAFF' },
+          },
+        },
+      });
+
+      this.broadcastToUser(recipientUserId, {
+        type: 'NOTIFICATION_CREATED',
+        data: notif,
       });
 
       return notif;

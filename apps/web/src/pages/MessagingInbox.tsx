@@ -42,6 +42,8 @@ export const MessagingInbox: React.FC = () => {
   const [convError, setConvError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
 
+  const eventSourceRef = useRef<EventSource | null>(null);
+
   // Filters & Search
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'UNREAD' | 'READ'>('ALL');
@@ -100,6 +102,47 @@ export const MessagingInbox: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (
+            (payload.type === 'MESSAGE_CREATED' || payload.type === 'NEW_CHAT_MESSAGE') &&
+            payload.data
+          ) {
+            const { conversationId, message } = payload.data;
+            if (selectedConversation && conversationId === selectedConversation.id) {
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === message?.id)) return prev;
+                return [...prev, message];
+              });
+            }
+            loadConversations();
+          } else if (payload.type === 'NOTIFICATION_CREATED') {
+            loadConversations();
+          }
+        } catch (e) {
+          console.warn('[MessagingInbox SSE] parse error:', e);
+        }
+      };
+    } catch (err) {
+      console.warn('[MessagingInbox SSE] connect error:', err);
+    }
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, [selectedConversation?.id]);
 
   async function loadConversations(autoSelectId?: string) {
     try {
@@ -712,9 +755,21 @@ export const MessagingInbox: React.FC = () => {
                         </div>
 
                         {/* Timestamp & read receipt */}
-                        <div className="flex items-center gap-1 text-[10px] text-[#8D6E63] mt-1 px-1 font-mono">
+                        <div className="flex items-center gap-1.5 text-[10px] text-[#8D6E63] mt-1 px-1 font-mono">
                           <span>{formatTime(msg.createdAt)}</span>
-                          {isMe && <CheckCheck className="w-3.5 h-3.5 text-[#6D4C41]" />}
+                          {isMe && (
+                            msg.isReadByRecipient ? (
+                              <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 font-medium" title="Read by recipient">
+                                <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Read</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-0.5 text-[10px] text-[#8D6E63]" title="Delivered">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Delivered</span>
+                              </span>
+                            )
+                          )}
                         </div>
                       </div>
                     );

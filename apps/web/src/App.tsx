@@ -16,6 +16,7 @@ import { StudentPortal } from './pages/StudentPortal';
 import { MaterialsManagement } from './pages/MaterialsManagement';
 import { HomeworkManagement } from './pages/HomeworkManagement';
 import { ExaminationsManagement } from './pages/ExaminationsManagement';
+import { QuestionGenerator } from './pages/QuestionGenerator/QuestionGenerator';
 import { ProgressReviewsManagement } from './pages/ProgressReviewsManagement';
 import { MessagingInbox } from './pages/MessagingInbox';
 import { FeesManagement } from './pages/FeesManagement';
@@ -158,6 +159,8 @@ const AppContent: React.FC = () => {
                 {currentTab === 'homework' && user?.role !== 'ACADEMIC_ADMIN' && <HomeworkManagement />}
 
                 {currentTab === 'exams' && <ExaminationsManagement />}
+
+                {currentTab === 'question_generator' && <QuestionGenerator />}
 
                 {currentTab === 'progress_reviews' && <ProgressReviewsManagement />}
 
