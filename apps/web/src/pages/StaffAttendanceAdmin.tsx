@@ -236,7 +236,9 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
 
       const res = await apiFetch(`/staff-attendance/wfh/admin/authorizations?${params.toString()}`);
       if (res.success && res.data) {
-        setWfhAuthorizations(res.data);
+        setWfhAuthorizations(Array.isArray(res.data) ? res.data : []);
+      } else {
+        setWfhAuthorizations([]);
       }
     } catch (err) {
       console.error('[StaffAttendanceAdmin] Error loading WFH authorizations:', err);

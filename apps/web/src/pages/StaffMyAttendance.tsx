@@ -148,10 +148,13 @@ export const StaffMyAttendance: React.FC = () => {
     try {
       const res = await apiFetch('/staff-attendance/wfh/my-requests');
       if (res.success && res.data) {
-        setMyWfhRequests(res.data);
+        setMyWfhRequests(Array.isArray(res.data) ? res.data : []);
+      } else {
+        setMyWfhRequests([]);
       }
     } catch (err) {
       console.error('[StaffMyAttendance] Fetch my WFH requests error:', err);
+      setMyWfhRequests([]);
     }
   }, []);
 
@@ -161,10 +164,18 @@ export const StaffMyAttendance: React.FC = () => {
       setClassesLoading(true);
       const res = await apiFetch('/staff-attendance/wfh/online-classes');
       if (res.success && res.data) {
-        setOnlineClasses(res.data);
+        const classList = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data.classes)
+          ? res.data.classes
+          : [];
+        setOnlineClasses(classList);
+      } else {
+        setOnlineClasses([]);
       }
     } catch (err) {
       console.error('[StaffMyAttendance] Fetch online classes error:', err);
+      setOnlineClasses([]);
     } finally {
       setClassesLoading(false);
     }
@@ -689,7 +700,7 @@ export const StaffMyAttendance: React.FC = () => {
                 )}
 
                 {/* Show Pending Requests if any */}
-                {myWfhRequests.some((r) => r.status === 'PENDING') && (
+                {Array.isArray(myWfhRequests) && myWfhRequests.some((r) => r.status === 'PENDING') && (
                   <div className="p-2.5 rounded-lg bg-white border border-amber-300 text-xs text-amber-900 space-y-1">
                     <div className="font-bold flex items-center gap-1 text-[11px] text-amber-800">
                       <Clock className="w-3.5 h-3.5" />
@@ -907,7 +918,7 @@ export const StaffMyAttendance: React.FC = () => {
             <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-[#4E342E]" />
             Loading assigned classes...
           </div>
-        ) : onlineClasses.length === 0 ? (
+        ) : (!Array.isArray(onlineClasses) || onlineClasses.length === 0) ? (
           <div className="py-6 text-center text-xs text-[#8D6E63] bg-[#FAF8F5] rounded-xl border border-[#D7CCC8]/60">
             <BookOpen className="w-6 h-6 mx-auto mb-2 text-[#8D6E63] opacity-60" />
             <p className="font-semibold text-[#2D1E18]">No online classes scheduled for today.</p>
@@ -915,7 +926,7 @@ export const StaffMyAttendance: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {onlineClasses.map((c) => {
+            {(Array.isArray(onlineClasses) ? onlineClasses : []).map((c) => {
               const log = c.todayLog;
               const deliveryStatus = log?.status || 'SCHEDULED';
               return (
