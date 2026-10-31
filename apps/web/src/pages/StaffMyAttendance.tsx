@@ -275,10 +275,11 @@ export const StaffMyAttendance: React.FC = () => {
   }, [deviceCoords, institute]);
 
   const isWithinRadius = clientDistance != null && institute ? clientDistance <= institute.geofenceRadius : false;
+  const isSessionFinalized = Boolean(session?.checkOutTime || status === 'CHECKED_OUT');
 
   // Determination of Check-in Capability based on selected mode
   const canCheckIn = useMemo(() => {
-    if (status !== 'NOT_CHECKED_IN' || actionSubmitting) return false;
+    if (status !== 'NOT_CHECKED_IN' || isSessionFinalized || actionSubmitting) return false;
 
     if (attendanceMode === 'WFH') {
       return isWfhAuthorized;
@@ -286,9 +287,11 @@ export const StaffMyAttendance: React.FC = () => {
       // ON_SITE requires GPS and within geofence
       return deviceCoords != null && isWithinRadius;
     }
-  }, [status, actionSubmitting, attendanceMode, isWfhAuthorized, deviceCoords, isWithinRadius]);
+  }, [status, isSessionFinalized, actionSubmitting, attendanceMode, isWfhAuthorized, deviceCoords, isWithinRadius]);
 
-  const canCheckOut = status === 'CHECKED_IN' || status === 'LATE' || status === 'MANUALLY_CORRECTED';
+  const canCheckOut =
+    !isSessionFinalized &&
+    (status === 'CHECKED_IN' || status === 'LATE' || (status === 'MANUALLY_CORRECTED' && Boolean(session?.checkInTime)));
 
   // Elapsed Session Time (Live duration)
   const elapsedTimer = useMemo(() => {
@@ -599,25 +602,28 @@ export const StaffMyAttendance: React.FC = () => {
         <div className="flex items-center justify-between pb-4 border-b border-[#D7CCC8]">
           <span className="text-xs font-bold text-[#8D6E63] uppercase tracking-wider">Today's Attendance Status</span>
           <div>
-            {status === 'CHECKED_IN' && (
+            {isSessionFinalized ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <Check className="w-3.5 h-3.5 text-blue-600" />
+                Work Session Completed ({session?.attendanceMode === 'WFH' ? 'WFH' : 'On-Site'})
+                {status === 'MANUALLY_CORRECTED' && ' (Admin Adjusted)'}
+              </span>
+            ) : status === 'CHECKED_IN' ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 Active Session ({session?.attendanceMode === 'WFH' ? 'WFH' : 'On-Site'})
               </span>
-            )}
-            {status === 'CHECKED_OUT' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                <Check className="w-3.5 h-3.5 text-blue-600" />
-                Completed For Today ({session?.attendanceMode === 'WFH' ? 'WFH' : 'On-Site'})
-              </span>
-            )}
-            {status === 'LATE' && (
+            ) : status === 'LATE' ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                 Checked In (Late)
               </span>
-            )}
-            {status === 'NOT_CHECKED_IN' && (
+            ) : status === 'MANUALLY_CORRECTED' ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                Manually Adjusted by Admin
+              </span>
+            ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-stone-100 text-stone-600 border border-stone-300">
                 Not Checked In
               </span>
@@ -789,7 +795,12 @@ export const StaffMyAttendance: React.FC = () => {
                 </div>
 
                 <div className="pt-2 border-t border-[#D7CCC8]/60 flex items-start gap-2 text-[11px]">
-                  {isWithinRadius ? (
+                  {isSessionFinalized ? (
+                    <span className="text-[#6D4C41] font-medium flex items-center gap-1.5 py-1">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      Attendance finalized for today. Distance to institute: {clientDistance != null ? `${clientDistance}m` : 'N/A'}.
+                    </span>
+                  ) : isWithinRadius ? (
                     <span className="text-emerald-700 font-semibold flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                       Within permitted {institute?.geofenceRadius || 200}m radius ({clientDistance}m away). Ready to record attendance.
@@ -819,7 +830,7 @@ export const StaffMyAttendance: React.FC = () => {
 
         {/* Primary Action Buttons */}
         <div>
-          {status === 'NOT_CHECKED_IN' && (
+          {status === 'NOT_CHECKED_IN' && !isSessionFinalized && (
             <button
               onClick={handleCheckIn}
               disabled={!canCheckIn}
@@ -878,12 +889,18 @@ export const StaffMyAttendance: React.FC = () => {
             </button>
           )}
 
-          {status === 'CHECKED_OUT' && (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center text-xs text-blue-900 space-y-1">
+          {isSessionFinalized && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center text-xs text-blue-900 space-y-1.5">
               <div className="font-bold flex items-center justify-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-blue-600" />
                 Work Session Finalized ({session?.attendanceMode === 'WFH' ? 'Work From Home' : 'On-Site'})
+                {session?.isManuallyCorrected && ' — Manually Corrected'}
               </div>
+              <p className="text-[#6D4C41]">
+                Checked in: <b>{session?.checkInTime ? new Date(session.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</b>
+                {'  •  '}
+                Checked out: <b>{session?.checkOutTime ? new Date(session.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</b>
+              </p>
               <p className="text-[#6D4C41]">
                 Total recorded duration:{' '}
                 <b>
@@ -892,6 +909,11 @@ export const StaffMyAttendance: React.FC = () => {
                     : 'N/A'}
                 </b>
               </p>
+              {session?.correctionReason && (
+                <p className="text-[11px] text-purple-700 italic pt-1 border-t border-blue-200">
+                  Admin Note: {session.correctionReason}
+                </p>
+              )}
             </div>
           )}
         </div>
