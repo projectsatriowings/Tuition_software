@@ -1,3 +1,4 @@
+import { markNotificationEntityAsRead } from '../../services/notificationService';
 import React, { useState } from 'react';
 import { apiFetch } from '../../services/api';
 import {
@@ -41,6 +42,7 @@ export const ParentFeesView: React.FC<ParentFeesViewProps> = ({
   const [paymentSuccessData, setPaymentSuccessData] = useState<any>(null);
 
   const openReceipt = async (paymentId: string) => {
+    markNotificationEntityAsRead('FEE', paymentId);
     try {
       const res = await apiFetch(`/fees/payments/${paymentId}/receipt`);
       if (res.success && res.data?.receipt) {

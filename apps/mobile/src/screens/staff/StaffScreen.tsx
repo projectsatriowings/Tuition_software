@@ -17,6 +17,8 @@ import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { NotificationModal } from '../../components/NotificationModal';
+import { PushNotificationService } from '../../services/pushNotification.service';
 import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
@@ -31,6 +33,8 @@ export const StaffScreen: React.FC = () => {
   const { showToast } = useMobileToast();
 
   const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'exams' | 'materials' | 'messages'>('attendance');
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -164,6 +168,47 @@ export const StaffScreen: React.FC = () => {
     setRefreshing(true);
     fetchStaffData();
   };
+
+  const handleNavigateToEntity = async (entityType: string, entityId: string, metadata?: any) => {
+    const eType = String(entityType || '').toUpperCase();
+
+    mobileApiFetch('/notifications/mark-read-by-entity', {
+      method: 'POST',
+      body: { entityType: eType, entityId },
+    }).then((res) => {
+      if (res.success && res.data?.unreadCount !== undefined) {
+        setUnreadNotifCount(res.data.unreadCount);
+      }
+    }).catch(() => {});
+
+    if (eType === 'HOMEWORK') {
+      setActiveTab('homework');
+    } else if (eType === 'EXAM') {
+      setActiveTab('exams');
+      const exam = examsList.find((e: any) => e.id === entityId);
+      if (exam) {
+        setGradingExam(exam);
+      }
+    } else if (eType === 'MATERIAL') {
+      setActiveTab('materials');
+    } else if (eType === 'MESSAGE') {
+      setActiveTab('messages');
+    } else if (eType === 'PROGRESS_REPORT') {
+      setShowReviewsModal(true);
+    } else if (eType === 'ATTENDANCE') {
+      setActiveTab('attendance');
+    }
+  };
+
+  useEffect(() => {
+    const unsub = PushNotificationService.addTapListener((payload) => {
+      if (payload.entityType && payload.entityId) {
+        handleNavigateToEntity(payload.entityType, payload.entityId, payload.metadata);
+      }
+    });
+    return unsub;
+  }, [examsList]);
+
 
   const handleSelectBatch = (b: any) => {
     setSelectedBatch(b);
@@ -1584,6 +1629,12 @@ export const StaffScreen: React.FC = () => {
         isOpen={!!analyticsMaterial}
         material={analyticsMaterial}
         onClose={() => setAnalyticsMaterial(null)}
+      />
+      <NotificationModal
+        visible={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        onUnreadCountChange={setUnreadNotifCount}
+        onNavigateToEntity={handleNavigateToEntity}
       />
     </View>
   );

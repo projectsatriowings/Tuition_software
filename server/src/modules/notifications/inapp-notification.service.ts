@@ -1,4 +1,4 @@
-import { UserRole, AttendanceType  } from '@prisma/client';
+import { UserRole, AttendanceType } from '@prisma/client';
 import { prisma } from '../../prisma.js';
 import { Response } from 'express';
 
@@ -56,7 +56,10 @@ export class InAppNotificationService {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-    }).format(date);
+    })
+      .format(date)
+      .replace(/[\u202F\u00A0\s]+/g, ' ')
+      .toUpperCase();
   }
 
   /**
@@ -106,6 +109,9 @@ export class InAppNotificationService {
 
   /**
    * Create Attendance In-App and Push Notifications for verified parent(s) and student
+   * Formats exact required message strings:
+   *   - Check-in: "Your child [Student Name] checked in at [Time]."
+   *   - Check-out: "Your child [Student Name] checked out at [Time]."
    */
   static async createAttendanceNotifications(params: {
     attendanceEventId: string;
@@ -142,19 +148,22 @@ export class InAppNotificationService {
     }
 
     const timeStr = this.formatKolkataTime(eventTime);
-    const title = eventType === 'CHECK_IN' ? 'Student Checked In' : 'Student Checked Out';
-    const message = `${student.firstName} ${eventType === 'CHECK_IN' ? 'checked in' : 'checked out'} at ${timeStr}.`;
+    const title = eventType === 'CHECK_IN' ? 'Student Check-in Alert' : 'Student Check-out Alert';
+    const studentFullName = `${student.firstName} ${student.lastName}`.trim();
 
-    // Collect eligible recipient accounts
-    const recipients: { userId: string; role: UserRole }[] = [];
+    // Collect eligible recipient accounts with role-specific message formatting
+    const recipients: { userId: string; role: UserRole; message: string }[] = [];
 
-    // Linked parents
+    // Linked parents: "Your child [Student Name] checked in at [Time]."
     if (student.parentRelations && student.parentRelations.length > 0) {
       for (const rel of student.parentRelations) {
         if (rel.canReceiveSms !== false && rel.parent?.user?.isActive) {
           recipients.push({
             userId: rel.parent.user.id,
             role: 'PARENT',
+            message: eventType === 'CHECK_IN'
+              ? `Your child ${studentFullName} checked in at ${timeStr}.`
+              : `Your child ${studentFullName} checked out at ${timeStr}.`,
           });
         }
       }
@@ -165,6 +174,9 @@ export class InAppNotificationService {
       recipients.push({
         userId: student.user.id,
         role: 'STUDENT',
+        message: eventType === 'CHECK_IN'
+          ? `You checked in at ${timeStr}.`
+          : `You checked out at ${timeStr}.`,
       });
     }
 
@@ -198,7 +210,7 @@ export class InAppNotificationService {
           userId: recipient.userId,
           role: recipient.role,
           title,
-          message: recipient.role === 'PARENT' ? `Your child (${student.firstName}) ${eventType === 'CHECK_IN' ? 'checked in' : 'checked out'} at ${timeStr}.` : message,
+          message: recipient.message,
           type: 'ATTENDANCE',
           studentId,
           attendanceEventId,
@@ -206,6 +218,9 @@ export class InAppNotificationService {
           eventTime,
           isRead: false,
           link: '/attendance',
+          entityType: 'ATTENDANCE',
+          entityId: attendanceEventId,
+          metadata: { attendanceEventId, studentId, eventType, eventTime: eventTime.toISOString() },
           pushStatus,
           pushError,
           idempotencyKey,
@@ -217,14 +232,30 @@ export class InAppNotificationService {
       // Real-time SSE dispatch to active sessions
       this.broadcastToUser(recipient.userId, {
         type: 'NOTIFICATION_CREATED',
-        data: notif,
+        data: {
+          ...notif,
+          timeFormatted: timeStr,
+        },
+      });
+
+      // Also dispatch dedicated ATTENDANCE_RECORDED event for immediate dashboard live update
+      this.broadcastToUser(recipient.userId, {
+        type: 'ATTENDANCE_RECORDED',
+        data: {
+          studentId,
+          studentName: studentFullName,
+          eventType,
+          eventTime,
+          timeFormatted: timeStr,
+          message: recipient.message,
+        },
       });
 
       // Background push delivery if tokens configured
       if (deviceTokens.length > 0) {
         setTimeout(async () => {
           for (const dt of deviceTokens) {
-            const pushResult = await this.sendPushNotification(dt.token, title, message, {
+            const pushResult = await this.sendPushNotification(dt.token, title, recipient.message, {
               notificationId: notif.id,
               studentId,
               attendanceEventId,
@@ -237,7 +268,7 @@ export class InAppNotificationService {
                 pushStatus: pushResult.status === 'DELIVERED' ? 'DELIVERED' : 'FAILED',
                 pushError: pushResult.error || null,
               },
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }, 50);
       }
@@ -313,7 +344,10 @@ export class InAppNotificationService {
               message,
               type: 'ACADEMIC',
               studentId: student.id,
-              link: '/exams',
+              entityType: 'EXAM',
+              entityId: exam.id,
+              metadata: { examId: exam.id, batchId: exam.batchId, subjectId: exam.subjectId },
+              link: `/exams?examId=${exam.id}`,
               idempotencyKey,
             },
           });
@@ -337,7 +371,10 @@ export class InAppNotificationService {
                 message: `${student.firstName}'s ${exam.title} (${exam.subject.name}) is scheduled on ${examDateStr}${timeStr}.`,
                 type: 'ACADEMIC',
                 studentId: student.id,
-                link: '/exams',
+                entityType: 'EXAM',
+                entityId: exam.id,
+                metadata: { examId: exam.id, studentId: student.id, batchId: exam.batchId },
+                link: `/exams?examId=${exam.id}&studentId=${student.id}`,
                 idempotencyKey,
               },
             });
@@ -406,7 +443,10 @@ export class InAppNotificationService {
               message: studentMsg,
               type: 'ACADEMIC',
               studentId: student.id,
-              link: '/exams',
+              entityType: 'EXAM',
+              entityId: exam.id,
+              metadata: { examId: exam.id, marksObtained: mark.marksObtained },
+              link: `/exams?examId=${exam.id}&results=true`,
               idempotencyKey,
             },
           });
@@ -430,7 +470,10 @@ export class InAppNotificationService {
                 message: parentMsg,
                 type: 'ACADEMIC',
                 studentId: student.id,
-                link: '/exams',
+                entityType: 'EXAM',
+                entityId: exam.id,
+                metadata: { examId: exam.id, studentId: student.id, marksObtained: mark.marksObtained },
+                link: `/exams?examId=${exam.id}&studentId=${student.id}&results=true`,
                 idempotencyKey,
               },
             });
@@ -496,7 +539,10 @@ export class InAppNotificationService {
             message: studentMsg,
             type: 'ACADEMIC',
             studentId: student.id,
-            link: '/progress_reviews',
+            entityType: 'PROGRESS_REPORT',
+            entityId: feedback.id,
+            metadata: { feedbackId: feedback.id, termName: feedback.termName },
+            link: `/progress_reviews?reportId=${feedback.id}`,
             idempotencyKey,
           },
         });
@@ -521,7 +567,10 @@ export class InAppNotificationService {
               message: parentMsg,
               type: 'ACADEMIC',
               studentId: student.id,
-              link: '/parent_academics',
+              entityType: 'PROGRESS_REPORT',
+              entityId: feedback.id,
+              metadata: { feedbackId: feedback.id, studentId: student.id, termName: feedback.termName },
+              link: `/parent_academics?reportId=${feedback.id}&studentId=${student.id}`,
               idempotencyKey,
             },
           });
@@ -562,7 +611,10 @@ export class InAppNotificationService {
         message,
         type: 'GENERAL',
         studentId: review.studentId || null,
-        link: '/progress_reviews',
+        entityType: 'PROGRESS_REPORT',
+        entityId: review.id,
+        metadata: { reviewId: review.id, studentId: review.studentId },
+        link: `/progress_reviews?reviewId=${review.id}`,
         idempotencyKey,
       },
     });
@@ -623,6 +675,9 @@ export class InAppNotificationService {
           message: preview,
           type: 'MESSAGE',
           studentId: studentId || null,
+          entityType: 'MESSAGE',
+          entityId: conversationId,
+          metadata: { conversationId, messageId, senderId, senderName, studentId: studentId || null },
           link: `/messaging?conversationId=${conversationId}`,
           idempotencyKey,
         },
@@ -634,6 +689,27 @@ export class InAppNotificationService {
         conversationId,
         notification: notif,
         messageId,
+      });
+
+      this.broadcastToUser(recipientUserId, {
+        type: 'MESSAGE_CREATED',
+        data: {
+          conversationId,
+          message: {
+            id: messageId,
+            conversationId,
+            senderId,
+            body,
+            attachmentType,
+            createdAt: new Date().toISOString(),
+            sender: { fullName: senderName, role: 'STAFF' },
+          },
+        },
+      });
+
+      this.broadcastToUser(recipientUserId, {
+        type: 'NOTIFICATION_CREATED',
+        data: notif,
       });
 
       return notif;
@@ -686,7 +762,10 @@ export class InAppNotificationService {
           message: `${studentName} submitted work for ${sub.material.title} (${sub.material.batch?.name || 'Batch'}).`,
           type: 'ACADEMIC',
           studentId: sub.student.id,
-          link: '/homework',
+          entityType: 'HOMEWORK',
+          entityId: sub.materialId,
+          metadata: { homeworkId: sub.materialId, submissionId: sub.id, studentId: sub.student.id },
+          link: `/homework?homeworkId=${sub.materialId}&submissionId=${sub.id}`,
           idempotencyKey,
         },
         update: {},
@@ -745,7 +824,10 @@ export class InAppNotificationService {
             message: `Your assignment has been graded. ${gradeText}${feedbackText}`,
             type: 'ACADEMIC',
             studentId: sub.student.id,
-            link: '/homework',
+            entityType: 'HOMEWORK',
+            entityId: sub.materialId,
+            metadata: { homeworkId: sub.materialId, submissionId: sub.id, grade: sub.grade },
+            link: `/homework?homeworkId=${sub.materialId}`,
             idempotencyKey: studentKey,
           },
           update: {},
@@ -773,7 +855,10 @@ export class InAppNotificationService {
             message: `${studentName}'s assignment was graded. ${gradeText}${feedbackText}`,
             type: 'ACADEMIC',
             studentId: sub.student.id,
-            link: '/parent_academics',
+            entityType: 'HOMEWORK',
+            entityId: sub.materialId,
+            metadata: { homeworkId: sub.materialId, submissionId: sub.id, studentId: sub.student.id, grade: sub.grade },
+            link: `/parent_academics?homeworkId=${sub.materialId}&studentId=${sub.student.id}`,
             idempotencyKey: parentKey,
           },
           update: {},
@@ -841,7 +926,10 @@ export class InAppNotificationService {
             message: `Payment of ₹${amountStr} for ${feeName} (${studentName}) was recorded successfully. Receipt #${payment.receiptNumber || payment.id.slice(0, 8)}.`,
             type: 'GENERAL',
             studentId: student.id,
-            link: '/parent_fees',
+            entityType: 'FEE',
+            entityId: payment.id,
+            metadata: { paymentId: payment.id, receiptNumber: payment.receiptNumber, studentId: student.id },
+            link: `/parent_fees?paymentId=${payment.id}&receipt=true`,
             idempotencyKey: parentKey,
           },
           update: {},
@@ -857,6 +945,177 @@ export class InAppNotificationService {
     } catch (err) {
       console.warn('[notifyFeePaymentRecorded Warning]', err);
       return null;
+    }
+  }
+
+
+  /**
+   * Dispatch in-app notifications when learning material is published
+   */
+  static async notifyMaterialPublished(materialId: string) {
+    try {
+      const material = await prisma.learningMaterial.findUnique({
+        where: { id: materialId },
+        include: {
+          batch: { select: { id: true, name: true } },
+          subject: { select: { id: true, name: true } },
+        },
+      });
+
+      if (!material || !material.isPublished) return [];
+
+      const enrollments = await prisma.studentEnrollment.findMany({
+        where: {
+          batchId: material.batchId,
+          isActive: true,
+          ...(material.subjectId ? { OR: [{ subjectId: null }, { subjectId: material.subjectId }] } : {}),
+        },
+        include: {
+          student: {
+            include: {
+              user: { select: { id: true } },
+              parentRelations: {
+                include: {
+                  parent: { include: { user: { select: { id: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const notifications = [];
+      const mediaLabel = material.type === 'VOICE_NOTE' ? 'Voice Lesson' : 'Learning Material';
+      const title = `New ${mediaLabel}: ${material.title}`;
+      const message = `New ${mediaLabel.toLowerCase()} published for ${material.subject?.name || 'Class'} in ${material.batch.name}.`;
+
+      for (const e of enrollments) {
+        const student = e.student;
+        // 1. Notify Student
+        if (student.userId) {
+          const studentKey = `MAT_PUB_${material.id}_STU_${student.userId}`;
+          const notif = await prisma.notification.upsert({
+            where: { idempotencyKey: studentKey },
+            create: {
+              instituteId: material.instituteId,
+              userId: student.userId,
+              role: 'STUDENT',
+              title,
+              message,
+              type: 'ACADEMIC',
+              studentId: student.id,
+              entityType: 'MATERIAL',
+              entityId: material.id,
+              metadata: { materialId: material.id, mediaType: material.type, title: material.title },
+              link: `/materials?materialId=${material.id}`,
+              idempotencyKey: studentKey,
+            },
+            update: {},
+          });
+          notifications.push(notif);
+          this.broadcastToUser(student.userId, { type: 'NOTIFICATION_CREATED', data: notif });
+        }
+
+        // 2. Notify Parents
+        for (const pr of student.parentRelations) {
+          const parentUser = pr.parent?.user;
+          if (parentUser?.id) {
+            const parentKey = `MAT_PUB_${material.id}_PAR_${parentUser.id}_STU_${student.id}`;
+            const notif = await prisma.notification.upsert({
+              where: { idempotencyKey: parentKey },
+              create: {
+                instituteId: material.instituteId,
+                userId: parentUser.id,
+                role: 'PARENT',
+                title,
+                message: `${student.firstName}'s class has new ${mediaLabel.toLowerCase()}: "${material.title}"`,
+                type: 'ACADEMIC',
+                studentId: student.id,
+                entityType: 'MATERIAL',
+                entityId: material.id,
+                metadata: { materialId: material.id, studentId: student.id, mediaType: material.type },
+                link: `/parent_academics?materialId=${material.id}&studentId=${student.id}`,
+                idempotencyKey: parentKey,
+              },
+              update: {},
+            });
+            notifications.push(notif);
+            this.broadcastToUser(parentUser.id, { type: 'NOTIFICATION_CREATED', data: notif });
+          }
+        }
+      }
+      return notifications;
+    } catch (err) {
+      console.warn('[notifyMaterialPublished Warning]', err);
+      return [];
+    }
+  }
+
+  /**
+   * Dispatch in-app notifications when a quiz is published
+   */
+  static async notifyQuizPublished(quizId: string) {
+    try {
+      const quiz = await prisma.quiz.findUnique({
+        where: { id: quizId },
+        include: {
+          batch: { select: { id: true, name: true } },
+          subject: { select: { id: true, name: true } },
+        },
+      });
+
+      if (!quiz || !quiz.isPublished) return [];
+
+      const enrollments = await prisma.studentEnrollment.findMany({
+        where: {
+          batchId: quiz.batchId,
+          isActive: true,
+          ...(quiz.subjectId ? { OR: [{ subjectId: null }, { subjectId: quiz.subjectId }] } : {}),
+        },
+        include: {
+          student: {
+            include: {
+              user: { select: { id: true } },
+            },
+          },
+        },
+      });
+
+      const notifications = [];
+      const title = `New Interactive Quiz: ${quiz.title}`;
+      const timeStr = quiz.durationMinutes ? ` (${quiz.durationMinutes} mins)` : '';
+      const message = `Interactive quiz${timeStr} for ${quiz.subject?.name || 'Class'} is ready to take.`;
+
+      for (const e of enrollments) {
+        const student = e.student;
+        if (student.userId) {
+          const studentKey = `QUIZ_PUB_${quiz.id}_STU_${student.userId}`;
+          const notif = await prisma.notification.upsert({
+            where: { idempotencyKey: studentKey },
+            create: {
+              instituteId: quiz.instituteId,
+              userId: student.userId,
+              role: 'STUDENT',
+              title,
+              message,
+              type: 'ACADEMIC',
+              studentId: student.id,
+              entityType: 'QUIZ',
+              entityId: quiz.id,
+              metadata: { quizId: quiz.id, durationMinutes: quiz.durationMinutes, title: quiz.title },
+              link: `/homework?quizId=${quiz.id}`,
+              idempotencyKey: studentKey,
+            },
+            update: {},
+          });
+          notifications.push(notif);
+          this.broadcastToUser(student.userId, { type: 'NOTIFICATION_CREATED', data: notif });
+        }
+      }
+      return notifications;
+    } catch (err) {
+      console.warn('[notifyQuizPublished Warning]', err);
+      return [];
     }
   }
 

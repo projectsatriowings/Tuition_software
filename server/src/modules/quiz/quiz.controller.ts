@@ -1,3 +1,4 @@
+import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
 import { Response } from 'express';
 import { prisma } from '../../prisma.js';
 import { z } from 'zod';
@@ -13,7 +14,7 @@ export const createQuizSchema = z.object({
   title: z.string().min(2, 'Title must be at least 2 characters').max(150),
   instructions: z.string().optional().nullable(),
   durationMinutes: z.union([z.number(), z.string().transform((v) => (v ? parseInt(v, 10) : null))]).optional().nullable(),
-  totalMarks: z.union([z.number(), z.string().transform((v) => (v ? parseFloat(v) : 100))]).optional().default(100),
+  totalMarks: z.union([z.number(), z.string().transform((v) => (v ? parseFloat(v) : null))]).optional().nullable(),
   passingMarks: z.union([z.number(), z.string().transform((v) => (v ? parseFloat(v) : null))]).optional().nullable(),
   isPublished: z.union([z.boolean(), z.string().transform((v) => v === 'true' || v === '1')]).optional().default(false),
   maxAttempts: z.union([z.number(), z.string().transform((v) => (v ? parseInt(v, 10) : 1))]).optional().default(1),
@@ -214,22 +215,40 @@ export async function getQuizById(req: AuthenticatedRequest, res: Response) {
       });
 
       const isFinished = myAttempt?.status === 'SUBMITTED' || myAttempt?.status === 'EVALUATED';
-      const canSeeAnswers = isFinished && quiz.resultsReleased;
+      const canSeeAnswers = isFinished;
 
-      const sanitizedQuestions = quiz.questions.map((q) => ({
-        id: q.id,
-        questionText: q.questionText,
-        questionType: q.questionType,
-        marks: q.marks,
-        orderIndex: q.orderIndex,
-        explanation: canSeeAnswers ? q.explanation : undefined,
-        options: q.options.map((opt) => ({
-          id: opt.id,
-          optionText: opt.optionText,
-          orderIndex: opt.orderIndex,
-          isCorrect: canSeeAnswers ? opt.isCorrect : undefined,
-        })),
-      }));
+      const myAnswersByQuestionId = new Map<string, any>();
+      if (myAttempt?.answers) {
+        for (const ans of myAttempt.answers) {
+          myAnswersByQuestionId.set(ans.questionId, ans);
+        }
+      }
+
+      let correctCount = 0;
+      const sanitizedQuestions = quiz.questions.map((q) => {
+        const studentAns = myAnswersByQuestionId.get(q.id);
+        const selectedIds = Array.isArray(studentAns?.selectedOptionIds) ? studentAns.selectedOptionIds : [];
+        if (studentAns?.isCorrect) {
+          correctCount++;
+        }
+        return {
+          id: q.id,
+          questionText: q.questionText,
+          questionType: q.questionType,
+          marks: q.marks,
+          orderIndex: q.orderIndex,
+          explanation: canSeeAnswers ? q.explanation : undefined,
+          isCorrect: canSeeAnswers ? studentAns?.isCorrect : undefined,
+          marksAwarded: canSeeAnswers ? studentAns?.marksAwarded : undefined,
+          selectedOptionIds: canSeeAnswers ? selectedIds : undefined,
+          options: q.options.map((opt) => ({
+            id: opt.id,
+            optionText: opt.optionText,
+            orderIndex: opt.orderIndex,
+            isCorrect: canSeeAnswers ? opt.isCorrect : undefined,
+          })),
+        };
+      });
 
       return res.json({
         success: true,
@@ -237,7 +256,11 @@ export async function getQuizById(req: AuthenticatedRequest, res: Response) {
           quiz: {
             ...quiz,
             questions: sanitizedQuestions,
-            myAttempt,
+            myAttempt: myAttempt ? {
+              ...myAttempt,
+              correctCount,
+              totalQuestions: quiz.questions.length,
+            } : null,
             resultsReleased: quiz.resultsReleased,
           },
         },
@@ -287,7 +310,7 @@ export async function createQuiz(req: AuthenticatedRequest, res: Response) {
     for (const q of data.questions) {
       calculatedMarks += Number(q.marks || 1);
     }
-    const totalMarks = data.totalMarks || calculatedMarks || 100;
+    const totalMarks = data.totalMarks || calculatedMarks || (data.questions.length || 1);
 
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
@@ -576,7 +599,9 @@ export async function submitQuizAttempt(req: AuthenticatedRequest, res: Response
     // Auto-grading
     let totalScore = 0;
     let maxQuizMarks = 0;
+    let correctCount = 0;
     const answerRecords: any[] = [];
+    const reviewQuestions: any[] = [];
 
     const answersByQuestionId = new Map<string, string[]>();
     for (const a of answers || []) {
@@ -595,6 +620,10 @@ export async function submitQuizAttempt(req: AuthenticatedRequest, res: Response
         isCorrect = selectedIds.every((id) => correctOptionIds.includes(id));
       }
 
+      if (isCorrect) {
+        correctCount++;
+      }
+
       const marksAwarded = isCorrect ? qMarks : 0;
       totalScore += marksAwarded;
 
@@ -604,6 +633,24 @@ export async function submitQuizAttempt(req: AuthenticatedRequest, res: Response
         selectedOptionIds: selectedIds,
         isCorrect,
         marksAwarded,
+      });
+
+      reviewQuestions.push({
+        id: question.id,
+        questionText: question.questionText,
+        questionType: question.questionType,
+        marks: qMarks,
+        marksAwarded,
+        isCorrect,
+        selectedOptionIds: selectedIds,
+        correctOptionIds,
+        explanation: question.explanation,
+        options: question.options.map((opt) => ({
+          id: opt.id,
+          optionText: opt.optionText,
+          orderIndex: opt.orderIndex,
+          isCorrect: opt.isCorrect,
+        })),
       });
     }
 
@@ -633,7 +680,10 @@ export async function submitQuizAttempt(req: AuthenticatedRequest, res: Response
         score: totalScore,
         totalMarks: maxQuizMarks,
         percentage: Number(percentage.toFixed(1)),
-        resultsReleased: attempt.quiz.resultsReleased,
+        correctCount,
+        totalQuestions: attempt.quiz.questions.length,
+        resultsReleased: true,
+        questions: reviewQuestions,
       },
     });
   } catch (err: any) {

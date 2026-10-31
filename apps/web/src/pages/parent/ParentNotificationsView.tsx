@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../../services/api';
+import { verifyNotificationTarget } from '../../services/notificationService';
+import { useToast } from '../../context/ToastContext';
 import {
   Bell,
   CheckCheck,
@@ -9,12 +11,12 @@ import {
   Award,
   MessageSquare,
   AlertCircle,
-  Clock,
-  Filter,
+  FileCheck,
+  BookOpen,
 } from 'lucide-react';
 
 interface ParentNotificationsViewProps {
-  onNavigateTab: (tab: string) => void;
+  onNavigateTab: (tab: string, context?: any) => void;
 }
 
 export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = ({ onNavigateTab }) => {
@@ -22,11 +24,13 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [filterUnreadOnly, setFilterUnreadOnly] = useState<boolean>(false);
+  const toast = useToast();
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch(`/notifications/in-app?unreadOnly=${filterUnreadOnly}`);
+      const res = await apiFetch(`/notifications?limit=50${filterUnreadOnly ? '&unreadOnly=true' : ''}`);
       if (res.success && res.data) {
         setNotifications(res.data.notifications || []);
         setUnreadCount(res.data.unreadCount || 0);
@@ -42,19 +46,95 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
     fetchNotifications();
   }, [filterUnreadOnly]);
 
-  const handleMarkAsRead = async (id: string, link?: string | null) => {
-    try {
-      await apiFetch(`/notifications/in-app/${id}/read`, { method: 'PATCH' });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-      );
-      setUnreadCount((c) => Math.max(0, c - 1));
+  // Real-time SSE listener for parent alerts
+  useEffect(() => {
+    const token = localStorage.getItem('tuition_token') || localStorage.getItem('token');
+    if (!token) return;
 
-      if (link) {
-        if (link.includes('fees')) onNavigateTab('fees');
-        else if (link.includes('attendance')) onNavigateTab('attendance');
-        else if (link.includes('messaging')) onNavigateTab('communication');
-        else if (link.includes('exams')) onNavigateTab('results');
+    try {
+      const es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'NOTIFICATION_CREATED' && payload.data) {
+            const newNotif = payload.data;
+            setNotifications((prev) => {
+              if (prev.some((n) => n.id === newNotif.id)) return prev;
+              return [newNotif, ...prev];
+            });
+            setUnreadCount((c) => c + 1);
+          }
+        } catch (e) {
+          // ignore keepalive parse
+        }
+      };
+
+      es.onerror = () => {
+        // SSE error - EventSource automatically attempts reconnection
+      };
+    } catch (err) {
+      console.warn('[ParentNotificationsView] SSE connection error:', err);
+    }
+
+    // Polling fallback every 25 seconds
+    const interval = setInterval(() => {
+      apiFetch(`/notifications/unread-count`).then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadCount(res.data.unreadCount);
+        }
+      }).catch(() => {});
+    }, 25000);
+
+    return () => {
+      clearInterval(interval);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  const handleNotificationClick = async (notif: any) => {
+    try {
+      // 1. Mark as read immediately
+      if (!notif.isRead) {
+        await apiFetch(`/notifications/${notif.id}/read`, { method: 'PATCH' }).catch(() => {
+          return apiFetch(`/notifications/in-app/${notif.id}/read`, { method: 'PATCH' });
+        });
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      }
+
+      // 2. Target Verification
+      if (notif.entityType && notif.entityId) {
+        const verify = await verifyNotificationTarget(notif.entityType, notif.entityId);
+        if (verify && verify.available === false) {
+          toast.error('Content Unavailable: The requested item may have been deleted, unpublished, or is no longer accessible.');
+          return;
+        }
+      }
+
+      // 3. Navigate to exact parent tab & item
+      const eType = (notif.entityType || notif.type || '').toUpperCase();
+      if (eType === 'HOMEWORK' || eType === 'MATERIAL' || eType === 'PROGRESS_REPORT') {
+        onNavigateTab('academics', { entityType: eType, entityId: notif.entityId, studentId: notif.studentId });
+      } else if (eType === 'EXAM' || eType === 'TEST_RESULT') {
+        onNavigateTab('results', { examId: notif.entityId, studentId: notif.studentId });
+      } else if (eType === 'ATTENDANCE' || eType === 'ABSENCE') {
+        onNavigateTab('attendance', { studentId: notif.studentId, eventId: notif.entityId });
+      } else if (eType === 'FEE' || eType === 'FEE_DUE' || eType === 'FEE_PAID') {
+        onNavigateTab('fees', { paymentId: notif.entityId });
+      } else if (eType === 'MESSAGE' || eType === 'NEW_MESSAGE') {
+        onNavigateTab('communication', { conversationId: notif.entityId });
+      } else if (notif.link) {
+        if (notif.link.includes('fees')) onNavigateTab('fees');
+        else if (notif.link.includes('attendance')) onNavigateTab('attendance');
+        else if (notif.link.includes('messaging') || notif.link.includes('communication')) onNavigateTab('communication');
+        else if (notif.link.includes('exams') || notif.link.includes('results')) onNavigateTab('results');
+        else if (notif.link.includes('academics') || notif.link.includes('homework') || notif.link.includes('materials')) onNavigateTab('academics');
       }
     } catch (err) {
       console.error(err);
@@ -63,7 +143,9 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
 
   const handleMarkAllRead = async () => {
     try {
-      await apiFetch('/notifications/in-app/mark-all-read', { method: 'POST' });
+      await apiFetch('/notifications/read-all', { method: 'PATCH' }).catch(() => {
+        return apiFetch('/notifications/mark-all-read', { method: 'POST' });
+      });
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch (err) {
@@ -71,19 +153,27 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
     }
   };
 
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
+  const getNotificationIcon = (notif: any) => {
+    const eType = (notif.entityType || notif.type || '').toUpperCase();
+    switch (eType) {
       case 'ATTENDANCE':
         return <CheckCircle2 className="w-5 h-5 text-emerald-600" />;
       case 'ABSENCE':
         return <AlertCircle className="w-5 h-5 text-rose-600" />;
+      case 'FEE':
       case 'FEE_DUE':
       case 'FEE_PAID':
         return <CreditCard className="w-5 h-5 text-amber-600" />;
+      case 'EXAM':
       case 'TEST_RESULT':
         return <Award className="w-5 h-5 text-emerald-600" />;
+      case 'MESSAGE':
       case 'NEW_MESSAGE':
         return <MessageSquare className="w-5 h-5 text-blue-600" />;
+      case 'HOMEWORK':
+        return <FileCheck className="w-5 h-5 text-indigo-600" />;
+      case 'MATERIAL':
+        return <BookOpen className="w-5 h-5 text-blue-600" />;
       default:
         return <Bell className="w-5 h-5 text-[#6D4C41]" />;
     }
@@ -112,7 +202,7 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
             <Bell className="w-5 h-5 text-[#6D4C41]" /> In-App Notification Center
           </h2>
           <p className="text-xs text-[#6D4C41] mt-0.5">
-            Attendance alerts, fee reminders, teacher updates, and examination result notifications
+            Real-time attendance alerts, fee reminders, teacher updates, and examination results
           </p>
         </div>
 
@@ -130,7 +220,7 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#4E342E] inline-flex items-center gap-1.5 transition-colors shadow-xs"
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#4E342E] inline-flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
             >
               <CheckCheck className="w-4 h-4" /> Mark All as Read
             </button>
@@ -154,23 +244,23 @@ export const ParentNotificationsView: React.FC<ParentNotificationsViewProps> = (
             {notifications.map((n) => (
               <div
                 key={n.id}
-                onClick={() => handleMarkAsRead(n.id, n.link)}
+                onClick={() => handleNotificationClick(n)}
                 className={`p-4 sm:p-5 transition-colors cursor-pointer flex items-start gap-4 ${
                   !n.isRead ? 'bg-[#FAF8F6] border-l-4 border-[#4E342E]' : 'hover:bg-[#F7F2EF]/60'
                 }`}
               >
                 <div className="p-2.5 rounded-2xl bg-white border border-[#D7CCC8] shadow-xs shrink-0 mt-0.5">
-                  {getNotificationIcon(n.type)}
+                  {getNotificationIcon(n)}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <h4 className="text-xs font-bold text-[#2D1E18]">{n.title}</h4>
-                    <span className="text-[10px] text-[#8D6E63] shrink-0">
-                      {formatKolkataTime(n.createdAt)}
+                    <span className="text-[10px] text-[#8D6E63] shrink-0 font-medium">
+                      {n.timeFormatted || formatKolkataTime(n.eventTime || n.createdAt)}
                     </span>
                   </div>
-                  <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">{n.message}</p>
+                  <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed font-normal">{n.message}</p>
                   {!n.isRead && (
                     <div className="mt-2 flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-[#4E342E]"></span>

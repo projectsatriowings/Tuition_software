@@ -1,7 +1,9 @@
+import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { apiFetch } from '../services/api';
+import { useToast } from '../context/ToastContext';
 import {
   HelpCircle,
   Plus,
@@ -20,6 +22,7 @@ import {
   Users,
   RotateCcw,
   Sparkles,
+  Info,
 } from 'lucide-react';
 
 interface QuizManagerProps {
@@ -33,6 +36,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
   isStudent,
   batches,
 }) => {
+  const toast = useToast();
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -78,6 +82,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
   const [takerTimerSeconds, setTakerTimerSeconds] = useState<number | null>(null);
   const [takerSubmitting, setTakerSubmitting] = useState(false);
   const [takerResult, setTakerResult] = useState<any | null>(null);
+  const takerResultRef = useRef<any | null>(null);
+  const selectedAnswersRef = useRef<Record<string, string[]>>({});
   const timerIntervalRef = useRef<any>(null);
 
   // Staff Submissions Analytics Drawer
@@ -249,10 +255,11 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
         body: JSON.stringify({ isPublished: nextStatus }),
       });
       if (res.success) {
+        toast.success(nextStatus ? 'Quiz published to enrolled students!' : 'Quiz moved to drafts.');
         loadQuizzes();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to update quiz status');
+      toast.error(err.message || 'Failed to update quiz status');
     }
   }
 
@@ -264,10 +271,11 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
         body: JSON.stringify({ resultsReleased: nextStatus }),
       });
       if (res.success) {
+        toast.success(nextStatus ? 'Answer key & results released to students!' : 'Quiz results hidden.');
         loadQuizzes();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to toggle results release');
+      toast.error(err.message || 'Failed to toggle results release');
     }
   }
 
@@ -276,10 +284,11 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
     try {
       const res = await apiFetch(`/quizzes/${quizId}`, { method: 'DELETE' });
       if (res.success) {
+        toast.success('Quiz deleted successfully');
         loadQuizzes();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to delete quiz');
+      toast.error(err.message || 'Failed to delete quiz');
     }
   }
 
@@ -293,6 +302,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
         setCurrentAttempt(res.data.attempt);
         setCurrentQuestionIndex(0);
         setSelectedAnswers({});
+        selectedAnswersRef.current = {};
         setTakerResult(null);
 
         // Timer setup
@@ -312,30 +322,77 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
           }, 1000);
         }
       } else {
-        alert(res.error || 'Failed to start quiz');
+        toast.error(res.error || 'Failed to start quiz');
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to start quiz');
+      toast.error(err.message || 'Failed to start quiz');
+    } finally {
+      setTakerSubmitting(false);
+    }
+  }
+
+  // Student View Review of Completed Quiz
+  async function handleViewReview(quiz: any) {
+    try {
+      setTakerSubmitting(true);
+      const res = await apiFetch(`/quizzes/${quiz.id}`);
+      if (res.success && res.data?.quiz) {
+        const fullQuiz = res.data.quiz;
+        const attempt = fullQuiz.myAttempt;
+        const questions = fullQuiz.questions || [];
+        const totalMarks = attempt?.totalMarks !== null && attempt?.totalMarks !== undefined
+          ? Number(attempt.totalMarks)
+          : questions.reduce((sum: number, q: any) => sum + Number(q.marks || 1), 0);
+        const score = attempt?.score !== null && attempt?.score !== undefined ? Number(attempt.score) : 0;
+        const percentage = attempt?.percentage !== null && attempt?.percentage !== undefined
+          ? Number(attempt.percentage)
+          : (totalMarks > 0 ? Number(((score / totalMarks) * 100).toFixed(1)) : 0);
+        const correctCount = attempt?.correctCount !== undefined
+          ? attempt.correctCount
+          : questions.filter((q: any) => q.isCorrect).length;
+
+        setActiveQuizForTaker(fullQuiz);
+        setCurrentAttempt(attempt);
+        setTakerTimerSeconds(null);
+        setTakerResult({
+          score,
+          totalMarks,
+          percentage,
+          correctCount,
+          totalQuestions: questions.length,
+          resultsReleased: true,
+          questions,
+        });
+      } else {
+        toast.error(res.error || 'Failed to load quiz review');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load quiz review');
     } finally {
       setTakerSubmitting(false);
     }
   }
 
   function handleSelectOption(qId: string, optId: string, qType: string) {
-    if (qType === 'SINGLE_CHOICE') {
-      setSelectedAnswers({
-        ...selectedAnswers,
-        [qId]: [optId],
-      });
-    } else {
-      const current = selectedAnswers[qId] || [];
-      const exists = current.includes(optId);
-      const updated = exists ? current.filter((id) => id !== optId) : [...current, optId];
-      setSelectedAnswers({
-        ...selectedAnswers,
-        [qId]: updated,
-      });
-    }
+    setSelectedAnswers((prev) => {
+      let next: Record<string, string[]>;
+      if (qType === 'SINGLE_CHOICE') {
+        next = {
+          ...prev,
+          [qId]: [optId],
+        };
+      } else {
+        const current = prev[qId] || [];
+        const exists = current.includes(optId);
+        const updated = exists ? current.filter((id) => id !== optId) : [...current, optId];
+        next = {
+          ...prev,
+          [qId]: updated,
+        };
+      }
+      selectedAnswersRef.current = next;
+      return next;
+    });
   }
 
   async function handleAutoSubmit(quizId: string, attemptId: string) {
@@ -352,9 +409,23 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
       timerIntervalRef.current = null;
     }
 
+    const currentAnswers = {
+      ...selectedAnswers,
+      ...(selectedAnswersRef.current || {}),
+    };
+
+    const totalQuestions = activeQuizForTaker?.questions?.length || 0;
+    const answeredCount = Object.values(currentAnswers).filter((opts) => opts && opts.length > 0).length;
+
+    // Safety check so student doesn't accidentally submit blank quiz
+    if (answeredCount === 0 && totalQuestions > 0) {
+      const proceed = confirm('You have not selected an answer for this question. Do you still want to submit?');
+      if (!proceed) return;
+    }
+
     try {
       setTakerSubmitting(true);
-      const answersPayload = Object.entries(selectedAnswers).map(([questionId, selectedOptionIds]) => ({
+      const answersPayload = Object.entries(currentAnswers).map(([questionId, selectedOptionIds]) => ({
         questionId,
         selectedOptionIds,
       }));
@@ -369,12 +440,13 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
 
       if (res.success && res.data) {
         setTakerResult(res.data);
+        toast.success('Quiz submitted and evaluated successfully!');
         loadQuizzes();
       } else {
-        alert(res.error || 'Failed to submit quiz answers');
+        toast.error(res.error || 'Failed to submit quiz answers');
       }
     } catch (err: any) {
-      alert(err.message || 'Submission error');
+      toast.error(err.message || 'Submission error');
     } finally {
       setTakerSubmitting(false);
     }
@@ -595,10 +667,10 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleStartQuiz(quiz)}
-                          className="px-3 py-1.5 rounded-xl bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] flex items-center gap-1 text-xs font-semibold transition-all"
+                          onClick={() => handleViewReview(quiz)}
+                          className="px-3 py-1.5 rounded-xl bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] flex items-center gap-1.5 text-xs font-semibold transition-all shadow-sm"
                         >
-                          <Eye className="w-3.5 h-3.5" /> View Review
+                          <Eye className="w-3.5 h-3.5 text-emerald-700" /> View Evaluation & Review
                         </button>
                       )}
                     </>
@@ -1060,51 +1132,249 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
       {/* Student Quiz Taker Modal */}
       {activeQuizForTaker && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl">
-            {/* Header with Title and Countdown */}
+          <div className={`bg-white border border-[#D7CCC8] rounded-3xl p-6 sm:p-8 w-full max-h-[88vh] flex flex-col space-y-4 shadow-2xl transition-all ${
+            takerResult ? 'max-w-3xl' : 'max-w-2xl'
+          }`}>
+            {/* Header with Title, Status & Timer */}
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
               <div>
-                <h2 className="text-lg font-bold text-[#2D1E18]">{activeQuizForTaker.title}</h2>
+                <h2 className="text-lg font-bold text-[#2D1E18]">
+                  {activeQuizForTaker.title} {takerResult && '— Evaluation & Review'}
+                </h2>
                 <span className="text-xs text-[#6D4C41]">
-                  Question {currentQuestionIndex + 1} of {activeQuizForTaker.questions.length}
+                  {takerResult
+                    ? `Total: ${takerResult.totalQuestions ?? activeQuizForTaker.questions.length} Questions Reviewed`
+                    : `Question ${currentQuestionIndex + 1} of ${activeQuizForTaker.questions.length}`}
                 </span>
               </div>
-              {takerTimerSeconds !== null && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-mono text-xs font-bold">
-                  <Clock className="w-3.5 h-3.5" />
-                  {Math.floor(takerTimerSeconds / 60)}:{(takerTimerSeconds % 60).toString().padStart(2, '0')}
-                </div>
-              )}
-            </div>
-
-            {/* Quiz Result View or Question Taking View */}
-            {takerResult ? (
-              <div className="py-8 text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-800 flex items-center justify-center mx-auto">
-                  <Award className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-[#2D1E18]">Quiz Submitted!</h3>
-                  <p className="text-xs text-[#6D4C41] mt-1">Your automated evaluation is ready.</p>
-                </div>
-                <div className="inline-block p-4 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8]">
-                  <span className="text-xs text-[#6D4C41] block">Your Score</span>
-                  <p className="text-3xl font-extrabold text-[#4E342E] mt-1">
-                    {takerResult.score} / {takerResult.totalMarks}
-                  </p>
-                  <span className="text-xs font-bold text-emerald-800">
-                    {takerResult.percentage}%
-                  </span>
-                </div>
-                <div className="pt-4 flex justify-center">
+              <div className="flex items-center gap-2">
+                {!takerResult && takerTimerSeconds !== null && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-mono text-xs font-bold">
+                    <Clock className="w-3.5 h-3.5" />
+                    {Math.floor(takerTimerSeconds / 60)}:{(takerTimerSeconds % 60).toString().padStart(2, '0')}
+                  </div>
+                )}
+                {takerResult && (
                   <button
                     onClick={() => {
                       setActiveQuizForTaker(null);
                       setTakerResult(null);
                     }}
-                    className="px-6 py-2.5 rounded-xl bg-[#4E342E] text-white text-xs font-semibold"
+                    className="p-1.5 text-[#8D6E63] hover:text-[#2D1E18] hover:bg-[#F7F2EF] rounded-xl transition"
+                    title="Close Review"
                   >
-                    Close Quiz
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quiz Result View or Question Taking View */}
+            {takerResult ? (
+              <div className="flex-1 overflow-y-auto space-y-5 pr-1">
+                {/* Result Hero Header */}
+                <div className="text-center space-y-2 py-2">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-100 border border-emerald-300 text-emerald-800 flex items-center justify-center mx-auto shadow-sm">
+                    <Award className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-[#2D1E18]">Quiz Submitted & Evaluated!</h3>
+                    <p className="text-xs text-[#6D4C41]">Here is your verified score breakdown and detailed answer key review.</p>
+                  </div>
+                </div>
+
+                {/* Score Summary Metrics (3-column responsive card grid) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] text-center">
+                    <span className="text-[11px] font-semibold text-[#6D4C41] block">Your Score</span>
+                    <p className="text-2xl font-black text-[#4E342E] mt-0.5">
+                      {takerResult.score} <span className="text-sm font-semibold text-[#8D6E63]">/ {takerResult.totalMarks}</span>
+                    </p>
+                    <span className="text-[10px] text-[#8D6E63] font-medium block mt-0.5">Total Marks Awarded</span>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
+                    <span className="text-[11px] font-semibold text-emerald-800 block">Overall Percentage</span>
+                    <p className="text-2xl font-black text-emerald-900 mt-0.5">
+                      {takerResult.percentage}%
+                    </p>
+                    <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">
+                      {Number(takerResult.percentage) >= 50 ? 'Passed • Good Job!' : 'Requires Improvement'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 text-center">
+                    <span className="text-[11px] font-semibold text-sky-800 block">Correct Answers</span>
+                    <p className="text-2xl font-black text-sky-900 mt-0.5">
+                      {takerResult.correctCount ?? (takerResult.questions?.filter((q: any) => q.isCorrect).length || 0)}{' '}
+                      <span className="text-sm font-semibold text-sky-700">/ {takerResult.totalQuestions ?? (takerResult.questions?.length || activeQuizForTaker.questions.length)}</span>
+                    </p>
+                    <span className="text-[10px] text-sky-700 font-semibold block mt-0.5">
+                      Questions Answered Correctly
+                    </span>
+                  </div>
+                </div>
+
+                {/* Detailed Answer Key & Question Review Section */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-emerald-700" />
+                      <h4 className="text-xs font-bold text-[#2D1E18] uppercase tracking-wider">
+                        Question Review & Answer Key
+                      </h4>
+                    </div>
+                    <span className="text-[11px] text-[#6D4C41]">
+                      Review what you selected vs. correct options
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {(takerResult.questions || activeQuizForTaker.questions).map((q: any, qIdx: number) => {
+                      const studentSelectedIds = q.selectedOptionIds || selectedAnswers[q.id] || [];
+                      const isQuestionCorrect = q.isCorrect !== undefined
+                        ? q.isCorrect
+                        : q.options?.every((opt: any) => Boolean(opt.isCorrect) === studentSelectedIds.includes(opt.id));
+                      const marksAwarded = q.marksAwarded !== undefined
+                        ? q.marksAwarded
+                        : (isQuestionCorrect ? (q.marks || 1) : 0);
+
+                      return (
+                        <div
+                          key={q.id || qIdx}
+                          className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                            isQuestionCorrect
+                              ? 'bg-emerald-50/30 border-emerald-200'
+                              : studentSelectedIds.length > 0
+                              ? 'bg-rose-50/20 border-rose-200'
+                              : 'bg-[#F7F2EF] border-[#D7CCC8]'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-start gap-2.5">
+                              <span
+                                className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 ${
+                                  isQuestionCorrect
+                                    ? 'bg-emerald-700 text-white'
+                                    : studentSelectedIds.length > 0
+                                    ? 'bg-rose-700 text-white'
+                                    : 'bg-[#8D6E63] text-white'
+                                }`}
+                              >
+                                {qIdx + 1}
+                              </span>
+                              <div>
+                                <p className="text-xs font-bold text-[#2D1E18] leading-relaxed">
+                                  {q.questionText}
+                                </p>
+                                <span className="text-[10px] text-[#8D6E63]">
+                                  Weightage: {Number(q.marks || 1)} Mark{Number(q.marks || 1) > 1 ? 's' : ''}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="self-start sm:self-auto shrink-0">
+                              {isQuestionCorrect ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-300">
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" /> Correct (+{marksAwarded} mark)
+                                </span>
+                              ) : studentSelectedIds.length > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 text-[11px] font-bold border border-rose-300">
+                                  <X className="w-3.5 h-3.5 stroke-[3]" /> Incorrect (0 mark)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-300">
+                                  <AlertCircle className="w-3.5 h-3.5 stroke-[2.5]" /> Unanswered (0 mark)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Options Breakdown */}
+                          <div className="space-y-2 pt-1">
+                            {q.options?.map((opt: any, optIdx: number) => {
+                              const optLetter = String.fromCharCode(65 + optIdx);
+                              const isStudentPick = studentSelectedIds.includes(opt.id);
+                              const isCorrectAnswer = opt.isCorrect === true || q.correctOptionIds?.includes(opt.id);
+
+                              let borderBg = 'bg-white border-[#EFEBE9] text-[#4E342E]';
+                              let badge = null;
+
+                              if (isCorrectAnswer && isStudentPick) {
+                                borderBg = 'bg-emerald-50 border-emerald-500 text-emerald-950 font-semibold shadow-sm';
+                                badge = (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-200/80 text-emerald-900 text-[10px] font-bold">
+                                    <Check className="w-3 h-3 stroke-[3]" /> Your Choice (Correct Answer)
+                                  </span>
+                                );
+                              } else if (isCorrectAnswer && !isStudentPick) {
+                                borderBg = 'bg-emerald-50/60 border-emerald-400 text-emerald-950 font-medium';
+                                badge = (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+                                    <Check className="w-3 h-3 stroke-[3]" /> Correct Answer
+                                  </span>
+                                );
+                              } else if (!isCorrectAnswer && isStudentPick) {
+                                borderBg = 'bg-rose-50 border-rose-400 text-rose-950 font-semibold shadow-sm';
+                                badge = (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-200/80 text-rose-900 text-[10px] font-bold">
+                                    <X className="w-3 h-3 stroke-[3]" /> Your Choice (Incorrect)
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <div
+                                  key={opt.id || optIdx}
+                                  className={`p-3 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${borderBg}`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span
+                                      className={`w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0 ${
+                                        isCorrectAnswer
+                                          ? 'bg-emerald-700 text-white'
+                                          : isStudentPick
+                                          ? 'bg-rose-700 text-white'
+                                          : 'bg-[#EFEBE9] text-[#6D4C41]'
+                                      }`}
+                                    >
+                                      {optLetter}
+                                    </span>
+                                    <span className="leading-snug">{opt.optionText}</span>
+                                  </div>
+                                  {badge && <div className="self-end sm:self-auto shrink-0">{badge}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Optional Explanation */}
+                          {q.explanation && (
+                            <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950 text-xs flex items-start gap-2">
+                              <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                              <div className="leading-relaxed">
+                                <span className="font-bold text-amber-900 block mb-0.5">Explanation / Note:</span>
+                                <span>{q.explanation}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Footer Action */}
+                <div className="pt-4 border-t border-[#EFEBE9] flex items-center justify-between">
+                  <span className="text-[11px] text-[#6D4C41]">Evaluation complete • Results saved to your academic record</span>
+                  <button
+                    onClick={() => {
+                      setActiveQuizForTaker(null);
+                      setTakerResult(null);
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-md transition"
+                  >
+                    Close Review
                   </button>
                 </div>
               </div>
@@ -1117,11 +1387,12 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
                     </p>
 
                     <div className="space-y-2.5">
-                      {activeQuizForTaker.questions[currentQuestionIndex].options.map((opt: any) => {
+                      {activeQuizForTaker.questions[currentQuestionIndex].options.map((opt: any, optIdx: number) => {
                         const qId = activeQuizForTaker.questions[currentQuestionIndex].id;
                         const isSelected = (selectedAnswers[qId] || []).includes(opt.id);
+                        const optLetter = String.fromCharCode(65 + optIdx);
                         return (
-                          <div
+                          <label
                             key={opt.id}
                             onClick={() =>
                               handleSelectOption(
@@ -1130,21 +1401,38 @@ export const QuizManager: React.FC<QuizManagerProps> = ({
                                 activeQuizForTaker.questions[currentQuestionIndex].questionType
                               )
                             }
-                            className={`p-3.5 rounded-xl border text-xs cursor-pointer flex items-center gap-3 transition-all ${
+                            className={`p-3.5 rounded-2xl border text-xs cursor-pointer flex items-center justify-between gap-3 transition-all ${
                               isSelected
-                                ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                                ? 'bg-[#4E342E] text-white border-[#4E342E] shadow-sm'
                                 : 'bg-[#F7F2EF] text-[#2D1E18] border-[#D7CCC8] hover:bg-[#EFEBE9]'
                             }`}
                           >
+                            <div className="flex items-center gap-3">
+                              <span
+                                className={`w-6 h-6 rounded-lg text-[11px] font-bold flex items-center justify-center shrink-0 transition-colors ${
+                                  isSelected
+                                    ? 'bg-white text-[#4E342E]'
+                                    : 'bg-[#EFEBE9] text-[#6D4C41] border border-[#D7CCC8]'
+                                }`}
+                              >
+                                {optLetter}
+                              </span>
+                              <span className="font-medium text-xs leading-relaxed">{opt.optionText}</span>
+                            </div>
                             <span
-                              className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                                isSelected ? 'border-white bg-white text-[#4E342E]' : 'border-[#8D6E63]'
+                              className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                isSelected
+                                  ? 'border-white bg-white text-[#4E342E]'
+                                  : 'border-[#8D6E63] bg-white'
                               }`}
                             >
-                              {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                              {isSelected ? (
+                                <Check className="w-3 h-3 stroke-[3]" />
+                              ) : (
+                                <span className="w-2 h-2 rounded-full bg-transparent" />
+                              )}
                             </span>
-                            <span>{opt.optionText}</span>
-                          </div>
+                          </label>
                         );
                       })}
                     </div>

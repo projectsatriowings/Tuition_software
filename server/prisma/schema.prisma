@@ -129,23 +129,23 @@ model Institute {
   status          InstituteStatus @default(ACTIVE)
   logoUrl         String?
   admissionPrefix String?         @unique // Stable abbreviation used for automatic student admission numbers
-  settingsJson    Json? // Dynamic settings like timezones, SMS templates, academic terms
+  settingsJson    Json?           // Dynamic settings like timezones, SMS templates, academic terms
 
   // GPS Geofence & Staff Attendance Configuration
   latitude                Float?
   longitude               Float?
-  geofenceRadius          Float    @default(200) // in metres
-  locationVerified        Boolean  @default(false)
-  workingDays             String   @default("MON,TUE,WED,THU,FRI,SAT")
-  workStartTime           String   @default("09:00")
-  workEndTime             String   @default("18:00")
-  lateGraceMinutes        Int      @default(15)
-  gpsAccuracyThreshold    Float    @default(50) // Max horizontal accuracy in metres
-  requireCheckoutGeofence Boolean  @default(true)
-  allowStaffWfhRequests   Boolean  @default(true)
-  timezone                String   @default("Asia/Kolkata")
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  geofenceRadius          Float                  @default(200) // in metres
+  locationVerified        Boolean                @default(false)
+  workingDays             String                 @default("MON,TUE,WED,THU,FRI,SAT")
+  workStartTime           String                 @default("09:00")
+  workEndTime             String                 @default("18:00")
+  lateGraceMinutes        Int                    @default(15)
+  gpsAccuracyThreshold    Float                  @default(50) // Max horizontal accuracy in metres
+  requireCheckoutGeofence Boolean                @default(true)
+  allowStaffWfhRequests   Boolean                @default(true)
+  timezone                String                 @default("Asia/Kolkata")
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
 
   memberships             InstituteMembership[]
   staffProfiles           StaffProfile[]
@@ -159,6 +159,7 @@ model Institute {
   quizzes                 Quiz[]
   progressFeedbacks       ProgressFeedback[]
   parentReviews           ParentReview[]
+  parentFeedbacks         ParentFeedback[]
   conversations           Conversation[]
   feeStructures           FeeStructure[]
   payments                Payment[]
@@ -200,6 +201,8 @@ model User {
   enteredMarks              ExamMark[]               @relation("EvaluatedByStaff")
   feedbacksGiven            ProgressFeedback[]       @relation("StaffFeedback")
   reviewsReceived           ParentReview[]           @relation("StaffReviews")
+  feedbacksReceived         ParentFeedback[]         @relation("FeedbackTargetStaff")
+  feedbacksResponded        ParentFeedback[]         @relation("FeedbackRespondedBy")
   gradedSubmissions         HomeworkSubmission[]     @relation("GradedByStaff")
   conversationMembers       ConversationMember[]
   sentMessages              Message[]
@@ -375,6 +378,7 @@ model ParentProfile {
   user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   studentRelations StudentParentRelation[]
   parentReviews    ParentReview[]
+  feedbacks        ParentFeedback[]
   smsNotifications SmsNotification[]
 }
 
@@ -407,6 +411,7 @@ model Student {
   examMarks            ExamMark[]
   progressFeedbacks    ProgressFeedback[]
   parentReviews        ParentReview[]
+  parentFeedbacks      ParentFeedback[]
   homeworkSubmissions  HomeworkSubmission[]
   materialInteractions MaterialInteraction[]
   quizAttempts         QuizAttempt[]
@@ -614,27 +619,30 @@ model SmsNotification {
 }
 
 model Notification {
-  id                String             @id @default(uuid())
-  instituteId       String
-  userId            String
-  role              UserRole
-  title             String
-  message           String
-  type              NotificationType   @default(ATTENDANCE)
-  studentId         String?
-  attendanceEventId String?
-  eventType         AttendanceType?
-  eventTime         DateTime?
-  isRead            Boolean            @default(false)
-  readAt            DateTime?
-  pushStatus        PushDeliveryStatus @default(PENDING)
-  pushError         String?
-  link              String?
-  idempotencyKey    String?            @unique
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id                 String             @id @default(uuid())
+  instituteId        String
+  userId             String
+  role               UserRole
+  title              String
+  message            String
+  type               NotificationType   @default(ATTENDANCE)
+  studentId          String?
+  attendanceEventId  String?
+  eventType          AttendanceType?
+  eventTime          DateTime?
+  isRead             Boolean            @default(false)
+  readAt             DateTime?
+  pushStatus         PushDeliveryStatus @default(PENDING)
+  pushError          String?
+  link               String?
+  entityType         String?
+  entityId           String?
+  metadata           Json?
+  idempotencyKey     String?            @unique
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  institute       Institute        @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  institute          Institute          @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   student         Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   attendanceEvent AttendanceEvent? @relation(fields: [attendanceEventId], references: [id], onDelete: Cascade)
@@ -643,6 +651,7 @@ model Notification {
   @@index([instituteId, createdAt])
   @@index([attendanceEventId])
   @@index([studentId])
+  @@index([entityType, entityId])
 }
 
 model DevicePushToken {
@@ -684,11 +693,11 @@ model LearningMaterial {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  institute    Institute             @relation(fields: [instituteId], references: [id], onDelete: Cascade)
-  batch        Batch                 @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  subject      Subject?              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  uploader     User                  @relation("UploadedByStaff", fields: [uploaderId], references: [id])
-  submissions  HomeworkSubmission[]
+  institute   Institute            @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  batch       Batch                @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject     Subject?             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  uploader    User                 @relation("UploadedByStaff", fields: [uploaderId], references: [id])
+  submissions HomeworkSubmission[]
   interactions MaterialInteraction[]
 
   @@index([instituteId, batchId])
@@ -779,7 +788,7 @@ model ExamMark {
 }
 
 model ProgressFeedback {
-  id              String    @id @default(uuid())
+id              String    @id @default(uuid())
   instituteId     String
   studentId       String
   batchId         String
@@ -815,7 +824,7 @@ model ProgressFeedback {
 }
 
 model ParentReview {
-  id              String    @id @default(uuid())
+id              String    @id @default(uuid())
   instituteId     String
   parentId        String
   studentId       String?
@@ -1065,6 +1074,9 @@ model InAppNotification {
   title       String
   message     String
   link        String?
+  entityType  String?
+  entityId    String?
+  metadata    Json?
   isRead      Boolean   @default(false)
   readAt      DateTime?
   createdAt   DateTime  @default(now())
@@ -1101,6 +1113,38 @@ model OnlinePaymentOrder {
   @@index([instituteId])
   @@index([studentId])
   @@index([orderId])
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// PARENT FEEDBACK MANAGEMENT (FEATURE D)
+// -------------------------------------------------------------
+
+model ParentFeedback {
+  id              String    @id @default(uuid())
+  instituteId     String
+  parentId        String
+  studentId       String
+  staffId         String? // Target teacher/staff (User.id)
+  category        String // "Academic Progress", "Teaching Method", "Attendance", "Student Behaviour", "Homework", "General Feedback"
+  feedbackText    String
+  status          String    @default("OPEN") // "OPEN", "RESPONDED", "RESOLVED"
+  teacherResponse String?
+  respondedAt     DateTime?
+  respondedById   String? // User.id of responder
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  institute   Institute     @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  parent      ParentProfile @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  staff       User?         @relation("FeedbackTargetStaff", fields: [staffId], references: [id], onDelete: SetNull)
+  respondedBy User?         @relation("FeedbackRespondedBy", fields: [respondedById], references: [id], onDelete: SetNull)
+
+  @@index([instituteId])
+  @@index([studentId])
+  @@index([parentId])
+  @@index([staffId])
   @@index([status])
 }
 
