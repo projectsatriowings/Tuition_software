@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -20,6 +21,7 @@ import { QuestionGenerator } from './pages/QuestionGenerator/QuestionGenerator';
 import { ProgressReviewsManagement } from './pages/ProgressReviewsManagement';
 import { MessagingInbox } from './pages/MessagingInbox';
 import { FeesManagement } from './pages/FeesManagement';
+import { ToastProvider } from './context/ToastContext';
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { pageTransitionVariants } from './utils/animations';
@@ -34,6 +36,8 @@ const AppContent: React.FC = () => {
     return 'academic_dashboard';
   });
 
+  
+
   useEffect(() => {
     if (user) {
       const raw = window.location.pathname.replace(/^\//, '').trim();
@@ -45,7 +49,7 @@ const AppContent: React.FC = () => {
         } else if (user.role === 'ACADEMIC_ADMIN') {
           setCurrentTab('academic_dashboard');
         } else if (user.role === 'STAFF') {
-          setCurrentTab('attendance');
+          setCurrentTab('my_attendance');
         } else if (user.role === 'PARENT') {
           setCurrentTab('parent_dashboard');
         } else if (user.role === 'STUDENT') {
@@ -78,11 +82,11 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework')) {
-      setCurrentTab('academic_dashboard');
+    if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework' || currentTab === 'attendance' || currentTab === 'my_attendance')) {
+      setCurrentTab('staff_attendance');
     }
-    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff')) {
-      setCurrentTab('attendance');
+    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff' || currentTab === 'staff_attendance')) {
+      setCurrentTab('my_attendance');
     }
   }, [user, currentTab]);
 
@@ -132,7 +136,7 @@ const AppContent: React.FC = () => {
                   <StaffAttendanceAdmin onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
-                {currentTab === 'my_attendance' && <StaffMyAttendance />}
+                {currentTab === 'my_attendance' && user.role === 'STAFF' && <StaffMyAttendance />}
 
                 {currentTab === 'students' && <StudentManagement />}
 
@@ -140,7 +144,7 @@ const AppContent: React.FC = () => {
                   <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
                 )}
 
-                {currentTab === 'attendance' && <AttendanceManagement />}
+                {currentTab === 'attendance' && user.role === 'STAFF' && <AttendanceManagement />}
 
                 {(currentTab === 'parent_portal' || currentTab.startsWith('parent_')) && (
                   <ParentPortal
@@ -175,8 +179,6 @@ const AppContent: React.FC = () => {
   );
 };
 
-import { ToastProvider } from './context/ToastContext';
-import { BrowserRouter } from 'react-router-dom';
 
 export default function App() {
   return (

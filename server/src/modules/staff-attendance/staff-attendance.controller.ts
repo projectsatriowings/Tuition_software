@@ -8,6 +8,19 @@ import {
   calculateHaversineDistance,
   isValidCoordinate,
 } from './geofence.service.js';
+import {
+  isStaffWfhAuthorized,
+  createWfhAuthorization,
+  reviewWfhRequest,
+  revokeWfhAuthorization,
+  getWfhMetrics,
+  getStaffTodayOnlineClasses,
+  updateOnlineClassStatus,
+  StaffAttendanceMode,
+  WFHAuthorizationScope,
+  WFHAuthorizationStatus,
+  WFHReasonCategory,
+} from './wfh.service.js';
 
 const prisma = new PrismaClient();
 
@@ -39,11 +52,45 @@ const updateConfigSchema = z.object({
 });
 
 const checkInSchema = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  mode: z.enum(['ON_SITE', 'WFH']).default('ON_SITE'),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
   accuracy: z.number().optional().nullable(),
   deviceInfo: z.string().optional(),
   idempotencyKey: z.string().optional(),
+});
+
+const createWfhAuthSchema = z.object({
+  scope: z.enum(['INSTITUTE_WIDE', 'INDIVIDUAL', 'GROUP']),
+  staffId: z.string().uuid().optional().nullable(),
+  staffIds: z.array(z.string().uuid()).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD'),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD'),
+  reasonCategory: z.nativeEnum(WFHReasonCategory),
+  reason: z.string().trim().min(3, 'Reason of at least 3 characters is required'),
+  notes: z.string().optional().nullable(),
+});
+
+const submitWfhRequestSchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD'),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD'),
+  reasonCategory: z.nativeEnum(WFHReasonCategory).default('INDIVIDUAL_REQUEST'),
+  reason: z.string().trim().min(3, 'Reason of at least 3 characters is required'),
+  notes: z.string().optional().nullable(),
+});
+
+const rejectWfhRequestSchema = z.object({
+  reason: z.string().optional(),
+});
+
+const revokeWfhAuthSchema = z.object({
+  revocationReason: z.string().trim().min(3, 'Mandatory revocation reason is required'),
+});
+
+const updateClassStatusSchema = z.object({
+  status: z.enum(['SCHEDULED', 'CONDUCTED', 'CANCELLED', 'RESCHEDULED']),
+  notes: z.string().optional().nullable(),
+  meetingLink: z.string().url().optional().nullable(),
 });
 
 const checkOutSchema = z.object({
@@ -95,6 +142,7 @@ export async function getInstituteAttendanceConfig(req: AuthenticatedRequest, re
         lateGraceMinutes: true,
         gpsAccuracyThreshold: true,
         requireCheckoutGeofence: true,
+        allowStaffWfhRequests: true,
         timezone: true,
       },
     });
@@ -287,11 +335,11 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
 
     const parsed = checkInSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ success: false, message: 'Invalid coordinates or format', errors: parsed.error.format() });
+      res.status(400).json({ success: false, message: 'Invalid payload or format', errors: parsed.error.format() });
       return;
     }
 
-    const { latitude, longitude, accuracy, deviceInfo, idempotencyKey } = parsed.data;
+    const { mode = 'ON_SITE', latitude, longitude, accuracy, deviceInfo, idempotencyKey } = parsed.data;
 
     // Check staff profile
     const staff = await prisma.staffProfile.findFirst({
@@ -319,28 +367,70 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    // Server-side Geofence Validation
-    const validation = validateStaffLocation({
-      staffCoords: { latitude, longitude, accuracy },
-      instituteCoords: { latitude: institute.latitude, longitude: institute.longitude },
-      geofenceRadius: institute.geofenceRadius,
-      gpsAccuracyThreshold: institute.gpsAccuracyThreshold,
-    });
-
-    if (!validation.isValid) {
-      res.status(400).json({
-        success: false,
-        message: validation.reason,
-        code: validation.code,
-        distanceMetres: validation.distanceMetres,
-        permittedRadius: institute.geofenceRadius,
-        reportedAccuracy: accuracy,
-      });
-      return;
-    }
-
     const serverNow = new Date();
     const today = getLocalDateForInstitute(serverNow, institute.timezone);
+
+    let validationOutcome = 'VERIFIED_INSIDE_GEOFENCE';
+    let distanceMetres: number | null = null;
+    let isWithinGeofence = true;
+    let wfhAuthorizationId: string | null = null;
+
+    if (mode === 'WFH') {
+      // Secure Backend Verification: Verify staff member is actively authorized for WFH today
+      const wfhCheck = await isStaffWfhAuthorized({
+        instituteId,
+        staffId: staff.id,
+        date: today,
+      });
+
+      if (!wfhCheck.isAuthorized || !wfhCheck.authorization) {
+        res.status(403).json({
+          success: false,
+          code: 'NO_ACTIVE_WFH_AUTHORIZATION',
+          message:
+            'Work From Home is not approved for today. Please check in at the institute or submit a WFH request if your institute permits requests.',
+          reason: wfhCheck.reason,
+        });
+        return;
+      }
+
+      wfhAuthorizationId = wfhCheck.authorization.id;
+      validationOutcome = 'WFH_AUTHORIZED_REMOTE';
+      isWithinGeofence = false; // Remote attendance
+    } else {
+      // ON_SITE Mode: Strict Geofence and GPS Accuracy Validation
+      if (latitude == null || longitude == null) {
+        res.status(400).json({
+          success: false,
+          message: 'GPS coordinates (latitude and longitude) are required for on-site attendance.',
+          code: 'COORDINATES_MISSING',
+        });
+        return;
+      }
+
+      const validation = validateStaffLocation({
+        staffCoords: { latitude, longitude, accuracy },
+        instituteCoords: { latitude: institute.latitude, longitude: institute.longitude },
+        geofenceRadius: institute.geofenceRadius,
+        gpsAccuracyThreshold: institute.gpsAccuracyThreshold,
+      });
+
+      if (!validation.isValid) {
+        res.status(400).json({
+          success: false,
+          message: validation.reason,
+          code: validation.code,
+          distanceMetres: validation.distanceMetres,
+          permittedRadius: institute.geofenceRadius,
+          reportedAccuracy: accuracy,
+        });
+        return;
+      }
+
+      distanceMetres = validation.distanceMetres;
+      validationOutcome = 'VERIFIED_INSIDE_GEOFENCE';
+      isWithinGeofence = true;
+    }
 
     // Check if session already exists
     const existingSession = await prisma.staffAttendanceSession.findUnique({
@@ -389,11 +479,15 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
           status,
           checkInTime: serverNow,
           isLate,
+          attendanceMode: mode,
+          wfhAuthorizationId,
         },
         update: {
           status,
           checkInTime: serverNow,
           isLate,
+          attendanceMode: mode,
+          wfhAuthorizationId,
         },
       });
 
@@ -404,30 +498,40 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
           staffId: staff.id,
           eventType: 'CHECK_IN',
           serverTimestamp: serverNow,
-          latitude,
-          longitude,
+          latitude: latitude ?? null,
+          longitude: longitude ?? null,
           accuracy: accuracy ?? null,
-          distanceFromCenter: validation.distanceMetres,
-          isWithinGeofence: true,
-          validationOutcome: 'VERIFIED_INSIDE_GEOFENCE',
+          distanceFromCenter: distanceMetres,
+          isWithinGeofence,
+          validationOutcome,
           deviceInfo,
           idempotencyKey: idempotencyKey || null,
+          attendanceMode: mode,
+          wfhAuthorizationId,
         },
       });
 
       return { session, event };
     });
 
+    const successMsg =
+      mode === 'WFH'
+        ? isLate
+          ? 'Checked in successfully via Work From Home (Recorded as Late arrival).'
+          : 'Checked in successfully via Work From Home!'
+        : isLate
+        ? `Checked in successfully (Recorded as Late arrival). Distance: ${Math.round(distanceMetres ?? 0)}m`
+        : `Checked in successfully! Distance: ${Math.round(distanceMetres ?? 0)}m`;
+
     res.json({
       success: true,
-      message: isLate
-        ? `Checked in successfully (Recorded as Late arrival). Distance: ${Math.round(validation.distanceMetres)}m`
-        : `Checked in successfully! Distance: ${Math.round(validation.distanceMetres)}m`,
+      message: successMsg,
       data: {
         session: result.session,
         checkInTime: serverNow.toISOString(),
         isLate,
-        distanceMetres: validation.distanceMetres,
+        mode,
+        distanceMetres,
       },
     });
   } catch (error: any) {
@@ -502,11 +606,13 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    // Check geofence policy for checkout if enabled
+    // Check if session is WFH mode (WFH does not require on-site geofencing)
+    const isWfhSession = session.attendanceMode === 'WFH';
+
     let distanceMetres: number | null = null;
     let isWithin = true;
 
-    if (institute.requireCheckoutGeofence) {
+    if (!isWfhSession && institute.requireCheckoutGeofence) {
       if (latitude == null || longitude == null) {
         res.status(400).json({
           success: false,
@@ -534,7 +640,7 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
 
       distanceMetres = validation.distanceMetres;
       isWithin = validation.isWithinRadius;
-    } else if (latitude != null && longitude != null && institute.latitude != null && institute.longitude != null) {
+    } else if (!isWfhSession && latitude != null && longitude != null && institute.latitude != null && institute.longitude != null) {
       distanceMetres = calculateHaversineDistance(institute.latitude, institute.longitude, latitude, longitude);
       isWithin = distanceMetres <= institute.geofenceRadius;
     }
@@ -564,10 +670,12 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
           longitude: longitude ?? null,
           accuracy: accuracy ?? null,
           distanceFromCenter: distanceMetres,
-          isWithinGeofence: isWithin,
-          validationOutcome: 'CHECKOUT_SUCCESSFUL',
+          isWithinGeofence: isWfhSession ? false : isWithin,
+          validationOutcome: isWfhSession ? 'WFH_CHECKOUT' : isWithin ? 'VERIFIED_INSIDE_GEOFENCE' : 'CHECKOUT_OUTSIDE_GEOFENCE',
           deviceInfo,
           idempotencyKey: idempotencyKey || null,
+          attendanceMode: session.attendanceMode,
+          wfhAuthorizationId: session.wfhAuthorizationId,
         },
       });
 
@@ -583,6 +691,7 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
       message: `Checked out successfully! Work duration: ${formattedDuration}.`,
       data: {
         session: result.session,
+        status: result.session.status,
         checkOutTime: serverNow.toISOString(),
         durationMinutes,
         formattedDuration,
@@ -739,7 +848,7 @@ export async function getAdminDailyRegister(req: AuthenticatedRequest, res: Resp
       return;
     }
 
-    const { date, search, status, department } = req.query;
+    const { date, search, status, department, mode } = req.query;
 
     const institute = await prisma.institute.findUnique({
       where: { id: instituteId },
@@ -813,6 +922,8 @@ export async function getAdminDailyRegister(req: AuthenticatedRequest, res: Resp
         designation: staff.designation,
         department: staff.department,
         status: derivedStatus,
+        attendanceMode: sess?.attendanceMode || 'ON_SITE',
+        wfhAuthorizationId: sess?.wfhAuthorizationId || null,
         sessionId: sess?.id || null,
         checkInTime: sess?.checkInTime ? sess.checkInTime.toISOString() : null,
         checkOutTime: sess?.checkOutTime ? sess.checkOutTime.toISOString() : null,
@@ -829,6 +940,14 @@ export async function getAdminDailyRegister(req: AuthenticatedRequest, res: Resp
 
     if (status && typeof status === 'string' && status !== 'ALL') {
       register = register.filter((r) => r.status === status);
+    }
+
+    if (mode && typeof mode === 'string' && mode !== 'ALL') {
+      if (mode === 'WFH') {
+        register = register.filter((r) => r.attendanceMode === 'WFH' && r.sessionId != null);
+      } else if (mode === 'ON_SITE') {
+        register = register.filter((r) => r.attendanceMode === 'ON_SITE' || r.sessionId == null);
+      }
     }
 
     res.json({
@@ -1074,9 +1193,17 @@ export async function getAdminMonthlyReport(req: AuthenticatedRequest, res: Resp
     const reportData = allStaff.map((staff) => {
       const staffSessions = sessions.filter((s) => s.staffId === staff.id);
 
-      const daysPresent = staffSessions.filter((s) =>
-        ['CHECKED_IN', 'CHECKED_OUT', 'LATE', 'MANUALLY_CORRECTED'].includes(s.status)
+      const onSiteDays = staffSessions.filter((s) =>
+        ['CHECKED_IN', 'CHECKED_OUT', 'LATE', 'MANUALLY_CORRECTED'].includes(s.status) &&
+        s.attendanceMode === 'ON_SITE'
       ).length;
+
+      const wfhDays = staffSessions.filter((s) =>
+        ['CHECKED_IN', 'CHECKED_OUT', 'LATE', 'MANUALLY_CORRECTED'].includes(s.status) &&
+        s.attendanceMode === 'WFH'
+      ).length;
+
+      const daysPresent = onSiteDays + wfhDays;
 
       const daysLate = staffSessions.filter((s) => s.isLate).length;
 
@@ -1096,6 +1223,8 @@ export async function getAdminMonthlyReport(req: AuthenticatedRequest, res: Resp
         designation: staff.designation || 'Staff',
         department: staff.department || 'General',
         daysPresent,
+        onSiteDays,
+        wfhDays,
         daysLate,
         missingCheckouts,
         onLeaveDays,
@@ -1110,7 +1239,9 @@ export async function getAdminMonthlyReport(req: AuthenticatedRequest, res: Resp
         'Staff Name',
         'Designation',
         'Department',
-        'Days Present',
+        'Total Days Present',
+        'On-Site Days',
+        'WFH Days',
         'Late Arrivals',
         'Missing Check-Outs',
         'Approved Leave Days',
@@ -1154,5 +1285,544 @@ export async function getAdminMonthlyReport(req: AuthenticatedRequest, res: Resp
   } catch (error: any) {
     console.error('[StaffAttendance] Error generating monthly report:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to generate report' });
+  }
+}
+
+
+// ==========================================
+// 6. WORK FROM HOME (WFH) CONTROLLERS
+// ==========================================
+
+export async function getStaffWfhEligibility(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const userId = req.user?.userId;
+    if (!instituteId || !userId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const { date } = req.query;
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { userId, instituteId },
+    });
+
+    if (!staff) {
+      res.status(404).json({ success: false, message: 'Staff profile not found' });
+      return;
+    }
+
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { timezone: true, allowStaffWfhRequests: true },
+    });
+
+    const targetDate = date && typeof date === 'string'
+      ? new Date(`${date}T00:00:00.000Z`)
+      : getLocalDateForInstitute(new Date(), institute?.timezone || 'Asia/Kolkata');
+
+    const wfhCheck = await isStaffWfhAuthorized({
+      instituteId,
+      staffId: staff.id,
+      date: targetDate,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        isAuthorized: wfhCheck.isAuthorized,
+        scope: wfhCheck.scope || null,
+        reason: wfhCheck.reason || null,
+        authorization: wfhCheck.authorization || null,
+        allowStaffWfhRequests: institute?.allowStaffWfhRequests ?? true,
+        dateStr: targetDate.toISOString().split('T')[0],
+      },
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error checking WFH eligibility:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to check WFH eligibility' });
+  }
+}
+
+export async function submitStaffWfhRequest(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const userId = req.user?.userId;
+    if (!instituteId || !userId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { allowStaffWfhRequests: true },
+    });
+
+    if (!institute?.allowStaffWfhRequests) {
+      res.status(403).json({
+        success: false,
+        message: 'Staff Work From Home requests are currently disabled by institute administration.',
+      });
+      return;
+    }
+
+    const parsed = submitWfhRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request data', errors: parsed.error.format() });
+      return;
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { userId, instituteId },
+    });
+
+    if (!staff) {
+      res.status(404).json({ success: false, message: 'Staff profile not found' });
+      return;
+    }
+
+    const { startDate, endDate, reasonCategory, reason, notes } = parsed.data;
+
+    const request = await createWfhAuthorization({
+      instituteId,
+      scope: 'INDIVIDUAL',
+      staffId: staff.id,
+      startDate: new Date(`${startDate}T00:00:00.000Z`),
+      endDate: new Date(`${endDate}T00:00:00.000Z`),
+      reasonCategory,
+      reason,
+      notes,
+      status: 'PENDING',
+      requestedById: userId,
+      actingUserId: userId,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Work From Home request submitted successfully! Academic Admin will review your request.',
+      data: request,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error submitting WFH request:', error);
+    res.status(400).json({ success: false, message: error.message || 'Failed to submit WFH request' });
+  }
+}
+
+export async function getStaffMyWfhRequests(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const userId = req.user?.userId;
+    if (!instituteId || !userId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { userId, instituteId },
+    });
+
+    if (!staff) {
+      res.status(404).json({ success: false, message: 'Staff profile not found' });
+      return;
+    }
+
+    const requests = await prisma.staffWFHAuthorization.findMany({
+      where: {
+        instituteId,
+        OR: [
+          { staffId: staff.id },
+          { groupAssignments: { some: { staffId: staff.id } } },
+          { scope: 'INSTITUTE_WIDE' },
+        ],
+      },
+      include: {
+        approvedBy: { select: { fullName: true } },
+        rejectedBy: { select: { fullName: true } },
+        revokedBy: { select: { fullName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({
+      success: true,
+      data: requests,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error fetching my WFH requests:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to fetch WFH requests' });
+  }
+}
+
+export async function getAdminWfhAuthorizations(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      res.status(400).json({ success: false, message: 'Institute context required' });
+      return;
+    }
+
+    const { status, scope, reasonCategory, staffId, date, search } = req.query;
+
+    const where: any = { instituteId };
+
+    if (status && typeof status === 'string' && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (scope && typeof scope === 'string' && scope !== 'ALL') {
+      where.scope = scope;
+    }
+
+    if (reasonCategory && typeof reasonCategory === 'string' && reasonCategory !== 'ALL') {
+      where.reasonCategory = reasonCategory;
+    }
+
+    if (staffId && typeof staffId === 'string') {
+      where.OR = [
+        { staffId },
+        { groupAssignments: { some: { staffId } } },
+      ];
+    }
+
+    if (date && typeof date === 'string') {
+      const targetDate = new Date(`${date}T00:00:00.000Z`);
+      where.startDate = { lte: targetDate };
+      where.endDate = { gte: targetDate };
+    }
+
+    if (search && typeof search === 'string') {
+      const q = search.trim();
+      where.OR = [
+        { reason: { contains: q, mode: 'insensitive' } },
+        { staff: { employeeCode: { contains: q, mode: 'insensitive' } } },
+        { staff: { user: { fullName: { contains: q, mode: 'insensitive' } } } },
+      ];
+    }
+
+    const authorizations = await prisma.staffWFHAuthorization.findMany({
+      where,
+      include: {
+        staff: {
+          include: {
+            user: { select: { fullName: true, email: true } },
+          },
+        },
+        requestedBy: { select: { fullName: true, email: true } },
+        approvedBy: { select: { fullName: true, email: true } },
+        rejectedBy: { select: { fullName: true, email: true } },
+        revokedBy: { select: { fullName: true, email: true } },
+        groupAssignments: {
+          include: {
+            staff: {
+              include: { user: { select: { fullName: true } } },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({
+      success: true,
+      data: authorizations,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error listing WFH authorizations:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to list WFH authorizations' });
+  }
+}
+
+export async function createAdminWfhAuthorization(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const adminUserId = req.user?.userId;
+    if (!instituteId || !adminUserId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const parsed = createWfhAuthSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid payload', errors: parsed.error.format() });
+      return;
+    }
+
+    const { scope, staffId, staffIds, startDate, endDate, reasonCategory, reason, notes } = parsed.data;
+
+    const auth = await createWfhAuthorization({
+      instituteId,
+      scope,
+      staffId,
+      staffIds,
+      startDate: new Date(`${startDate}T00:00:00.000Z`),
+      endDate: new Date(`${endDate}T00:00:00.000Z`),
+      reasonCategory,
+      reason,
+      notes,
+      status: 'APPROVED',
+      approvedById: adminUserId,
+      actingUserId: adminUserId,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Work From Home authorization created successfully!',
+      data: auth,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error creating WFH authorization:', error);
+    res.status(400).json({ success: false, message: error.message || 'Failed to create authorization' });
+  }
+}
+
+export async function approveWfhRequestHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const adminUserId = req.user?.userId;
+    const { id } = req.params;
+
+    if (!instituteId || !adminUserId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const updated = await reviewWfhRequest({
+      authorizationId: id,
+      instituteId,
+      adminUserId,
+      action: 'APPROVE',
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.json({
+      success: true,
+      message: 'WFH request approved successfully!',
+      data: updated,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error approving WFH request:', error);
+    res.status(400).json({ success: false, message: error.message || 'Failed to approve request' });
+  }
+}
+
+export async function rejectWfhRequestHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const adminUserId = req.user?.userId;
+    const { id } = req.params;
+
+    if (!instituteId || !adminUserId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const parsed = rejectWfhRequestSchema.safeParse(req.body);
+    const reason = parsed.success ? parsed.data.reason : undefined;
+
+    const updated = await reviewWfhRequest({
+      authorizationId: id,
+      instituteId,
+      adminUserId,
+      action: 'REJECT',
+      reason,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.json({
+      success: true,
+      message: 'WFH request rejected.',
+      data: updated,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error rejecting WFH request:', error);
+    res.status(400).json({ success: false, message: error.message || 'Failed to reject request' });
+  }
+}
+
+export async function revokeWfhAuthorizationHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const adminUserId = req.user?.userId;
+    const { id } = req.params;
+
+    if (!instituteId || !adminUserId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const parsed = revokeWfhAuthSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        message: 'A mandatory revocation reason of at least 3 characters is required',
+        errors: parsed.error.format(),
+      });
+      return;
+    }
+
+    const updated = await revokeWfhAuthorization({
+      authorizationId: id,
+      instituteId,
+      adminUserId,
+      revocationReason: parsed.data.revocationReason,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.json({
+      success: true,
+      message: 'WFH authorization revoked successfully. Existing attendance records have been preserved.',
+      data: updated,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error revoking WFH authorization:', error);
+    res.status(400).json({ success: false, message: error.message || 'Failed to revoke authorization' });
+  }
+}
+
+export async function getAdminWfhMetricsHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    if (!instituteId) {
+      res.status(400).json({ success: false, message: 'Institute context required' });
+      return;
+    }
+
+    const { date } = req.query;
+
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { timezone: true },
+    });
+
+    const targetDate = date && typeof date === 'string'
+      ? new Date(`${date}T00:00:00.000Z`)
+      : getLocalDateForInstitute(new Date(), institute?.timezone || 'Asia/Kolkata');
+
+    const metrics = await getWfhMetrics(instituteId, targetDate);
+
+    res.json({
+      success: true,
+      data: {
+        dateStr: targetDate.toISOString().split('T')[0],
+        ...metrics,
+      },
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error getting WFH metrics:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to get WFH metrics' });
+  }
+}
+
+export async function getStaffOnlineClassesHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const userId = req.user?.userId;
+    if (!instituteId || !userId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const { date } = req.query;
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { userId, instituteId },
+    });
+
+    if (!staff) {
+      res.status(404).json({ success: false, message: 'Staff profile not found' });
+      return;
+    }
+
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { timezone: true },
+    });
+
+    const targetDate = date && typeof date === 'string'
+      ? new Date(`${date}T00:00:00.000Z`)
+      : getLocalDateForInstitute(new Date(), institute?.timezone || 'Asia/Kolkata');
+
+    const classes = await getStaffTodayOnlineClasses({
+      staffProfileId: staff.id,
+      instituteId,
+      targetDate,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        dateStr: targetDate.toISOString().split('T')[0],
+        totalClasses: classes.length,
+        classes,
+      },
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error fetching online classes:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to fetch online classes' });
+  }
+}
+
+export async function updateOnlineClassStatusHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const instituteId = req.instituteId;
+    const userId = req.user?.userId;
+    const { batchSubjectId } = req.params;
+
+    if (!instituteId || !userId) {
+      res.status(400).json({ success: false, message: 'Institute and user context required' });
+      return;
+    }
+
+    const parsed = updateClassStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid payload', errors: parsed.error.format() });
+      return;
+    }
+
+    const staff = await prisma.staffProfile.findFirst({
+      where: { userId, instituteId },
+    });
+
+    if (!staff) {
+      res.status(404).json({ success: false, message: 'Staff profile not found' });
+      return;
+    }
+
+    const institute = await prisma.institute.findUnique({
+      where: { id: instituteId },
+      select: { timezone: true },
+    });
+
+    const today = getLocalDateForInstitute(new Date(), institute?.timezone || 'Asia/Kolkata');
+
+    const updated = await updateOnlineClassStatus({
+      instituteId,
+      staffProfileId: staff.id,
+      batchSubjectId,
+      targetDate: today,
+      status: parsed.data.status,
+      notes: parsed.data.notes || undefined,
+      meetingLink: parsed.data.meetingLink || undefined,
+      actingUserId: userId,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.json({
+      success: true,
+      message: `Online class marked as ${parsed.data.status}`,
+      data: updated,
+    });
+  } catch (error: any) {
+    console.error('[StaffAttendance] Error updating online class status:', error);
+    res.status(400).json({ success: false, message: error.message || 'Failed to update class status' });
   }
 }

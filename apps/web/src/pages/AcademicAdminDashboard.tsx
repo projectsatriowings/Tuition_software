@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
+  Calendar,
+  Compass,
 } from 'lucide-react';
 
 interface AcademicAdminDashboardProps {
@@ -99,7 +101,7 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({ 
       </div>
 
       {/* Quick Action Shortcuts */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           onClick={() => onNavigateTab('students')}
           className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
@@ -134,6 +136,26 @@ export const AcademicAdminDashboard: React.FC<AcademicAdminDashboardProps> = ({ 
             </p>
             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 mt-4">
               Manage Staff <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+            </span>
+          </button>
+        )}
+
+        {user?.role === 'ACADEMIC_ADMIN' && (
+          <button
+            onClick={() => onNavigateTab('staff_attendance')}
+            className="p-5 rounded-2xl bg-white border border-[#D7CCC8] hover:border-[#8D6E63] text-left transition-all group shadow-sm hover:shadow-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 flex items-center justify-center mb-4">
+              <Compass className="w-5 h-5" />
+            </div>
+            <h3 className="font-bold text-[#2D1E18] text-base group-hover:text-[#4E342E] transition">
+              Staff Attendance
+            </h3>
+            <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed">
+              Monitor GPS geofenced check-ins, daily staff register, and geofence radius.
+            </p>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-purple-800 mt-4">
+              View Register <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
             </span>
           </button>
         )}

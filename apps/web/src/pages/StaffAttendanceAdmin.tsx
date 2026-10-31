@@ -21,6 +21,13 @@ import {
   Info,
   X,
   Check,
+  Home,
+  Building2,
+  UserCheck,
+  UserX,
+  HelpCircle,
+  Send,
+  Ban,
 } from 'lucide-react';
 
 interface StaffAttendanceAdminProps {
@@ -31,7 +38,8 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
   const { user } = useAuth();
 
   // Navigation tab: 'register' | 'settings' | 'monthly'
-  const [activeTab, setActiveTab] = useState<'register' | 'settings' | 'monthly'>('register');
+  const [activeTab, setActiveTab] = useState<'register' | 'wfh' | 'settings' | 'monthly'>('register');
+  const [modeFilter, setModeFilter] = useState<'ALL' | 'ON_SITE' | 'WFH'>('ALL');
 
   // Summary Metrics
   const [summary, setSummary] = useState<{
@@ -44,6 +52,43 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
     notCheckedIn: number;
     onLeave: number;
   } | null>(null);
+
+
+  // WFH Management State
+  const [wfhMetrics, setWfhMetrics] = useState<{
+    authorizedToday: number;
+    checkedInWfh: number;
+    checkedOutWfh: number;
+    pendingRequests: number;
+    rejectedRequests: number;
+    revokedAuthorizations: number;
+  } | null>(null);
+  const [wfhAuthorizations, setWfhAuthorizations] = useState<any[]>([]);
+  const [wfhLoading, setWfhLoading] = useState(false);
+  const [wfhStatusFilter, setWfhStatusFilter] = useState('ALL');
+  const [wfhScopeFilter, setWfhScopeFilter] = useState('ALL');
+  const [wfhSearch, setWfhSearch] = useState('');
+
+  // WFH Authorization Form State
+  const [wfhScope, setWfhScope] = useState<'INSTITUTE_WIDE' | 'INDIVIDUAL' | 'GROUP'>('INSTITUTE_WIDE');
+  const [wfhStaffId, setWfhStaffId] = useState('');
+  const [wfhSelectedStaffIds, setWfhSelectedStaffIds] = useState<string[]>([]);
+  const [wfhStartDate, setWfhStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [wfhEndDate, setWfhEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [wfhReasonCategory, setWfhReasonCategory] = useState('WEATHER_DISRUPTION');
+  const [wfhReason, setWfhReason] = useState('');
+  const [wfhNotes, setWfhNotes] = useState('');
+  const [wfhCreating, setWfhCreating] = useState(false);
+  const [wfhConfirmModal, setWfhConfirmModal] = useState(false);
+
+  // Review & Revoke Modals
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+
+  const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null);
+  const [revocationReason, setRevocationReason] = useState('');
+  const [revokeSubmitting, setRevokeSubmitting] = useState(false);
 
   // Daily Register State
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -168,6 +213,40 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
     }
   }, [reportYear, reportMonth]);
 
+  // Load WFH Metrics
+  const loadWfhMetrics = useCallback(async () => {
+    try {
+      const res = await apiFetch('/staff-attendance/wfh/admin/metrics');
+      if (res.success && res.data) {
+        setWfhMetrics(res.data);
+      }
+    } catch (err) {
+      console.error('[StaffAttendanceAdmin] Error loading WFH metrics:', err);
+    }
+  }, []);
+
+  // Load WFH Authorizations
+  const loadWfhAuthorizations = useCallback(async () => {
+    try {
+      setWfhLoading(true);
+      const params = new URLSearchParams();
+      if (wfhStatusFilter !== 'ALL') params.append('status', wfhStatusFilter);
+      if (wfhScopeFilter !== 'ALL') params.append('scope', wfhScopeFilter);
+      if (wfhSearch) params.append('search', wfhSearch);
+
+      const res = await apiFetch(`/staff-attendance/wfh/admin/authorizations?${params.toString()}`);
+      if (res.success && res.data) {
+        setWfhAuthorizations(Array.isArray(res.data) ? res.data : []);
+      } else {
+        setWfhAuthorizations([]);
+      }
+    } catch (err) {
+      console.error('[StaffAttendanceAdmin] Error loading WFH authorizations:', err);
+    } finally {
+      setWfhLoading(false);
+    }
+  }, [wfhStatusFilter, wfhScopeFilter, wfhSearch]);
+
   useEffect(() => {
     loadSummary();
     loadRegister();
@@ -178,16 +257,24 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
       loadConfig();
     } else if (activeTab === 'monthly') {
       loadMonthlyReport();
+    } else if (activeTab === 'wfh') {
+      loadWfhMetrics();
+      loadWfhAuthorizations();
     }
-  }, [activeTab, loadConfig, loadMonthlyReport]);
+  }, [activeTab, loadConfig, loadMonthlyReport, loadWfhMetrics, loadWfhAuthorizations]);
 
   // ==========================================
   // ACTIONS
   // ==========================================
 
   // Save Config
-  const handleSaveConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
+
+
+
+
+
+  const handleSaveConfig = async (e?: React.FormEvent) => {
+    if (e?.preventDefault) e.preventDefault();
     try {
       setConfigSaving(true);
       setConfigError(null);
@@ -338,6 +425,118 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
     }
   };
 
+  // Create WFH Authorization
+  const handleCreateWfhAuthorization = async () => {
+    try {
+      setWfhCreating(true);
+      const payload: any = {
+        scope: wfhScope,
+        startDate: wfhStartDate,
+        endDate: wfhEndDate,
+        reasonCategory: wfhReasonCategory,
+        reason: wfhReason.trim(),
+        notes: wfhNotes.trim() || undefined,
+      };
+      if (wfhScope === 'INDIVIDUAL') {
+        payload.staffId = wfhStaffId;
+      } else if (wfhScope === 'GROUP') {
+        payload.staffIds = wfhSelectedStaffIds;
+      }
+
+      const res = await apiFetch('/staff-attendance/wfh/admin/authorizations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (res.success) {
+        setWfhConfirmModal(false);
+        setWfhReason('');
+        setWfhNotes('');
+        setWfhStaffId('');
+        setWfhSelectedStaffIds([]);
+        loadWfhMetrics();
+        loadWfhAuthorizations();
+        alert('Work From Home authorization created successfully!');
+      } else {
+        alert(res.message || 'Failed to create authorization.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to create authorization.');
+    } finally {
+      setWfhCreating(false);
+    }
+  };
+
+  // Approve WFH Request
+  const handleApproveWfh = async (id: string) => {
+    if (!window.confirm('Are you sure you want to approve this WFH request?')) return;
+    try {
+      const res = await apiFetch(`/staff-attendance/wfh/admin/authorizations/${id}/approve`, {
+        method: 'POST',
+      });
+      if (res.success) {
+        loadWfhMetrics();
+        loadWfhAuthorizations();
+      } else {
+        alert(res.message || 'Failed to approve request.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve request.');
+    }
+  };
+
+  // Reject WFH Request
+  const handleRejectWfh = async () => {
+    if (!rejectTargetId) return;
+    try {
+      setRejectSubmitting(true);
+      const res = await apiFetch(`/staff-attendance/wfh/admin/authorizations/${rejectTargetId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: rejectReason.trim() || undefined }),
+      });
+      if (res.success) {
+        setRejectTargetId(null);
+        setRejectReason('');
+        loadWfhMetrics();
+        loadWfhAuthorizations();
+      } else {
+        alert(res.message || 'Failed to reject request.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to reject request.');
+    } finally {
+      setRejectSubmitting(false);
+    }
+  };
+
+  // Revoke WFH Authorization
+  const handleRevokeWfh = async () => {
+    if (!revokeTargetId) return;
+    if (!revocationReason.trim() || revocationReason.trim().length < 3) {
+      alert('A mandatory revocation reason of at least 3 characters is required.');
+      return;
+    }
+    try {
+      setRevokeSubmitting(true);
+      const res = await apiFetch(`/staff-attendance/wfh/admin/authorizations/${revokeTargetId}/revoke`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: revocationReason.trim() }),
+      });
+      if (res.success) {
+        setRevokeTargetId(null);
+        setRevocationReason('');
+        loadWfhMetrics();
+        loadWfhAuthorizations();
+      } else {
+        alert(res.message || 'Failed to revoke authorization.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to revoke authorization.');
+    } finally {
+      setRevokeSubmitting(false);
+    }
+  };
+
   // Render Status Badge
   const renderStatusBadge = (status: string, isLate?: boolean) => {
     switch (status) {
@@ -396,7 +595,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 <Compass className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-[#2D1E18]">Staff Attendance & 200m Geofencing</h1>
+                <h1 className="text-xl font-bold text-[#2D1E18]">Staff Attendance</h1>
                 <p className="text-xs text-[#6D4C41]">
                   GPS-verified check-ins, automated geodesic range verification, live register & audited adjustments.
                 </p>
@@ -416,6 +615,17 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
             >
               <Users className="w-3.5 h-3.5" />
               Daily Register
+            </button>
+            <button
+              onClick={() => setActiveTab('wfh')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                activeTab === 'wfh'
+                  ? 'bg-[#4E342E] text-white shadow-sm'
+                  : 'text-[#6D4C41] hover:text-[#2D1E18]'
+              }`}
+            >
+              <Home className="w-3.5 h-3.5" />
+              WFH & Remote Work
             </button>
             <button
               onClick={() => setActiveTab('settings')}
@@ -520,6 +730,15 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 />
               </div>
 
+              <select
+                value={modeFilter}
+                onChange={(e) => setModeFilter(e.target.value as any)}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none"
+              >
+                <option value="ALL">All Modes</option>
+                <option value="ON_SITE">🏢 On-Site Only</option>
+                <option value="WFH">🏠 WFH Only</option>
+              </select>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -670,8 +889,460 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
       {/* ========================================== */}
       {/* TAB 2: LOCATION & GEOFENCE CONFIGURATION   */}
       {/* ========================================== */}
+
+      {/* ========================================== */}
+      {/* TAB 2: WORK FROM HOME & REMOTE WORK        */}
+      {/* ========================================== */}
+      {activeTab === 'wfh' && (
+        <div className="space-y-6">
+          {/* WFH Metrics Header Cards */}
+          {wfhMetrics && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="p-3.5 rounded-xl bg-teal-50 border border-teal-200">
+                <div className="text-[11px] font-semibold text-teal-800 uppercase">Authorized Today</div>
+                <div className="text-xl font-bold text-teal-950 mt-1">{wfhMetrics.authorizedToday}</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="text-[11px] font-semibold text-emerald-800 uppercase">Checked In WFH</div>
+                <div className="text-xl font-bold text-emerald-900 mt-1">{wfhMetrics.checkedInWfh}</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200">
+                <div className="text-[11px] font-semibold text-blue-800 uppercase">Checked Out WFH</div>
+                <div className="text-xl font-bold text-blue-900 mt-1">{wfhMetrics.checkedOutWfh}</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                <div className="text-[11px] font-semibold text-amber-800 uppercase">Pending Requests</div>
+                <div className="text-xl font-bold text-amber-900 mt-1">{wfhMetrics.pendingRequests}</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200">
+                <div className="text-[11px] font-semibold text-red-800 uppercase">Rejected Requests</div>
+                <div className="text-xl font-bold text-red-900 mt-1">{wfhMetrics.rejectedRequests}</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-stone-100 border border-stone-300">
+                <div className="text-[11px] font-semibold text-stone-600 uppercase">Revoked</div>
+                <div className="text-xl font-bold text-stone-800 mt-1">{wfhMetrics.revokedAuthorizations}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Create Authorization Section */}
+          <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#2D1E18] flex items-center gap-2">
+                  <Home className="w-4 h-4 text-[#4E342E]" />
+                  Grant Work From Home (WFH) Authorization
+                </h2>
+                <p className="text-xs text-[#6D4C41]">
+                  Authorize remote teaching and attendance for severe weather, online schedules, or approved requests.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Authorization Scope *</label>
+                <select
+                  value={wfhScope}
+                  onChange={(e) => setWfhScope(e.target.value as any)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                >
+                  <option value="INSTITUTE_WIDE">Institute-Wide (All Eligible Staff)</option>
+                  <option value="INDIVIDUAL">Individual Staff Member</option>
+                  <option value="GROUP">Selected Group of Staff</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  value={wfhStartDate}
+                  onChange={(e) => setWfhStartDate(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">End Date *</label>
+                <input
+                  type="date"
+                  value={wfhEndDate}
+                  onChange={(e) => setWfhEndDate(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Scope = INDIVIDUAL Staff Selector */}
+            {wfhScope === 'INDIVIDUAL' && (
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Select Staff Member *</label>
+                <select
+                  value={wfhStaffId}
+                  onChange={(e) => setWfhStaffId(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                >
+                  <option value="">-- Choose Staff Member --</option>
+                  {register.map((s) => (
+                    <option key={s.staffId} value={s.staffId}>
+                      {s.fullName} ({s.employeeCode || 'No Code'}) • {s.designation || 'Staff'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Scope = GROUP Staff Checkbox List */}
+            {wfhScope === 'GROUP' && (
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-[#2D1E18]">
+                  Select Staff Members for Group ({wfhSelectedStaffIds.length} selected) *
+                </label>
+                <div className="max-h-48 overflow-y-auto p-3 rounded-xl border border-[#D7CCC8] bg-[#FAF8F5] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {register.map((s) => {
+                    const isChecked = wfhSelectedStaffIds.includes(s.staffId);
+                    return (
+                      <label
+                        key={s.staffId}
+                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition-colors ${
+                          isChecked
+                            ? 'bg-[#4E342E] text-white border-[#4E342E]'
+                            : 'bg-white text-[#2D1E18] border-[#D7CCC8] hover:bg-stone-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setWfhSelectedStaffIds((prev) => [...prev, s.staffId]);
+                            } else {
+                              setWfhSelectedStaffIds((prev) => prev.filter((id) => id !== s.staffId));
+                            }
+                          }}
+                          className="rounded text-[#4E342E] focus:ring-0"
+                        />
+                        <div className="truncate">
+                          <div className="font-semibold truncate">{s.fullName}</div>
+                          <div className={`text-[10px] ${isChecked ? 'text-stone-200' : 'text-[#8D6E63]'}`}>
+                            {s.employeeCode || 'Staff'}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Reason Category *</label>
+                <select
+                  value={wfhReasonCategory}
+                  onChange={(e) => setWfhReasonCategory(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                >
+                  <option value="WEATHER_DISRUPTION">Heavy Rain / Cyclone / Weather Disruption</option>
+                  <option value="ONLINE_CLASSES">Scheduled Online Teaching Day</option>
+                  <option value="INSTITUTE_CLOSURE">Temporary Institute / Campus Closure</option>
+                  <option value="INDIVIDUAL_REQUEST">Approved Individual Faculty Request</option>
+                  <option value="MANAGEMENT_APPROVAL">Academic Management Administrative Approval</option>
+                  <option value="OTHER">Other Operational Justification</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Reason & Explanation *</label>
+                <input
+                  type="text"
+                  value={wfhReason}
+                  onChange={(e) => setWfhReason(e.target.value)}
+                  placeholder="e.g. Red alert issued by Met dept, conducting morning theory sessions online"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Optional Notes / Instructions</label>
+              <textarea
+                value={wfhNotes}
+                onChange={(e) => setWfhNotes(e.target.value)}
+                rows={2}
+                placeholder="Internal academic admin notes or online class delivery guidelines..."
+                className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!wfhReason.trim()) {
+                    alert('Please enter a reason for the WFH authorization.');
+                    return;
+                  }
+                  if (wfhScope === 'INDIVIDUAL' && !wfhStaffId) {
+                    alert('Please select an individual staff member.');
+                    return;
+                  }
+                  if (wfhScope === 'GROUP' && wfhSelectedStaffIds.length === 0) {
+                    alert('Please select at least one staff member for the group.');
+                    return;
+                  }
+                  setWfhConfirmModal(true);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-bold shadow-sm transition-colors flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                Authorize Work From Home
+              </button>
+            </div>
+          </div>
+
+          {/* Pending WFH Requests Table */}
+          {wfhAuthorizations.some((a) => a.status === 'PENDING') && (
+            <div className="bg-amber-50 rounded-2xl p-6 border border-amber-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-700" />
+                    Pending Staff WFH Requests Needing Review
+                  </h3>
+                  <p className="text-xs text-amber-800">
+                    Review and approve or reject employee remote work submissions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto bg-white rounded-xl border border-amber-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF8F5] text-[11px] font-bold text-[#8D6E63] uppercase border-b border-[#D7CCC8]">
+                    <tr>
+                      <th className="py-2.5 px-4">Staff Member</th>
+                      <th className="py-2.5 px-4">Date Range</th>
+                      <th className="py-2.5 px-4">Category</th>
+                      <th className="py-2.5 px-4">Reason</th>
+                      <th className="py-2.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {wfhAuthorizations
+                      .filter((a) => a.status === 'PENDING')
+                      .map((req) => (
+                        <tr key={req.id} className="hover:bg-amber-50/50">
+                          <td className="py-3 px-4 font-semibold text-[#2D1E18]">
+                            {req.staff?.user?.fullName || 'Faculty Member'}
+                            <div className="text-[10px] text-[#8D6E63]">{req.staff?.employeeCode}</div>
+                          </td>
+                          <td className="py-3 px-4 text-stone-700">
+                            {new Date(req.startDate).toLocaleDateString()} to {new Date(req.endDate).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 text-stone-700">
+                              {req.reasonCategory}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-stone-700 max-w-xs truncate" title={req.reason}>
+                            {req.reason}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleApproveWfh(req.id)}
+                                className="px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold shadow-sm"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setRejectTargetId(req.id);
+                                  setRejectReason('');
+                                }}
+                                className="px-3 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-[11px] font-bold"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Authorizations History & Management Table */}
+          <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#2D1E18]">All WFH Authorizations & Records</h3>
+                <p className="text-xs text-[#6D4C41]">
+                  Complete institute log of approved, pending, rejected, and revoked WFH authorizations.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={wfhStatusFilter}
+                  onChange={(e) => setWfhStatusFilter(e.target.value)}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="REJECTED">Rejected</option>
+                  <option value="REVOKED">Revoked</option>
+                </select>
+
+                <select
+                  value={wfhScopeFilter}
+                  onChange={(e) => setWfhScopeFilter(e.target.value)}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none"
+                >
+                  <option value="ALL">All Scopes</option>
+                  <option value="INSTITUTE_WIDE">Institute-Wide</option>
+                  <option value="INDIVIDUAL">Individual</option>
+                  <option value="GROUP">Group</option>
+                </select>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[#8D6E63] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={wfhSearch}
+                    onChange={(e) => setWfhSearch(e.target.value)}
+                    placeholder="Search reason or name..."
+                    className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-[#D7CCC8] bg-white text-[#2D1E18] focus:outline-none w-48"
+                  />
+                </div>
+
+                <button
+                  onClick={() => {
+                    loadWfhMetrics();
+                    loadWfhAuthorizations();
+                  }}
+                  className="p-2 rounded-lg border border-[#D7CCC8] text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#FAF8F5] transition-colors"
+                  title="Refresh List"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${wfhLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-[#D7CCC8]">
+              <table className="w-full text-left text-xs text-[#2D1E18]">
+                <thead className="bg-[#FAF8F5] text-[11px] font-bold text-[#8D6E63] uppercase border-b border-[#D7CCC8]">
+                  <tr>
+                    <th className="py-3 px-4">Scope / Staff</th>
+                    <th className="py-3 px-4">Dates</th>
+                    <th className="py-3 px-4">Reason Category</th>
+                    <th className="py-3 px-4">Description</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Decided By</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#D7CCC8]">
+                  {wfhAuthorizations.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-[#8D6E63]">
+                        No Work From Home authorizations found matching the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    wfhAuthorizations.map((auth) => (
+                      <tr key={auth.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
+                        <td className="py-3.5 px-4">
+                          {auth.scope === 'INSTITUTE_WIDE' ? (
+                            <span className="font-bold text-[#4E342E] flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-[#8D6E63]" />
+                              Institute-Wide (All Faculty)
+                            </span>
+                          ) : auth.scope === 'GROUP' ? (
+                            <span className="font-semibold text-stone-800 flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-stone-600" />
+                              Group ({auth.groupAssignments?.length || 0} Staff)
+                            </span>
+                          ) : (
+                            <div>
+                              <div className="font-semibold text-[#2D1E18]">
+                                {auth.staff?.user?.fullName || 'Individual'}
+                              </div>
+                              <div className="text-[10px] text-[#8D6E63]">{auth.staff?.employeeCode}</div>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-stone-700 font-mono text-[11px]">
+                          {new Date(auth.startDate).toLocaleDateString()} to {new Date(auth.endDate).toLocaleDateString()}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 text-stone-700">
+                            {auth.reasonCategory}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-stone-700 max-w-xs truncate" title={auth.reason}>
+                          {auth.reason}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {auth.status === 'APPROVED' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Approved
+                            </span>
+                          ) : auth.status === 'PENDING' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Pending
+                            </span>
+                          ) : auth.status === 'REJECTED' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
+                              <AlertCircle className="w-3 h-3 text-red-600" />
+                              Rejected
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-700 border border-stone-200">
+                              <Ban className="w-3 h-3 text-stone-600" />
+                              Revoked
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-stone-600 text-[11px]">
+                          {auth.approvedBy?.fullName || auth.rejectedBy?.fullName || auth.revokedBy?.fullName || '—'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          {auth.status === 'APPROVED' && (
+                            <button
+                              onClick={() => {
+                                setRevokeTargetId(auth.id);
+                                setRevocationReason('');
+                              }}
+                              className="px-2.5 py-1 rounded-lg text-red-700 hover:bg-red-50 border border-red-200 text-[11px] font-bold transition-colors"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'settings' && (
-        <form onSubmit={handleSaveConfig} className="space-y-6">
+        <div className="space-y-6">
           <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#D7CCC8] gap-2">
               <div>
@@ -685,7 +1356,8 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
 
               <button
-                type="submit"
+                type="button"
+                onClick={handleSaveConfig}
                 disabled={configSaving}
                 className="px-4 py-2 text-xs font-bold bg-[#4E342E] text-white rounded-xl hover:bg-[#3E2723] disabled:opacity-50 transition-colors shadow-sm flex items-center gap-2 self-start sm:self-auto"
               >
@@ -708,10 +1380,30 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
             )}
 
+            {/* Quick GPS Setup Callout */}
+            <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#D7CCC8] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#4E342E] text-amber-300 flex items-center justify-center shrink-0 font-bold text-sm shadow-xs">
+                  📍
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-[#2D1E18]">
+                    Easy Geofence Positioning & Locking
+                  </h4>
+                  <p className="text-[11px] text-[#6D4C41] mt-0.5">
+                    Click <strong className="text-[#4E342E]">"Use My Current Location"</strong> or search your address/landmark. If on a laptop without satellite GPS, switch the map to <strong className="text-[#4E342E]">"🛰️ Satellite"</strong> to see actual building roofs and drag the pin directly onto your academy, then click <strong className="text-[#4E342E]">"Save Configuration"</strong>.
+                  </p>
+                </div>
+              </div>
+              <div className="text-[11px] font-semibold text-[#8D6E63] shrink-0 bg-white px-2.5 py-1 rounded-lg border border-[#D7CCC8] self-start sm:self-auto">
+                Geofence: {formRadius}m radius
+              </div>
+            </div>
+
             {/* Interactive Map Section */}
             <div>
               <label className="block text-xs font-bold text-[#2D1E18] mb-1.5">
-                Institute Building Location & 200-Metre Geofence
+                Institute Building Location & Geofence
               </label>
               <GeofenceMapPicker
                 latitude={formLat}
@@ -727,6 +1419,42 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
 
             {/* Form Fields Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-[#D7CCC8]">
+              <div>
+                <label className="block text-xs font-semibold text-[#6D4C41] mb-1">
+                  Latitude Coordinate *
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={formLat !== null ? formLat : ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) setFormLat(val);
+                  }}
+                  placeholder="e.g. 10.960200"
+                  className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:bg-white focus:outline-none"
+                />
+                <span className="text-[11px] text-[#8D6E63]">Directly editable or pasted from Google Maps.</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#6D4C41] mb-1">
+                  Longitude Coordinate *
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={formLng !== null ? formLng : ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) setFormLng(val);
+                  }}
+                  placeholder="e.g. 79.384400"
+                  className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:bg-white focus:outline-none"
+                />
+                <span className="text-[11px] text-[#8D6E63]">Directly editable or pasted from Google Maps.</span>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-[#6D4C41] mb-1">
                   Permitted Geofence Radius (Metres) *
@@ -766,7 +1494,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                     ±{formAccuracyThreshold}m
                   </span>
                 </div>
-                <span className="text-[11px] text-[#8D6E63]">Readings with accuracy worse than ±{formAccuracyThreshold}m are rejected.</span>
+                <span className="text-[11px] text-[#8D6E63]">Readings worse than ±{formAccuracyThreshold}m rejected. (Set ±150m–200m for indoor laptops/Wi-Fi).</span>
               </div>
 
               <div>
@@ -853,7 +1581,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
             </div>
           </div>
-        </form>
+        </div>
       )}
 
       {/* ========================================== */}
@@ -1199,6 +1927,222 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 </div>
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+      {/* ========================================== */}
+      {/* MODAL 3: WFH CONFIRMATION MODAL            */}
+      {/* ========================================== */}
+      {wfhConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-[#D7CCC8] shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#D7CCC8]">
+              <div>
+                <h3 className="text-base font-bold text-[#2D1E18] flex items-center gap-2">
+                  <Home className="w-5 h-5 text-[#8D6E63]" />
+                  Confirm WFH Authorization
+                </h3>
+                <p className="text-xs text-[#6D4C41]">
+                  Review details before issuing official remote work permission.
+                </p>
+              </div>
+              <button
+                onClick={() => setWfhConfirmModal(false)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg hover:bg-[#FAF8F5]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#D7CCC8] space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-[#8D6E63]">Scope:</span>
+                  <span className="font-bold text-[#2D1E18]">
+                    {wfhScope === 'INSTITUTE_WIDE'
+                      ? `Institute-Wide (${register.length} eligible staff affected)`
+                      : wfhScope === 'GROUP'
+                      ? `Group (${wfhSelectedStaffIds.length} staff members)`
+                      : 'Individual Staff Member'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8D6E63]">Dates:</span>
+                  <span className="font-semibold text-[#2D1E18]">
+                    {wfhStartDate} to {wfhEndDate}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8D6E63]">Reason Category:</span>
+                  <span className="font-semibold text-[#2D1E18]">{wfhReasonCategory}</span>
+                </div>
+                <div>
+                  <span className="text-[#8D6E63] block mb-1">Reason:</span>
+                  <p className="p-2 bg-white rounded-lg border border-[#D7CCC8] text-stone-700 font-medium">
+                    {wfhReason}
+                  </p>
+                </div>
+                {wfhNotes && (
+                  <div>
+                    <span className="text-[#8D6E63] block mb-1">Teaching Notes:</span>
+                    <p className="p-2 bg-white rounded-lg border border-[#D7CCC8] text-stone-700 italic">
+                      {wfhNotes}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {wfhScope === 'INSTITUTE_WIDE' && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                  ⚠️ <strong>Institute-Wide Action:</strong> All {register.length} staff members will be authorized to mark remote attendance for the specified date(s) without geofence enforcement.
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#D7CCC8]">
+              <button
+                type="button"
+                onClick={() => setWfhConfirmModal(false)}
+                className="px-4 py-2 rounded-xl border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#FAF8F5] text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateWfhAuthorization}
+                disabled={wfhCreating}
+                className="px-5 py-2 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-bold shadow-sm disabled:opacity-50 flex items-center gap-2"
+              >
+                {wfhCreating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>{wfhCreating ? 'Authorizing...' : 'Confirm & Authorize'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 4: REJECT WFH REQUEST MODAL          */}
+      {/* ========================================== */}
+      {rejectTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D7CCC8] shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#D7CCC8]">
+              <div>
+                <h3 className="text-base font-bold text-red-950 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                  Reject WFH Request
+                </h3>
+                <p className="text-xs text-[#6D4C41]">
+                  Provide an optional reason for rejecting this remote work request.
+                </p>
+              </div>
+              <button
+                onClick={() => setRejectTargetId(null)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg hover:bg-[#FAF8F5]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                  Rejection Reason (Optional)
+                </label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={3}
+                  placeholder="Explain why this request is being rejected..."
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#D7CCC8]">
+              <button
+                type="button"
+                onClick={() => setRejectTargetId(null)}
+                className="px-4 py-2 rounded-xl border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#FAF8F5] text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectWfh}
+                disabled={rejectSubmitting}
+                className="px-5 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-sm disabled:opacity-50 flex items-center gap-2"
+              >
+                {rejectSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                <span>{rejectSubmitting ? 'Rejecting...' : 'Confirm Rejection'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 5: REVOKE WFH AUTHORIZATION MODAL     */}
+      {/* ========================================== */}
+      {revokeTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D7CCC8] shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#D7CCC8]">
+              <div>
+                <h3 className="text-base font-bold text-red-950 flex items-center gap-2">
+                  <Ban className="w-5 h-5 text-red-600" />
+                  Revoke WFH Authorization
+                </h3>
+                <p className="text-xs text-[#6D4C41]">
+                  Withdraw previously granted remote work permission.
+                </p>
+              </div>
+              <button
+                onClick={() => setRevokeTargetId(null)}
+                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg hover:bg-[#FAF8F5]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-900 text-xs">
+                ⚠️ <strong>Revocation Notice:</strong> Revoking will prevent further WFH check-ins for the remaining period. Existing attendance sessions already completed will be retained with their audit logs.
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
+                  Mandatory Revocation Reason *
+                </label>
+                <textarea
+                  value={revocationReason}
+                  onChange={(e) => setRevocationReason(e.target.value)}
+                  rows={3}
+                  placeholder="State reason for revoking authorization..."
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#D7CCC8]">
+              <button
+                type="button"
+                onClick={() => setRevokeTargetId(null)}
+                className="px-4 py-2 rounded-xl border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#FAF8F5] text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRevokeWfh}
+                disabled={revokeSubmitting}
+                className="px-5 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-sm disabled:opacity-50 flex items-center gap-2"
+              >
+                {revokeSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                <span>{revokeSubmitting ? 'Revoking...' : 'Revoke Authorization'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

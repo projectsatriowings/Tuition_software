@@ -101,7 +101,7 @@ export function validateStaffLocation(params: {
     };
   }
 
-  // 3. Verify GPS Accuracy threshold
+  // 3. Verify GPS Accuracy threshold for on-site geofencing
   const reportedAccuracy = staffCoords.accuracy;
   const isAccuracyGood =
     reportedAccuracy == null ||

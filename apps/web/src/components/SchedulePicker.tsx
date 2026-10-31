@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Clock, Calendar, Check, Sparkles, Edit3 } from 'lucide-react';
+import { Clock, Calendar, Check, Sparkles, Edit3, ArrowRight } from 'lucide-react';
 
 export interface SchedulePickerProps {
   value?: string;
@@ -162,10 +162,31 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({
   const [selectedDays, setSelectedDays] = useState<string[]>(initialParsed.days);
   const [startTime, setStartTime] = useState<TimeState>(initialParsed.start);
   const [endTime, setEndTime] = useState<TimeState>(initialParsed.end);
+
+  // Time target: editing 'start' or 'end'
+  const [activeTarget, setActiveTarget] = useState<'start' | 'end'>('start');
+  // Clock mode: picking 'hour' or 'minute'
+  const [clockMode, setClockMode] = useState<'hour' | 'minute'>('hour');
+
   const [isManualMode, setIsManualMode] = useState(!initialParsed.isRecognized);
   const [manualText, setManualText] = useState(value || '');
 
   const lastSentRef = useRef<string>(value || '');
+  const clockRef = useRef<SVGSVGElement | null>(null);
+
+  // Current active time object
+  const activeTime = activeTarget === 'start' ? startTime : endTime;
+  const setActiveTime = (updater: (prev: TimeState) => TimeState) => {
+    if (activeTarget === 'start') {
+      const next = updater(startTime);
+      setStartTime(next);
+      updateSchedule(selectedDays, next, endTime);
+    } else {
+      const next = updater(endTime);
+      setEndTime(next);
+      updateSchedule(selectedDays, startTime, next);
+    }
+  };
 
   // Synchronize on external value change
   useEffect(() => {
@@ -230,8 +251,45 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({
     return `${m} mins`;
   }, [startTime, endTime]);
 
+  // Small Clock Dimensions (Compact 140px diameter)
+  const clockSize = 140;
+  const cx = clockSize / 2;
+  const cy = clockSize / 2;
+  const radius = 50;
+
+  // Clock Hand Angle calculation
+  const handAngle = useMemo(() => {
+    if (clockMode === 'hour') {
+      const h = activeTime.hour % 12;
+      return (h * 30 - 90) * (Math.PI / 180);
+    } else {
+      const m = activeTime.minute % 60;
+      return (m * 6 - 90) * (Math.PI / 180);
+    }
+  }, [clockMode, activeTime]);
+
+  const handX = cx + radius * Math.cos(handAngle);
+  const handY = cy + radius * Math.sin(handAngle);
+
+  // Hour markers 1-12
+  const hourMarkers = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  // Minute markers in 5-min intervals
+  const minuteMarkers = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+  const handleSelectHour = (h: number) => {
+    setActiveTime((prev) => ({ ...prev, hour: h }));
+    // Auto switch to minute mode smoothly
+    setTimeout(() => {
+      setClockMode('minute');
+    }, 250);
+  };
+
+  const handleSelectMinute = (m: number) => {
+    setActiveTime((prev) => ({ ...prev, minute: m }));
+  };
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {/* Label and Mode Switch */}
       <div className="flex items-center justify-between">
         <div>
@@ -256,7 +314,7 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({
           className="text-[11px] font-bold text-[#8D6E63] hover:text-[#4E342E] transition flex items-center gap-1"
         >
           <Edit3 className="w-3 h-3" />
-          <span>{isManualMode ? 'Visual Builder' : 'Custom Text'}</span>
+          <span>{isManualMode ? 'Clock Builder' : 'Custom Text'}</span>
         </button>
       </div>
 
@@ -275,9 +333,9 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({
           />
         </div>
       ) : (
-        <div className="p-3 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-2.5 text-xs">
+        <div className="p-3.5 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-3 text-xs">
           {/* Active Schedule Summary Badge */}
-          <div className="flex items-center justify-between px-3 py-1.5 bg-white border border-[#EFEBE9] rounded-xl">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-white border border-[#EFEBE9] rounded-xl shadow-2xs">
             <div className="flex items-center gap-2 text-xs font-semibold text-[#2D1E18]">
               <Clock className="w-3.5 h-3.5 text-[#6D4C41]" />
               <span>
@@ -332,158 +390,266 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({
             </div>
           </div>
 
-          {/* 2. Timing Controls (Compact Digital Controls) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-[#EFEBE9]">
-            {/* Start Time */}
-            <div className="flex items-center justify-between p-2 bg-white border border-[#EFEBE9] rounded-xl">
-              <span className="text-[11px] font-bold text-[#4E342E]">Start Time:</span>
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={startTime.hour}
-                  onChange={(e) => {
-                    const next = { ...startTime, hour: parseInt(e.target.value, 10) };
-                    setStartTime(next);
-                    updateSchedule(selectedDays, next, endTime);
-                  }}
-                  className="bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg px-2 py-1 text-xs font-bold text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                >
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-                <span className="font-bold text-[#8D6E63]">:</span>
-                <select
-                  value={startTime.minute}
-                  onChange={(e) => {
-                    const next = { ...startTime, minute: parseInt(e.target.value, 10) };
-                    setStartTime(next);
-                    updateSchedule(selectedDays, next, endTime);
-                  }}
-                  className="bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg px-2 py-1 text-xs font-bold text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                >
-                  {[0, 15, 30, 45].map((m) => (
-                    <option key={m} value={m}>
-                      {m.toString().padStart(2, '0')}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex items-center bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg p-0.5">
-                  {(['AM', 'PM'] as const).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        const next = { ...startTime, period: p };
-                        setStartTime(next);
-                        updateSchedule(selectedDays, next, endTime);
-                      }}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                        startTime.period === p ? 'bg-[#4E342E] text-white' : 'text-[#8D6E63]'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* End Time */}
-            <div className="flex items-center justify-between p-2 bg-white border border-[#EFEBE9] rounded-xl">
-              <span className="text-[11px] font-bold text-[#4E342E]">End Time:</span>
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={endTime.hour}
-                  onChange={(e) => {
-                    const next = { ...endTime, hour: parseInt(e.target.value, 10) };
-                    setEndTime(next);
-                    updateSchedule(selectedDays, startTime, next);
-                  }}
-                  className="bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg px-2 py-1 text-xs font-bold text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                >
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-                <span className="font-bold text-[#8D6E63]">:</span>
-                <select
-                  value={endTime.minute}
-                  onChange={(e) => {
-                    const next = { ...endTime, minute: parseInt(e.target.value, 10) };
-                    setEndTime(next);
-                    updateSchedule(selectedDays, startTime, next);
-                  }}
-                  className="bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg px-2 py-1 text-xs font-bold text-[#2D1E18] focus:ring-1 focus:ring-[#8D6E63]"
-                >
-                  {[0, 15, 30, 45].map((m) => (
-                    <option key={m} value={m}>
-                      {m.toString().padStart(2, '0')}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex items-center bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg p-0.5">
-                  {(['AM', 'PM'] as const).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        const next = { ...endTime, period: p };
-                        setEndTime(next);
-                        updateSchedule(selectedDays, startTime, next);
-                      }}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                        endTime.period === p ? 'bg-[#4E342E] text-white' : 'text-[#8D6E63]'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Duration + Preset Slots */}
-          <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1">
-            <div className="flex items-center gap-1 text-[10px]">
-              <span className="font-bold text-[#8D6E63]">Duration:</span>
-              {[
-                { label: '+45m', mins: 45 },
-                { label: '+1h', mins: 60 },
-                { label: '+1.5h', mins: 90 },
-                { label: '+2h', mins: 120 },
-              ].map((d) => (
+          {/* 2. Interactive Time Selection with Small Clock Dial */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2 border-t border-[#EFEBE9] items-center">
+            {/* Left Column (7 cols): Start Time / End Time selector cards & presets */}
+            <div className="md:col-span-7 space-y-2.5">
+              {/* Target Cards: Start vs End Time */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Start Time Card */}
                 <button
-                  key={d.label}
                   type="button"
-                  onClick={() => handleApplyDuration(d.mins)}
-                  className="px-2 py-0.5 rounded bg-white border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#4E342E] hover:text-white transition font-medium"
+                  onClick={() => {
+                    setActiveTarget('start');
+                    setClockMode('hour');
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                    activeTarget === 'start'
+                      ? 'bg-white border-[#4E342E] shadow-sm ring-2 ring-[#4E342E]/10'
+                      : 'bg-[#FAF8F5] border-[#EFEBE9] hover:bg-white'
+                  }`}
                 >
-                  {d.label}
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#8D6E63] mb-1">
+                    <span>Start Time</span>
+                    {activeTarget === 'start' && <span className="w-1.5 h-1.5 rounded-full bg-[#4E342E]" />}
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-base font-black text-[#2D1E18]">
+                      {startTime.hour}:{startTime.minute.toString().padStart(2, '0')}
+                    </span>
+                    <span className="text-xs font-extrabold text-[#6D4C41]">{startTime.period}</span>
+                  </div>
                 </button>
-              ))}
+
+                {/* End Time Card */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTarget('end');
+                    setClockMode('hour');
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                    activeTarget === 'end'
+                      ? 'bg-white border-[#4E342E] shadow-sm ring-2 ring-[#4E342E]/10'
+                      : 'bg-[#FAF8F5] border-[#EFEBE9] hover:bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#8D6E63] mb-1">
+                    <span>End Time</span>
+                    {activeTarget === 'end' && <span className="w-1.5 h-1.5 rounded-full bg-[#4E342E]" />}
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-base font-black text-[#2D1E18]">
+                      {endTime.hour}:{endTime.minute.toString().padStart(2, '0')}
+                    </span>
+                    <span className="text-xs font-extrabold text-[#6D4C41]">{endTime.period}</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Quick Duration & Preset Slots */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="font-bold text-[#8D6E63]">Quick Duration:</span>
+                  <div className="flex items-center gap-1">
+                    {[
+                      { label: '+45m', mins: 45 },
+                      { label: '+1h', mins: 60 },
+                      { label: '+1.5h', mins: 90 },
+                      { label: '+2h', mins: 120 },
+                    ].map((d) => (
+                      <button
+                        key={d.label}
+                        type="button"
+                        onClick={() => handleApplyDuration(d.mins)}
+                        className="px-2 py-0.5 rounded-md bg-white border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#4E342E] hover:text-white transition font-medium"
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="font-bold text-[#8D6E63]">Popular Slots:</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTimeSlot(COMMON_TIME_SLOTS[0])}
+                      className="px-2 py-0.5 rounded-md bg-white border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#4E342E] hover:text-white transition font-medium"
+                    >
+                      4:00 - 5:30 PM
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTimeSlot(COMMON_TIME_SLOTS[1])}
+                      className="px-2 py-0.5 rounded-md bg-white border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#4E342E] hover:text-white transition font-medium"
+                    >
+                      5:30 - 7:00 PM
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-1 text-[10px]">
-              <span className="font-bold text-[#8D6E63]">Popular Slots:</span>
-              <button
-                type="button"
-                onClick={() => handleApplyTimeSlot(COMMON_TIME_SLOTS[0])}
-                className="px-2 py-0.5 rounded bg-white border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#4E342E] hover:text-white transition font-medium"
-              >
-                4:00 - 5:30 PM
-              </button>
-              <button
-                type="button"
-                onClick={() => handleApplyTimeSlot(COMMON_TIME_SLOTS[1])}
-                className="px-2 py-0.5 rounded bg-white border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#4E342E] hover:text-white transition font-medium"
-              >
-                5:30 - 7:00 PM
-              </button>
+            {/* Right Column (5 cols): Small Circular Clock Dial */}
+            <div className="md:col-span-5 flex flex-col items-center justify-center p-2.5 bg-white border border-[#EFEBE9] rounded-2xl shadow-2xs">
+              {/* Digital Header + Mode & AM/PM Pills */}
+              <div className="w-full flex items-center justify-between mb-1.5 px-1">
+                {/* Mode Selector (Hours vs Minutes) */}
+                <div className="flex items-center bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg p-0.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setClockMode('hour')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition ${
+                      clockMode === 'hour' ? 'bg-[#4E342E] text-white shadow-xs' : 'text-[#6D4C41]'
+                    }`}
+                  >
+                    Hr
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClockMode('minute')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition ${
+                      clockMode === 'minute' ? 'bg-[#4E342E] text-white shadow-xs' : 'text-[#6D4C41]'
+                    }`}
+                  >
+                    Min
+                  </button>
+                </div>
+
+                {/* AM / PM Toggle */}
+                <div className="flex items-center bg-[#FAF8F5] border border-[#D7CCC8] rounded-lg p-0.5 text-[10px]">
+                  {(['AM', 'PM'] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setActiveTime((prev) => ({ ...prev, period: p }))}
+                      className={`px-2 py-0.5 rounded-md font-bold transition ${
+                        activeTime.period === p ? 'bg-[#4E342E] text-white shadow-xs' : 'text-[#6D4C41]'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Small SVG Clock Dial (140px diameter) */}
+              <div className="relative flex items-center justify-center">
+                <svg
+                  ref={clockRef}
+                  width={clockSize}
+                  height={clockSize}
+                  className="select-none"
+                >
+                  {/* Outer Clock Dial Circle */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={radius + 15}
+                    fill="#FAF8F5"
+                    stroke="#D7CCC8"
+                    strokeWidth="1.5"
+                  />
+                  {/* Inner subtle circle */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={radius + 12}
+                    fill="none"
+                    stroke="#EFEBE9"
+                    strokeWidth="1"
+                  />
+
+                  {/* Clock Hand Line */}
+                  <line
+                    x1={cx}
+                    y1={cy}
+                    x2={handX}
+                    y2={handY}
+                    stroke="#4E342E"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  />
+                  {/* Clock Center Pin */}
+                  <circle cx={cx} cy={cy} r="3.5" fill="#4E342E" />
+                  {/* Clock Pointer Tip */}
+                  <circle cx={handX} cy={handY} r="9" fill="#4E342E" />
+
+                  {/* Clock Dial Numbers */}
+                  {clockMode === 'hour'
+                    ? hourMarkers.map((h) => {
+                        const angle = (h * 30 - 90) * (Math.PI / 180);
+                        const nx = cx + radius * Math.cos(angle);
+                        const ny = cy + radius * Math.sin(angle);
+                        const isSelected = activeTime.hour === h || (h === 12 && activeTime.hour === 0);
+
+                        return (
+                          <g
+                            key={h}
+                            onClick={() => handleSelectHour(h)}
+                            className="cursor-pointer group"
+                          >
+                            <circle
+                              cx={nx}
+                              cy={ny}
+                              r="10"
+                              fill="transparent"
+                              className="group-hover:fill-[#D7CCC8]/30 transition"
+                            />
+                            <text
+                              x={nx}
+                              y={ny + 3.5}
+                              textAnchor="middle"
+                              className={`text-[10px] font-bold select-none ${
+                                isSelected ? 'fill-white font-extrabold' : 'fill-[#4E342E]'
+                              }`}
+                            >
+                              {h}
+                            </text>
+                          </g>
+                        );
+                      })
+                    : minuteMarkers.map((m) => {
+                        const angle = (m * 6 - 90) * (Math.PI / 180);
+                        const nx = cx + radius * Math.cos(angle);
+                        const ny = cy + radius * Math.sin(angle);
+                        const isSelected = Math.round(activeTime.minute / 5) * 5 === m;
+
+                        return (
+                          <g
+                            key={m}
+                            onClick={() => handleSelectMinute(m)}
+                            className="cursor-pointer group"
+                          >
+                            <circle
+                              cx={nx}
+                              cy={ny}
+                              r="10"
+                              fill="transparent"
+                              className="group-hover:fill-[#D7CCC8]/30 transition"
+                            />
+                            <text
+                              x={nx}
+                              y={ny + 3.5}
+                              textAnchor="middle"
+                              className={`text-[9px] font-bold select-none ${
+                                isSelected ? 'fill-white font-extrabold' : 'fill-[#4E342E]'
+                              }`}
+                            >
+                              {m.toString().padStart(2, '0')}
+                            </text>
+                          </g>
+                        );
+                      })}
+                </svg>
+              </div>
+
+              {/* Mode indicator label below clock */}
+              <span className="text-[9px] text-[#8D6E63] font-semibold mt-1">
+                {activeTarget === 'start' ? 'Editing Start Time' : 'Editing End Time'} ({clockMode === 'hour' ? 'Tap hour' : 'Tap minute'})
+              </span>
             </div>
           </div>
         </div>
