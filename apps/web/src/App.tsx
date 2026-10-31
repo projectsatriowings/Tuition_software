@@ -19,6 +19,7 @@ import { ExaminationsManagement } from './pages/ExaminationsManagement';
 import { ProgressReviewsManagement } from './pages/ProgressReviewsManagement';
 import { MessagingInbox } from './pages/MessagingInbox';
 import { FeesManagement } from './pages/FeesManagement';
+import { ToastProvider } from './context/ToastContext';
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { pageTransitionVariants } from './utils/animations';
@@ -139,7 +140,6 @@ const AppContent: React.FC = () => {
   );
 };
 
-import { ToastProvider } from './context/ToastContext';
 
 export default function App() {
   return (
