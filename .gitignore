@@ -13,6 +13,7 @@ node_modules/
 
 # Production build outputs
 dist/
+!packages/shared/dist/
 build/
 .next/
 out/

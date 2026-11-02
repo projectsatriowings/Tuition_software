@@ -1,84 +1,95 @@
 // User Roles across the platform
-export enum UserRole {
-  SUPER_ADMIN = 'SUPER_ADMIN',
-  ACADEMIC_ADMIN = 'ACADEMIC_ADMIN',
-  STAFF = 'STAFF',
-  PARENT = 'PARENT',
-  STUDENT = 'STUDENT',
-}
+export const UserRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ACADEMIC_ADMIN: 'ACADEMIC_ADMIN',
+  STAFF: 'STAFF',
+  PARENT: 'PARENT',
+  STUDENT: 'STUDENT',
+} as const;
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 // Student Status
-export enum StudentStatus {
-  ACTIVE = 'ACTIVE',
-  PASSED_OUT = 'PASSED_OUT',
-  DISCONTINUED = 'DISCONTINUED',
-}
+export const StudentStatus = {
+  ACTIVE: 'ACTIVE',
+  PASSED_OUT: 'PASSED_OUT',
+  DISCONTINUED: 'DISCONTINUED',
+} as const;
+export type StudentStatus = (typeof StudentStatus)[keyof typeof StudentStatus];
 
 // Institute Status
-export enum InstituteStatus {
-  ACTIVE = 'ACTIVE',
-  SUSPENDED = 'SUSPENDED',
-  PENDING_SETUP = 'PENDING_SETUP',
-}
+export const InstituteStatus = {
+  ACTIVE: 'ACTIVE',
+  SUSPENDED: 'SUSPENDED',
+  PENDING_SETUP: 'PENDING_SETUP',
+} as const;
+export type InstituteStatus = (typeof InstituteStatus)[keyof typeof InstituteStatus];
 
 // Attendance Event & Status
-export enum AttendanceType {
-  CHECK_IN = 'CHECK_IN',
-  CHECK_OUT = 'CHECK_OUT',
-}
+export const AttendanceType = {
+  CHECK_IN: 'CHECK_IN',
+  CHECK_OUT: 'CHECK_OUT',
+} as const;
+export type AttendanceType = (typeof AttendanceType)[keyof typeof AttendanceType];
 
-export enum AttendanceStatus {
-  PRESENT = 'PRESENT',
-  ABSENT = 'ABSENT',
-  LATE = 'LATE',
-  EXCUSED = 'EXCUSED',
-}
+export const AttendanceStatus = {
+  PRESENT: 'PRESENT',
+  ABSENT: 'ABSENT',
+  LATE: 'LATE',
+  EXCUSED: 'EXCUSED',
+} as const;
+export type AttendanceStatus = (typeof AttendanceStatus)[keyof typeof AttendanceStatus];
 
 // Fee Types & Statuses
-export enum FeeFrequency {
-  MONTHLY = 'MONTHLY',
-  TERM_WISE = 'TERM_WISE',
-  ONE_TIME = 'ONE_TIME',
-}
+export const FeeFrequency = {
+  MONTHLY: 'MONTHLY',
+  TERM_WISE: 'TERM_WISE',
+  ONE_TIME: 'ONE_TIME',
+} as const;
+export type FeeFrequency = (typeof FeeFrequency)[keyof typeof FeeFrequency];
 
-export enum PaymentStatus {
-  PENDING = 'PENDING',
-  PARTIALLY_PAID = 'PARTIALLY_PAID',
-  PAID = 'PAID',
-  OVERDUE = 'OVERDUE',
-}
+export const PaymentStatus = {
+  PENDING: 'PENDING',
+  PARTIALLY_PAID: 'PARTIALLY_PAID',
+  PAID: 'PAID',
+  OVERDUE: 'OVERDUE',
+} as const;
+export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus];
 
-export enum PaymentMethod {
-  CASH = 'CASH',
-  UPI = 'UPI',
-  BANK_TRANSFER = 'BANK_TRANSFER',
-  CHEQUE = 'CHEQUE',
-  ONLINE = 'ONLINE',
-}
+export const PaymentMethod = {
+  CASH: 'CASH',
+  UPI: 'UPI',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CHEQUE: 'CHEQUE',
+  ONLINE: 'ONLINE',
+} as const;
+export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];
 
 // Learning Materials
-export enum MaterialType {
-  PDF = 'PDF',
-  AUDIO = 'AUDIO',
-  VOICE_NOTE = 'VOICE_NOTE',
-  HOMEWORK = 'HOMEWORK',
-  ANNOUNCEMENT = 'ANNOUNCEMENT',
-}
+export const MaterialType = {
+  PDF: 'PDF',
+  AUDIO: 'AUDIO',
+  VOICE_NOTE: 'VOICE_NOTE',
+  HOMEWORK: 'HOMEWORK',
+  ANNOUNCEMENT: 'ANNOUNCEMENT',
+} as const;
+export type MaterialType = (typeof MaterialType)[keyof typeof MaterialType];
 
 // SMS Notification Delivery
-export enum NotificationStatus {
-  QUEUED = 'QUEUED',
-  SENT = 'SENT',
-  DELIVERED = 'DELIVERED',
-  FAILED = 'FAILED',
-}
+export const NotificationStatus = {
+  QUEUED: 'QUEUED',
+  SENT: 'SENT',
+  DELIVERED: 'DELIVERED',
+  FAILED: 'FAILED',
+} as const;
+export type NotificationStatus = (typeof NotificationStatus)[keyof typeof NotificationStatus];
 
 // Guardian Relation
-export enum GuardianRelation {
-  FATHER = 'FATHER',
-  MOTHER = 'MOTHER',
-  GUARDIAN = 'GUARDIAN',
-}
+export const GuardianRelation = {
+  FATHER: 'FATHER',
+  MOTHER: 'MOTHER',
+  GUARDIAN: 'GUARDIAN',
+} as const;
+export type GuardianRelation = (typeof GuardianRelation)[keyof typeof GuardianRelation];
 
 // Global Toast Types
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -122,12 +133,13 @@ export interface ApiResponse<T = any> {
   timestamp: string;
 }
 
-export enum AttendanceMethod {
-  MANUAL = 'MANUAL',
-  QR_SCAN = 'QR_SCAN',
-  VOICE_CONFIRMED = 'VOICE_CONFIRMED',
-}
+export const AttendanceMethod = {
+  MANUAL: 'MANUAL',
+  QR_SCAN: 'QR_SCAN',
+  VOICE_CONFIRMED: 'VOICE_CONFIRMED',
+} as const;
+export type AttendanceMethod = (typeof AttendanceMethod)[keyof typeof AttendanceMethod];
 
 // Export Shared Design Tokens
-export * from './theme';
-export * from './voiceMatching';
+export * from './theme.js';
+export * from './voiceMatching.js';
