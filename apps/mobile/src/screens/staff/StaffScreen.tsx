@@ -9,7 +9,10 @@ import {
   RefreshControl,
   TextInput,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMobileAuth } from '../../context/AuthContext';
 import { useMobileToast } from '../../context/ToastContext';
 import { mobileApiFetch, generateIdempotencyKey } from '../../services/api';
@@ -28,27 +31,37 @@ import { MaterialAnalyticsModal } from '../../components/MaterialAnalyticsModal'
 import { MobileButton } from '../../components/ui';
 import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 
-export const StaffScreen: React.FC = () => {
-  const { user } = useMobileAuth();
-  const { showToast } = useMobileToast();
+// Modular Staff Components
+import { StaffBottomNav, StaffActiveTab, StaffPrimaryTab } from './components/StaffBottomNav';
+import { StaffHomeTab } from './components/StaffHomeTab';
+import { StaffMoreTab } from './components/StaffMoreTab';
 
-  const [activeTab, setActiveTab] = useState<'attendance' | 'batches' | 'homework' | 'exams' | 'materials' | 'messages'>('attendance');
+export const StaffScreen: React.FC = () => {
+  const { user, institute, logout } = useMobileAuth();
+  const { showToast } = useMobileToast();
+  const insets = useSafeAreaInsets();
+
+  // Active navigation tab (Home is default mobile-first entry)
+  const [activeTab, setActiveTab] = useState<StaffActiveTab>('home');
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Staff Data
+  // Staff Core Data
   const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [selectedSubject, setSelectedSubject] = useState<any>(null);
+  const [students, setStudents] = useState<any[]>([]);
+  const [totalStudentsCount, setTotalStudentsCount] = useState(0);
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [examsList, setExamsList] = useState<any[]>([]);
   const [gradingExam, setGradingExam] = useState<any | null>(null);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
   const [analyticsMaterial, setAnalyticsMaterial] = useState<any | null>(null);
-  const [selectedSubject, setSelectedSubject] = useState<any>(null);
-  const [students, setStudents] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [materialsList, setMaterialsList] = useState<any[]>([]);
+  const [attendanceSummary, setAttendanceSummary] = useState<any | null>(null);
 
   // Homework Review & Grading State
   const [reviewHw, setReviewHw] = useState<any | null>(null);
@@ -66,6 +79,8 @@ export const StaffScreen: React.FC = () => {
   const [matDesc, setMatDesc] = useState('');
   const [matContent, setMatContent] = useState('');
   const [matSubmitting, setMatSubmitting] = useState(false);
+
+  // Conversations & Parent Chat
   const [conversations, setConversations] = useState<any[]>([]);
   const [activeConversation, setActiveConversation] = useState<any>(null);
   const [activeMessages, setActiveMessages] = useState<any[]>([]);
@@ -108,38 +123,84 @@ export const StaffScreen: React.FC = () => {
   const [hwDueDate, setHwDueDate] = useState('');
   const [hwSubmitting, setHwSubmitting] = useState(false);
 
+  const loadStudentsForBatch = async (batchId: string, subjectId?: string) => {
+    try {
+      const q = new URLSearchParams({ batchId, ...(subjectId ? { subjectId } : {}) });
+      const res = await mobileApiFetch(`/students?${q.toString()}`);
+      if (res.success && res.data) {
+        const list = Array.isArray(res.data) ? res.data : res.data.students || [];
+        setStudents(list);
+      }
+    } catch (e) {
+      console.warn('Error loading students for batch:', e);
+    }
+  };
+
   const fetchStaffData = useCallback(async () => {
     try {
       // 1. Fetch Batches
       const batchRes = await mobileApiFetch('/academics/batches');
+      let currentBatchId: string | null = null;
       if (batchRes.success && batchRes.data) {
         const batchList = Array.isArray(batchRes.data) ? batchRes.data : batchRes.data.batches || [];
         setBatches(batchList);
         if (batchList.length > 0 && !selectedBatch) {
           setSelectedBatch(batchList[0]);
+          currentBatchId = batchList[0].id;
           loadStudentsForBatch(batchList[0].id);
         } else if (selectedBatch) {
+          currentBatchId = selectedBatch.id;
           loadStudentsForBatch(selectedBatch.id);
         }
       }
 
-      // 2. Fetch Homework
+      // 2. Fetch All Students count across batches
+      const allStudentsRes = await mobileApiFetch('/students');
+      if (allStudentsRes.success && allStudentsRes.data) {
+        const allList = Array.isArray(allStudentsRes.data) ? allStudentsRes.data : allStudentsRes.data.students || [];
+        setTotalStudentsCount(allList.length);
+      }
+
+      // 3. Fetch Homework
       const hwRes = await mobileApiFetch('/homework');
       if (hwRes.success && hwRes.data) {
         setHomeworkList(Array.isArray(hwRes.data) ? hwRes.data : hwRes.data.homework || []);
       }
 
-      // 3. Fetch Conversations
+      // 4. Fetch Conversations
       const convRes = await mobileApiFetch('/messaging/conversations');
       if (convRes.success && convRes.data) {
         setConversations(Array.isArray(convRes.data) ? convRes.data : convRes.data.conversations || []);
       }
 
-      // 4. Fetch Exams for Staff
+      // 5. Fetch Exams for Staff
       const examRes = await mobileApiFetch('/exams');
       if (examRes.success && examRes.data) {
         setExamsList(Array.isArray(examRes.data) ? examRes.data : examRes.data.exams || []);
       }
+
+      // 6. Fetch Learning Materials
+      const matRes = await mobileApiFetch('/materials');
+      if (matRes.success && matRes.data) {
+        setMaterialsList(Array.isArray(matRes.data) ? matRes.data : matRes.data.materials || []);
+      }
+
+      // 7. Fetch Today's Attendance Summary
+      if (currentBatchId) {
+        const attRes = await mobileApiFetch(`/attendance/summary?batchId=${currentBatchId}`);
+        if (attRes.success && attRes.data) {
+          setAttendanceSummary(attRes.data);
+        }
+      }
+
+      // 8. Fetch Unread Notifications Count
+      mobileApiFetch('/notifications/unread-count')
+        .then((res) => {
+          if (res.success && res.data?.unreadCount !== undefined) {
+            setUnreadNotifCount(res.data.unreadCount);
+          }
+        })
+        .catch(() => {});
     } catch (e) {
       console.warn('Error loading staff mobile data:', e);
     } finally {
@@ -147,18 +208,6 @@ export const StaffScreen: React.FC = () => {
       setRefreshing(false);
     }
   }, [selectedBatch]);
-
-  const loadStudentsForBatch = async (batchId: string, subjectId?: string) => {
-    try {
-      const q = new URLSearchParams({ batchId, ...(subjectId ? { subjectId } : {}) });
-      const res = await mobileApiFetch(`/students?${q.toString()}`);
-      if (res.success && res.data) {
-        setStudents(Array.isArray(res.data) ? res.data : res.data.students || []);
-      }
-    } catch (e) {
-      console.warn('Error loading students for batch:', e);
-    }
-  };
 
   useEffect(() => {
     fetchStaffData();
@@ -169,17 +218,20 @@ export const StaffScreen: React.FC = () => {
     fetchStaffData();
   };
 
+  // Push Notification Tap Deep-Link Handler
   const handleNavigateToEntity = async (entityType: string, entityId: string, metadata?: any) => {
     const eType = String(entityType || '').toUpperCase();
 
     mobileApiFetch('/notifications/mark-read-by-entity', {
       method: 'POST',
       body: { entityType: eType, entityId },
-    }).then((res) => {
-      if (res.success && res.data?.unreadCount !== undefined) {
-        setUnreadNotifCount(res.data.unreadCount);
-      }
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
 
     if (eType === 'HOMEWORK') {
       setActiveTab('homework');
@@ -209,11 +261,19 @@ export const StaffScreen: React.FC = () => {
     return unsub;
   }, [examsList]);
 
-
   const handleSelectBatch = (b: any) => {
     setSelectedBatch(b);
     setSelectedSubject(null);
     loadStudentsForBatch(b.id);
+
+    // Fetch attendance summary for newly selected batch
+    mobileApiFetch(`/attendance/summary?batchId=${b.id}`)
+      .then((res) => {
+        if (res.success && res.data) {
+          setAttendanceSummary(res.data);
+        }
+      })
+      .catch(() => {});
   };
 
   const handleRecordAttendance = async () => {
@@ -244,6 +304,9 @@ export const StaffScreen: React.FC = () => {
           'success'
         );
         setSelectedStudentForAtt(null);
+        if (selectedBatch) {
+          loadStudentsForBatch(selectedBatch.id, selectedSubject?.id);
+        }
       } else {
         showToast(res.error || 'Failed to record attendance', 'error');
       }
@@ -305,87 +368,76 @@ export const StaffScreen: React.FC = () => {
           studentId: student.id,
           batchId: selectedBatch?.id,
           subjectId: selectedSubject?.id || undefined,
-          method: 'VOICE_CONFIRMED',
+          isLate: false,
+          method: 'VOICE_ASSISTED',
         },
       });
 
       if (res.success) {
-        const notifNote = (res as any).data?.notification?.sent ? ' In-app notification sent to parent.' : '';
-
-
-        showToast(
-          `Voice ${actionLabel} confirmed for ${student.user?.fullName || student.firstName}.${notifNote}`,
-          'success'
-        );
+        showToast(`Voice ${actionLabel} recorded for ${student.user?.fullName || student.firstName}!`, 'success');
+        setVoiceQuery('');
         setPendingVoiceCandidate(null);
         setVoiceDisambiguation([]);
-        setVoiceQuery('');
-        setIsVoiceListening(false);
-        if (selectedBatch?.id) {
+        if (selectedBatch) {
           loadStudentsForBatch(selectedBatch.id, selectedSubject?.id);
         }
-      } else if ((res as any).alreadyCheckedIn) {
-        showToast(res.error || `${student.user?.fullName || student.firstName} is already checked in today.`, 'info');
-        setPendingVoiceCandidate(null);
-        setVoiceDisambiguation([]);
-        setVoiceQuery('');
-      } else if ((res as any).alreadyCheckedOut) {
-        showToast(res.error || `${student.user?.fullName || student.firstName} has already checked out today.`, 'info');
-        setPendingVoiceCandidate(null);
-        setVoiceDisambiguation([]);
-        setVoiceQuery('');
       } else {
-        showToast(res.error || 'Failed to record attendance', 'error');
+        showToast(res.error || `Could not record voice ${actionLabel}`, 'error');
       }
     } catch {
-      showToast('Network connection issue', 'error');
+      showToast('Connection failed during voice attendance', 'error');
     } finally {
       setVoiceSubmitting(false);
     }
   };
 
-
   const openHomeworkReview = async (hw: any) => {
     setReviewHw(hw);
-    setReviewData(null);
     setLoadingReview(true);
+    setGradingSubId(null);
+    setGradeText('');
+    setFeedbackText('');
     try {
-      const res = await mobileApiFetch(`/homework/${hw.id}/submissions`);
-      if (res.success) {
+      const res = await mobileApiFetch(`/homework/${hw.id}/roster`);
+      if (res.success && res.data) {
         setReviewData(res.data);
       } else {
         showToast(res.error || 'Failed to load submissions', 'error');
       }
     } catch {
-      showToast('Connection error', 'error');
+      showToast('Network error loading submissions', 'error');
     } finally {
       setLoadingReview(false);
     }
   };
 
-  const handleGradeStudent = async (subId: string) => {
+  const handleGradeSubmission = async (submissionId: string) => {
     if (!gradeText.trim()) {
-      showToast('Please enter a grade', 'warning');
+      showToast('Please enter a grade or marks', 'warning');
       return;
     }
+
     setGradingSubmitting(true);
     try {
-      const res = await mobileApiFetch(`/homework/submissions/${subId}/grade`, {
+      const res = await mobileApiFetch(`/homework/submissions/${submissionId}/grade`, {
         method: 'PATCH',
-        body: { grade: gradeText.trim(), feedback: feedbackText.trim() || undefined },
+        body: {
+          grade: gradeText.trim(),
+          feedback: feedbackText.trim() || undefined,
+        },
       });
+
       if (res.success) {
-        showToast('Grade saved successfully', 'success');
+        showToast('Submission graded and saved!', 'success');
         setGradingSubId(null);
         setGradeText('');
         setFeedbackText('');
         if (reviewHw) openHomeworkReview(reviewHw);
-        fetchStaffData();
       } else {
-        showToast(res.error || 'Failed to grade submission', 'error');
+        showToast(res.error || 'Could not save grade', 'error');
       }
     } catch {
-      showToast('Grading error', 'error');
+      showToast('Network error while saving grade', 'error');
     } finally {
       setGradingSubmitting(false);
     }
@@ -450,18 +502,63 @@ export const StaffScreen: React.FC = () => {
       });
 
       if (res.success) {
-        showToast('Homework published to batch students.', 'success');
+        showToast('Homework assigned to batch!', 'success');
         setShowNewHwModal(false);
         setHwTitle('');
         setHwDesc('');
+        setHwDueDate('');
         fetchStaffData();
       } else {
-        showToast(res.error || 'Could not publish homework.', 'error');
+        showToast(res.error || 'Failed to assign homework', 'error');
       }
     } catch {
-      showToast('Server connection error.', 'error');
+      showToast('Network issue creating homework', 'error');
     } finally {
       setHwSubmitting(false);
+    }
+  };
+
+  const openStaffConversation = async (conv: any) => {
+    setActiveConversation(conv);
+    setLoadingMessages(true);
+    try {
+      const res = await mobileApiFetch(`/messaging/conversations/${conv.id}/messages`);
+      if (res.success && res.data) {
+        setActiveMessages(Array.isArray(res.data) ? res.data : res.data.messages || []);
+      }
+    } catch {
+      showToast('Could not load message history', 'error');
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const handleSendStaffMessage = async () => {
+    if (!newStaffMessage.trim() || !activeConversation) return;
+
+    setSendingStaffMessage(true);
+    const textToSend = newStaffMessage.trim();
+    setNewStaffMessage('');
+
+    try {
+      const res = await mobileApiFetch(`/messaging/conversations/${activeConversation.id}/messages`, {
+        method: 'POST',
+        body: {
+          body: textToSend,
+        },
+      });
+
+      if (res.success && res.data?.message) {
+        setActiveMessages((prev) => [...prev, res.data.message]);
+      } else {
+        showToast(res.error || 'Could not send message', 'error');
+        setNewStaffMessage(textToSend);
+      }
+    } catch {
+      showToast('Message delivery failed', 'error');
+      setNewStaffMessage(textToSend);
+    } finally {
+      setSendingStaffMessage(false);
     }
   };
 
@@ -475,19 +572,17 @@ export const StaffScreen: React.FC = () => {
   };
 
   const handleConfirmStatusChange = async () => {
-    if (!statusConfirm.student || !statusConfirm.newStatus) return;
+    if (!statusConfirm.student) return;
     setStatusConfirm((prev) => ({ ...prev, loading: true }));
     try {
       const res = await mobileApiFetch(`/students/${statusConfirm.student.id}/status`, {
         method: 'PATCH',
-        body: {
-          status: statusConfirm.newStatus,
-          reason: `Status changed to ${statusConfirm.newStatus} by faculty staff`,
-        },
+        body: { status: statusConfirm.newStatus },
       });
+
       if (res.success) {
         showToast(
-          `${statusConfirm.student.firstName || statusConfirm.student.user?.fullName || 'Student'} marked as ${statusConfirm.newStatus.replace('_', ' ')}.`,
+          `Student marked as ${statusConfirm.newStatus.replace('_', ' ')} successfully.`,
           'success'
         );
         setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false });
@@ -496,465 +591,207 @@ export const StaffScreen: React.FC = () => {
         showToast(res.error || 'Failed to update student status', 'error');
         setStatusConfirm((prev) => ({ ...prev, loading: false }));
       }
-    } catch (e: any) {
-      showToast(e.message || 'Network error', 'error');
+    } catch {
+      showToast('Network error while updating status', 'error');
       setStatusConfirm((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  const openStaffConversation = async (conv: any) => {
-    setActiveConversation(conv);
-    try {
-      setLoadingMessages(true);
-      const res = await mobileApiFetch(`/messaging/conversations/${conv.id}/messages`);
-      if (res.success && res.data) {
-        setActiveMessages(Array.isArray(res.data) ? res.data : res.data.messages || []);
-      }
-    } catch {
-      showToast('Could not load messages', 'error');
-    } finally {
-      setLoadingMessages(false);
+  // Filter students by search query
+  const filteredStudents = students.filter((s) => {
+    if (!studentSearchQuery.trim()) return true;
+    const q = studentSearchQuery.toLowerCase();
+    const name = (s.user?.fullName || `${s.firstName} ${s.lastName}`).toLowerCase();
+    const adm = (s.admissionNumber || '').toLowerCase();
+    const roll = (s.rollNumber || '').toLowerCase();
+    return name.includes(q) || adm.includes(q) || roll.includes(q);
+  });
+
+  // Calculate total unread count for the More badge
+  const unreadMessagesCount = conversations.reduce(
+    (acc, c) => acc + (c.unreadCount ? Number(c.unreadCount) : 0),
+    0
+  );
+
+  // Dynamic Header Title & Subtitle based on active tab
+  const getHeaderInfo = () => {
+    switch (activeTab) {
+      case 'home':
+        return { title: 'Faculty Dashboard', subtitle: 'Overview & Quick Actions' };
+      case 'students':
+        return {
+          title: 'Enrolled Students',
+          subtitle: `${students.length} students in ${selectedBatch?.name || 'batch'}`,
+        };
+      case 'attendance':
+        return { title: 'Class Attendance', subtitle: "Voice & manual student check-in" };
+      case 'materials':
+        return { title: 'Learning Materials', subtitle: 'Study notes, files & analytics' };
+      case 'more':
+        return { title: 'Staff Workspace', subtitle: 'Secondary modules & settings' };
+      case 'homework':
+        return { title: 'Homework & Tasks', subtitle: 'Student assignments & grading' };
+      case 'exams':
+        return { title: 'Exams & Grading', subtitle: 'Marks entry & result rosters' };
+      case 'messages':
+        return { title: 'Parent Messages', subtitle: 'Direct teacher-parent discussions' };
+      default:
+        return { title: 'TuitionOS Staff', subtitle: 'Faculty Portal' };
     }
   };
 
-  const handleSendStaffMessage = async () => {
-    if (!newStaffMessage.trim() || !activeConversation || sendingStaffMessage) return;
-    const bodyToSend = newStaffMessage.trim();
-    try {
-      setSendingStaffMessage(true);
-      const res = await mobileApiFetch(`/messaging/conversations/${activeConversation.id}/messages`, {
-        method: 'POST',
-        body: { body: bodyToSend },
-      });
-      if (res.success && res.data?.message) {
-        setActiveMessages((prev) => [...prev, res.data.message]);
-        setNewStaffMessage('');
-      }
-    } catch (e: any) {
-      showToast(e.message || 'Failed to send message', 'error');
-    } finally {
-      setSendingStaffMessage(false);
-    }
-  };
+  const headerInfo = getHeaderInfo();
+  const isSecondarySubView = activeTab === 'homework' || activeTab === 'exams' || activeTab === 'messages';
 
   return (
     <View style={styles.container}>
+      {/* Top Header */}
       <Header
-        title="Faculty & Staff Portal"
-        subtitle={user?.fullName || 'Faculty'}
+        title={headerInfo.title}
+        subtitle={headerInfo.subtitle}
         onRefresh={onRefresh}
+        onOpenNotifications={() => setShowNotificationModal(true)}
+        unreadNotificationsCount={unreadNotifCount}
       />
 
-      {/* Batch Selector Bar */}
-      {batches.length > 0 && (
-        <View style={styles.batchBar}>
-          <Text style={styles.batchLabel}>ASSIGNED BATCH:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.batchChips}>
-            {batches.map((b) => {
-              const isSelected = selectedBatch?.id === b.id;
-              return (
-                <TouchableOpacity
-                  key={b.id}
-                  onPress={() => handleSelectBatch(b)}
-                  style={[styles.batchChip, isSelected && styles.batchChipActive]}
-                >
-                  <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
-                    🏫 {b.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+      {/* Subview Back Breadcrumb (For Secondary Views accessed via More or Quick Actions) */}
+      {isSecondarySubView && (
+        <View style={styles.subviewBreadcrumbBar}>
+          <TouchableOpacity
+            style={styles.subviewBackBtn}
+            onPress={() => setActiveTab('more')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.subviewBackBtnText}>← Back to More Menu</Text>
+          </TouchableOpacity>
+          <Badge
+            label={activeTab.toUpperCase()}
+            variant="neutral"
+            size="sm"
+          />
         </View>
       )}
 
-      {selectedBatch?.batchSubjects && selectedBatch.batchSubjects.length > 0 && (
-        <View style={[styles.batchBar, { paddingTop: 0 }]}>
-          <Text style={styles.batchLabel}>ASSIGNED SUBJECT:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.batchChips}>
-            <TouchableOpacity
-              onPress={() => {
-                setSelectedSubject(null);
-                loadStudentsForBatch(selectedBatch.id);
-              }}
-              style={[styles.batchChip, !selectedSubject && styles.batchChipActive]}
-            >
-              <Text style={[styles.batchChipText, !selectedSubject && styles.batchChipTextActive]}>
-                All Subjects
-              </Text>
-            </TouchableOpacity>
-            {selectedBatch.batchSubjects.map((bs: any) => {
-              const isSelected = selectedSubject?.id === bs.subject.id;
-              return (
-                <TouchableOpacity
-                  key={bs.subject.id}
-                  onPress={() => {
-                    setSelectedSubject(bs.subject);
-                    loadStudentsForBatch(selectedBatch.id, bs.subject.id);
-                  }}
-                  style={[styles.batchChip, isSelected && styles.batchChipActive]}
-                >
-                  <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
-                    📖 {bs.subject.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+      {/* MAIN CONTENT AREA */}
+      <View style={styles.mainContent}>
+        {/* TAB 1: HOME DASHBOARD (Clean mobile-first entry) */}
+        {activeTab === 'home' && (
+          <StaffHomeTab
+            user={user}
+            institute={institute}
+            batches={batches}
+            selectedBatch={selectedBatch}
+            onSelectBatch={handleSelectBatch}
+            students={students}
+            totalStudentsCount={totalStudentsCount}
+            homeworkList={homeworkList}
+            examsList={examsList}
+            materialsList={materialsList}
+            conversations={conversations}
+            attendanceSummary={attendanceSummary}
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenNewHomework={() => setShowNewHwModal(true)}
+            onOpenNewMaterial={() => setShowNewMaterialModal(true)}
+            onOpenReviewHw={openHomeworkReview}
+            onOpenGradingExam={(exam) => setGradingExam(exam)}
+            onOpenConversation={openStaffConversation}
+          />
+        )}
 
-      {/* Tabs */}
-      <View style={styles.tabBarWrapper}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabBarScroll}
-        >
-          <TouchableOpacity
-            onPress={() => setActiveTab('attendance')}
-            style={[styles.tabItem, activeTab === 'attendance' && styles.activeTabItem]}
+        {/* TAB 2: STUDENTS DIRECTORY & MANAGEMENT */}
+        {activeTab === 'students' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4E342E" />}
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.tabText, activeTab === 'attendance' && styles.activeTabText]}>
-              Attendance
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('batches')}
-            style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
-              Students ({students.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('homework')}
-            style={[styles.tabItem, activeTab === 'homework' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'homework' && styles.activeTabText]}>
-              Homework
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('exams')}
-            style={[styles.tabItem, activeTab === 'exams' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'exams' && styles.activeTabText]}>
-              Exams ({examsList.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('materials')}
-            style={[styles.tabItem, activeTab === 'materials' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'materials' && styles.activeTabText]}>
-              Materials
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('messages')}
-            style={[styles.tabItem, activeTab === 'messages' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'messages' && styles.activeTabText]}>
-              Parent Chat
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.loadingText}>Loading faculty dashboard...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
-        >
-          {/* TAB 1: VOICE-BASED ATTENDANCE & MANUAL FALLBACK */}
-          {activeTab === 'attendance' && (
-            <View>
-              {/* Read-Only Today's Date Banner */}
-              <View
-                style={{
-                  marginBottom: 10,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: '#FDFBF7',
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: '#D7CCC8',
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#4E342E' }}>
-                  📅 Today's Attendance (Asia/Kolkata)
-                </Text>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: '#6D4C41' }}>
-                  {new Date().toLocaleDateString('en-IN', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
+            {/* Batch Selector Bar */}
+            {batches.length > 0 && (
+              <View style={styles.filterChipSection}>
+                <Text style={styles.filterChipLabel}>Select Class Batch:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {batches.map((b) => {
+                    const isSelected = selectedBatch?.id === b.id;
+                    return (
+                      <TouchableOpacity
+                        key={b.id}
+                        onPress={() => handleSelectBatch(b)}
+                        style={[styles.batchChip, isSelected && styles.batchChipActive]}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
+                          {b.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
                   })}
-                </Text>
+                </ScrollView>
               </View>
+            )}
 
-              {/* Voice-Based Attendance Assistant Card */}
-              <Card highlighted>
-                <View style={styles.voiceHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.scannerTitle}>🎙️ Voice-Based Attendance</Text>
-                    <Text style={styles.scannerSub}>
-                      Call out student name or dictate via keyboard microphone
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setIsVoiceListening(!isVoiceListening)}
-                    style={[
-                      styles.voiceListenToggleBtn,
-                      isVoiceListening && styles.voiceListenToggleBtnActive,
-                    ]}
-                  >
-                    <Text style={styles.voiceListenToggleBtnText}>
-                      {isVoiceListening ? '⏹ Stop Listening' : '🎙️ Start Listening'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Expo Go vs Dev Build info note */}
-                <View style={styles.devBuildNoteBox}>
-                  <Text style={styles.devBuildNoteText}>
-                    💡 Continuous background microphone listening requires an Android Development Client (npx expo run:android). On Expo Go, speak using keyboard voice dictation or type student name below.
-                  </Text>
-                </View>
-
-                {/* Spoken Text / Voice Search Input */}
-                <View style={{ marginTop: 10 }}>
-                  <Text style={styles.voiceInputLabel}>Recognized Speech / Student Name:</Text>
-                  <TextInput
-                    style={styles.voiceTextInput}
-                    placeholder="e.g. 'Aarav Sharma' or 'Kabir present'..."
-                    placeholderTextColor="#A1887F"
-                    value={voiceQuery}
-                    onChangeText={handleVoiceQueryChange}
-                    returnKeyType="search"
-                  />
-                </View>
-
-                {/* Exactly 1 Candidate Matched -> Confirmation Prompt */}
-                {pendingVoiceCandidate && (
-                  <View style={styles.voiceCandidateConfirmCard}>
-                    <View style={styles.voiceCandidateHeader}>
-                      <View style={styles.voiceInitialCircle}>
-                        <Text style={styles.voiceInitialText}>
-                          {(pendingVoiceCandidate.firstName || pendingVoiceCandidate.user?.fullName || '?')[0]}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.voiceCandidateName}>
-                          {pendingVoiceCandidate.user?.fullName ||
-                            `${pendingVoiceCandidate.firstName} ${pendingVoiceCandidate.lastName}`}
-                        </Text>
-                        <Text style={styles.voiceCandidateRoll}>
-                          Adm: {pendingVoiceCandidate.admissionNumber} • Batch: {selectedBatch?.name}
-                        </Text>
-                      </View>
-                      <Badge label="MATCHED" variant="success" size="sm" />
-                    </View>
-
-                    <View style={styles.voiceConfirmActionRow}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setPendingVoiceCandidate(null);
-                          setVoiceQuery('');
-                        }}
-                        style={styles.voiceCancelBtn}
-                      >
-                        <Text style={styles.voiceCancelBtnText}>Skip</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => handleConfirmVoiceAttendance(pendingVoiceCandidate)}
-                        disabled={voiceSubmitting}
-                        style={styles.voiceConfirmBtn}
-                      >
-                        {voiceSubmitting ? (
-                          <ActivityIndicator color="#ffffff" size="small" />
-                        ) : (
-                          <Text style={styles.voiceConfirmBtnText}>
-                            {pendingVoiceCandidate.todayStatus === 'CHECKED_IN' || pendingVoiceCandidate.alreadyCheckedIn
-                              ? 'Confirm Check-Out ➔'
-                              : 'Confirm Check-In ➔'}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Multiple Candidates -> Disambiguation Chips */}
-                {voiceDisambiguation.length > 0 && !pendingVoiceCandidate && (
-                  <View style={styles.voiceDisambiguationBox}>
-                    <Text style={styles.voiceDisambiguationTitle}>
-                      Multiple students match '{voiceQuery}'. Tap intended student:
-                    </Text>
-                    <View style={styles.voiceDisambiguationList}>
-                      {voiceDisambiguation.map((candidate) => (
-                        <TouchableOpacity
-                          key={candidate.id}
-                          onPress={() => setPendingVoiceCandidate(candidate)}
-                          style={styles.voiceDisambigChip}
-                        >
-                          <Text style={styles.voiceDisambigChipText}>
-                            {candidate.user?.fullName || `${candidate.firstName} ${candidate.lastName}`} ({candidate.admissionNumber})
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                )}
-              </Card>
-
-              {/* Manual Batch Attendance Marker */}
-              <View style={[styles.sectionHeader, { marginTop: 12 }]}>
-                <Text style={styles.sectionTitle}>
-                  ✏️ Mark Attendance — {selectedBatch?.name || 'Batch'}
-                </Text>
-                <Text style={styles.sectionCount}>{students.length} students</Text>
-              </View>
-
-              {/* Status Controls */}
-              <Card>
-                <Text style={styles.controlHeading}>SELECT ACTION & STATUS:</Text>
-                <View style={styles.controlsRow}>
-                  <View style={styles.pillGroup}>
-                    <TouchableOpacity
-                      onPress={() => setAttType('CHECK_IN')}
-                      style={[styles.pillBtn, attType === 'CHECK_IN' && styles.pillBtnActive]}
-                    >
-                      <Text style={[styles.pillBtnText, attType === 'CHECK_IN' && styles.pillBtnTextActive]}>
-                        Check-In
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setAttType('CHECK_OUT')}
-                      style={[styles.pillBtn, attType === 'CHECK_OUT' && styles.pillBtnActive]}
-                    >
-                      <Text style={[styles.pillBtnText, attType === 'CHECK_OUT' && styles.pillBtnTextActive]}>
-                        Check-Out
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.pillGroup}>
-                    <TouchableOpacity
-                      onPress={() => setAttStatus('PRESENT')}
-                      style={[styles.statusPill, attStatus === 'PRESENT' && styles.presentPill]}
-                    >
-                      <Text style={[styles.statusPillText, attStatus === 'PRESENT' && styles.statusTextActive]}>
-                        Present
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setAttStatus('ABSENT')}
-                      style={[styles.statusPill, attStatus === 'ABSENT' && styles.absentPill]}
-                    >
-                      <Text style={[styles.statusPillText, attStatus === 'ABSENT' && styles.statusTextActive]}>
-                        Absent
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setAttStatus('LATE')}
-                      style={[styles.statusPill, attStatus === 'LATE' && styles.latePill]}
-                    >
-                      <Text style={[styles.statusPillText, attStatus === 'LATE' && styles.statusTextActive]}>
-                        Late
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {selectedStudentForAtt && (
-                  <View style={styles.confirmBox}>
-                    <Text style={styles.confirmTarget}>
-                      Selected: <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>{selectedStudentForAtt.user?.fullName}</Text>
-                    </Text>
-                    <TouchableOpacity
-                      onPress={handleRecordAttendance}
-                      style={styles.submitAttBtn}
-                      disabled={attSubmitting}
-                    >
-                      {attSubmitting ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <Text style={styles.submitAttBtnText}>Confirm & Log Attendance</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </Card>
-
-              {/* Student List for Attendance Selection */}
-              {students.map((st) => {
-                const isSelected = selectedStudentForAtt?.id === st.id;
-                return (
-                  <Card
-                    key={st.id}
-                    onPress={() => setSelectedStudentForAtt(st)}
-                    highlighted={isSelected}
-                  >
-                    <View style={styles.studentAttRow}>
-                      <View style={styles.studentInitialCircle}>
-                        <Text style={styles.studentInitial}>{st.user?.fullName?.[0] || 'S'}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.studentName}>{st.user?.fullName}</Text>
-                        <Text style={styles.studentRoll}>Adm: {st.admissionNumber || '—'}</Text>
-                      </View>
-                      <Badge
-                        label={isSelected ? 'SELECTED' : 'TAP TO SELECT'}
-                        variant={isSelected ? 'indigo' : 'neutral'}
-                        size="sm"
-                      />
-                    </View>
-                  </Card>
-                );
-              })}
-            </View>
-          )}
-
-          {/* TAB 2: STUDENTS DIRECTORY */}
-          {activeTab === 'batches' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>👨‍🎓 Enrolled Students</Text>
-                  <Text style={styles.sectionCount}>{students.length} in this batch</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.admitStudentBtn}
-                  onPress={() => setShowAdmitModal(true)}
-                >
-                  <Text style={styles.admitStudentBtnText}>+ Admit Student</Text>
+            {/* Search Input Bar */}
+            <View style={styles.searchBarWrapper}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by student name or roll..."
+                placeholderTextColor="#A1887F"
+                value={studentSearchQuery}
+                onChangeText={setStudentSearchQuery}
+              />
+              {studentSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setStudentSearchQuery('')} style={{ padding: 4 }}>
+                  <Text style={{ fontSize: 14, color: '#8D6E63' }}>✕</Text>
                 </TouchableOpacity>
-              </View>
+              )}
+            </View>
 
-              {students.map((s) => (
-                <Card key={s.id} onPress={() => setSelectedStudentId(s.id)}>
+            {/* Section Header & Admit Button */}
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionTitle}>Enrolled Students ({filteredStudents.length})</Text>
+                <Text style={styles.sectionSubTitle}>
+                  {selectedBatch ? selectedBatch.name : 'All Batches'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.primaryActionBtn}
+                onPress={() => setShowAdmitModal(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.primaryActionBtnText}>+ Admit Student</Text>
+              </TouchableOpacity>
+            </View>
+
+            {filteredStudents.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>👨‍🎓</Text>
+                <Text style={styles.emptyTitle}>No Students Found</Text>
+                <Text style={styles.emptyDesc}>
+                  {studentSearchQuery ? 'No students matched your search criteria.' : 'No students enrolled in this batch yet.'}
+                </Text>
+              </Card>
+            ) : (
+              filteredStudents.map((s) => (
+                <Card key={s.id} onPress={() => setSelectedStudentId(s.id)} style={{ marginBottom: 10 }}>
                   <View style={styles.studentCardRow}>
-                    <StudentAvatar studentId={s.id} photoUrl={s.photoUrl} name={s.user?.fullName || `${s.firstName} ${s.lastName}`} size={38} style={{ marginRight: 10 }} />
+                    <StudentAvatar
+                      studentId={s.id}
+                      photoUrl={s.photoUrl}
+                      name={s.user?.fullName || `${s.firstName} ${s.lastName}`}
+                      size={40}
+                      style={{ marginRight: 10 }}
+                    />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.studentName}>{s.user?.fullName || `${s.firstName} ${s.lastName}`}</Text>
                       <Text style={styles.studentSub}>
-                        Adm: {s.admissionNumber || '—'}
+                        Adm: {s.admissionNumber || '—'} {s.rollNumber ? `• Roll: ${s.rollNumber}` : ''}
                       </Text>
-                      {s.phone && (
-                        <Text style={styles.phoneText}>📞 {s.phone}</Text>
-                      )}
+                      {s.phone && <Text style={styles.phoneText}>📞 {s.phone}</Text>}
                     </View>
                     <Badge
                       label={s.status || 'ACTIVE'}
@@ -964,12 +801,12 @@ export const StaffScreen: React.FC = () => {
                   </View>
 
                   {/* Lifecycle Action Buttons */}
-                  <View style={styles.actionRowContainer}>
+                  <View style={styles.studentActionRow}>
                     <TouchableOpacity
                       style={styles.cardDetailsHint}
                       onPress={() => setSelectedStudentId(s.id)}
                     >
-                      <Text style={styles.cardDetailsHintText}>Tap for Full Details ➔</Text>
+                      <Text style={styles.cardDetailsHintText}>Full Profile ➔</Text>
                     </TouchableOpacity>
 
                     <View style={styles.actionBtnGroup}>
@@ -979,7 +816,7 @@ export const StaffScreen: React.FC = () => {
                             style={styles.actionBtnPass}
                             onPress={() => handleOpenStatusConfirm(s, 'PASSED_OUT')}
                           >
-                            <Text style={styles.actionBtnPassText}>Mark Passed</Text>
+                            <Text style={styles.actionBtnPassText}>Pass Out</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.actionBtnDisc}
@@ -999,30 +836,371 @@ export const StaffScreen: React.FC = () => {
                     </View>
                   </View>
                 </Card>
-              ))}
-            </View>
-          )}
+              ))
+            )}
+          </ScrollView>
+        )}
 
-          {/* TAB 3: HOMEWORK MANAGEMENT */}
-          {activeTab === 'homework' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>📝 Homework Assignments</Text>
+        {/* TAB 3: ATTENDANCE (Voice-Assisted & Manual Check-in) */}
+        {activeTab === 'attendance' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4E342E" />}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Batch Selector Bar */}
+            {batches.length > 0 && (
+              <View style={styles.filterChipSection}>
+                <Text style={styles.filterChipLabel}>Select Class Batch:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {batches.map((b) => {
+                    const isSelected = selectedBatch?.id === b.id;
+                    return (
+                      <TouchableOpacity
+                        key={b.id}
+                        onPress={() => handleSelectBatch(b)}
+                        style={[styles.batchChip, isSelected && styles.batchChipActive]}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.batchChipText, isSelected && styles.batchChipTextActive]}>
+                          {b.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Read-Only Today's Date Banner */}
+            <View style={styles.todayDateBanner}>
+              <Text style={styles.todayDateBannerTitle}>📅 Today's Attendance Session</Text>
+              <Text style={styles.todayDateBannerText}>
+                {new Date().toLocaleDateString('en-IN', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                })} (Asia/Kolkata)
+              </Text>
+            </View>
+
+            {/* Voice-Assisted Input */}
+            <Card style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.voiceSectionTitle}>🎤 Voice-Assisted Attendance</Text>
+                {isVoiceListening && (
+                  <View style={styles.liveListeningTag}>
+                    <Text style={styles.liveListeningText}>● LISTENING</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.voiceInputWrap}>
+                <TextInput
+                  style={styles.voiceTextInput}
+                  placeholder="Say or type student name, e.g. 'Aarav Kumar'..."
+                  placeholderTextColor="#A1887F"
+                  value={voiceQuery}
+                  onChangeText={handleVoiceQueryChange}
+                />
+                {voiceQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setVoiceQuery('');
+                      setPendingVoiceCandidate(null);
+                      setVoiceDisambiguation([]);
+                    }}
+                    style={{ padding: 4 }}
+                  >
+                    <Text style={{ fontSize: 13, color: '#8D6E63' }}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Exact Voice Match Candidate Preview */}
+              {pendingVoiceCandidate && (
+                <View style={styles.voiceCandidateBox}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.voiceCandidateName}>
+                      Matched: {pendingVoiceCandidate.user?.fullName || pendingVoiceCandidate.firstName}
+                    </Text>
+                    <Text style={styles.voiceCandidateMeta}>
+                      Adm: {pendingVoiceCandidate.admissionNumber || '—'} {pendingVoiceCandidate.rollNumber ? `• Roll: ${pendingVoiceCandidate.rollNumber}` : ''}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.voiceConfirmBtn}
+                    onPress={() => handleConfirmVoiceAttendance(pendingVoiceCandidate)}
+                    disabled={voiceSubmitting}
+                  >
+                    {voiceSubmitting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.voiceConfirmBtnText}>
+                        {pendingVoiceCandidate.todayStatus === 'CHECKED_IN' ? 'Check-Out ➔' : 'Check-In ➔'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Multiple Disambiguation Candidates */}
+              {voiceDisambiguation.length > 0 && (
+                <View style={styles.disambiguationBox}>
+                  <Text style={styles.disambiguationTitle}>Multiple students matched. Select one:</Text>
+                  {voiceDisambiguation.map((cand) => (
+                    <TouchableOpacity
+                      key={cand.id}
+                      style={styles.disambiguationItem}
+                      onPress={() => handleConfirmVoiceAttendance(cand)}
+                      disabled={voiceSubmitting}
+                    >
+                      <Text style={styles.disambiguationItemText}>
+                        {cand.user?.fullName || cand.firstName} (Adm: {cand.admissionNumber || '—'})
+                      </Text>
+                      <Text style={styles.disambiguationActionText}>Mark ➔</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </Card>
+
+            {/* Manual Attendance Check-in Controls */}
+            <Card style={{ marginBottom: 14 }}>
+              <Text style={styles.voiceSectionTitle}>✍️ Manual Check-in / Check-out</Text>
+
+              {/* Student selected indicator */}
+              <View style={styles.selectedStudentIndicator}>
+                <Text style={styles.selectedStudentIndicatorLabel}>Target Student:</Text>
+                <Text style={styles.selectedStudentIndicatorValue} numberOfLines={1}>
+                  {selectedStudentForAtt
+                    ? selectedStudentForAtt.user?.fullName || selectedStudentForAtt.firstName
+                    : 'Tap any student below to select'}
+                </Text>
+              </View>
+
+              {/* Type Toggle: Check-In vs Check-Out */}
+              <View style={styles.toggleRow}>
                 <TouchableOpacity
-                  onPress={() => setShowNewHwModal(true)}
-                  style={styles.addHwBtn}
+                  style={[styles.toggleBtn, attType === 'CHECK_IN' && styles.toggleBtnActive]}
+                  onPress={() => setAttType('CHECK_IN')}
                 >
-                  <Text style={styles.addHwBtnText}>+ Assign Homework</Text>
+                  <Text style={[styles.toggleBtnText, attType === 'CHECK_IN' && styles.toggleBtnTextActive]}>
+                    Check-In
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, attType === 'CHECK_OUT' && styles.toggleBtnActive]}
+                  onPress={() => setAttType('CHECK_OUT')}
+                >
+                  <Text style={[styles.toggleBtnText, attType === 'CHECK_OUT' && styles.toggleBtnTextActive]}>
+                    Check-Out
+                  </Text>
                 </TouchableOpacity>
               </View>
 
-              {homeworkList.map((hw) => (
-                <Card key={hw.id} onPress={() => openHomeworkReview(hw)}>
-                  <View style={styles.hwStaffRow}>
+              {/* Status Toggle: Present vs Late vs Absent */}
+              <View style={styles.toggleRow}>
+                {(['PRESENT', 'LATE', 'ABSENT'] as const).map((st) => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[styles.toggleBtn, attStatus === st && styles.toggleBtnActive]}
+                    onPress={() => setAttStatus(st)}
+                  >
+                    <Text style={[styles.toggleBtnText, attStatus === st && styles.toggleBtnTextActive]}>
+                      {st}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Submit Attendance Button */}
+              <TouchableOpacity
+                style={[styles.recordAttBtn, (!selectedStudentForAtt || attSubmitting) && styles.recordAttBtnDisabled]}
+                onPress={handleRecordAttendance}
+                disabled={!selectedStudentForAtt || attSubmitting}
+                activeOpacity={0.8}
+              >
+                {attSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.recordAttBtnText}>Record Attendance</Text>
+                )}
+              </TouchableOpacity>
+            </Card>
+
+            {/* Student Roster for Selection */}
+            <Text style={styles.sectionTitle}>Batch Roster (Tap to select)</Text>
+            {students.map((st) => {
+              const isSelected = selectedStudentForAtt?.id === st.id;
+              return (
+                <Card
+                  key={st.id}
+                  onPress={() => setSelectedStudentForAtt(st)}
+                  highlighted={isSelected}
+                  style={{ marginBottom: 8 }}
+                >
+                  <View style={styles.studentAttRow}>
+                    <View style={styles.studentInitialCircle}>
+                      <Text style={styles.studentInitial}>{st.user?.fullName?.[0] || 'S'}</Text>
+                    </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.hwTitle}>{hw.title}</Text>
-                      <Text style={styles.hwBatchName}>
-                        Batch: {hw.batch?.name || 'Class'} &bull; Subject: {hw.subject?.name || 'General'}
+                      <Text style={styles.studentName}>{st.user?.fullName || `${st.firstName} ${st.lastName}`}</Text>
+                      <Text style={styles.studentRoll}>Adm: {st.admissionNumber || '—'}</Text>
+                    </View>
+                    <Badge
+                      label={isSelected ? 'SELECTED' : 'SELECT'}
+                      variant={isSelected ? 'indigo' : 'neutral'}
+                      size="sm"
+                    />
+                  </View>
+                </Card>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* TAB 4: LEARNING MATERIALS & ANALYTICS */}
+        {activeTab === 'materials' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4E342E" />}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Header & Create Button */}
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionTitle}>Learning Materials ({materialsList.length})</Text>
+                <Text style={styles.sectionSubTitle}>Notes, questions & documents</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowNewMaterialModal(true)}
+                style={styles.primaryActionBtn}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.primaryActionBtnText}>+ New Material</Text>
+              </TouchableOpacity>
+            </View>
+
+            {materialsList.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>📚</Text>
+                <Text style={styles.emptyTitle}>No Materials Uploaded</Text>
+                <Text style={styles.emptyDesc}>Share study materials, notes and exercises with your batch students.</Text>
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={() => setShowNewMaterialModal(true)}
+                >
+                  <Text style={styles.emptyActionBtnText}>+ Create First Material</Text>
+                </TouchableOpacity>
+              </Card>
+            ) : (
+              materialsList.map((mat) => (
+                <Card key={mat.id} style={{ marginBottom: 10 }}>
+                  <View style={styles.taskCardHeader}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.taskTitle}>{mat.title}</Text>
+                      <Text style={styles.taskSub}>
+                        Batch: {mat.batch?.name || 'Class'} • Subject: {mat.subject?.name || 'General'}
+                      </Text>
+                    </View>
+                    <Badge label={mat.type} variant="info" size="sm" />
+                  </View>
+
+                  {mat.description ? (
+                    <Text style={styles.taskSnippet}>{mat.description}</Text>
+                  ) : null}
+
+                  {mat.content ? (
+                    <View style={styles.materialContentPreview}>
+                      <Text style={styles.materialContentText} numberOfLines={3}>
+                        {mat.content}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.materialActionRow}>
+                    <TouchableOpacity
+                      onPress={() => setAnalyticsMaterial(mat)}
+                      style={styles.analyticsBtn}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.analyticsBtnText}>📊 View Analytics</Text>
+                    </TouchableOpacity>
+
+                    <Badge
+                      label={mat.isPublished ? 'PUBLISHED' : 'DRAFT'}
+                      variant={mat.isPublished ? 'success' : 'warning'}
+                      size="sm"
+                    />
+                  </View>
+                </Card>
+              ))
+            )}
+          </ScrollView>
+        )}
+
+        {/* TAB 5: MORE MENU HUB */}
+        {activeTab === 'more' && (
+          <StaffMoreTab
+            user={user}
+            institute={institute}
+            homeworkCount={homeworkList.length}
+            examCount={examsList.length}
+            conversationCount={conversations.length}
+            unreadMessagesCount={unreadMessagesCount}
+            unreadNotifCount={unreadNotifCount}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenReviewsModal={() => setShowReviewsModal(true)}
+            onOpenNotifications={() => setShowNotificationModal(true)}
+            onLogout={logout}
+          />
+        )}
+
+        {/* SECONDARY SUBVIEW: HOMEWORK MANAGEMENT */}
+        {activeTab === 'homework' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4E342E" />}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionTitle}>Homework Assignments ({homeworkList.length})</Text>
+                <Text style={styles.sectionSubTitle}>Tasks assigned to your classes</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowNewHwModal(true)}
+                style={styles.primaryActionBtn}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.primaryActionBtnText}>+ Assign Homework</Text>
+              </TouchableOpacity>
+            </View>
+
+            {homeworkList.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>📝</Text>
+                <Text style={styles.emptyTitle}>No Homework Tasks</Text>
+                <Text style={styles.emptyDesc}>Create assignments to track student submissions.</Text>
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={() => setShowNewHwModal(true)}
+                >
+                  <Text style={styles.emptyActionBtnText}>+ Assign Homework</Text>
+                </TouchableOpacity>
+              </Card>
+            ) : (
+              homeworkList.map((hw) => (
+                <Card key={hw.id} onPress={() => openHomeworkReview(hw)} style={{ marginBottom: 10 }}>
+                  <View style={styles.taskCardHeader}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.taskTitle}>{hw.title}</Text>
+                      <Text style={styles.taskSub}>
+                        Batch: {hw.batch?.name || 'Class'} • Subject: {hw.subject?.name || 'General'}
                       </Text>
                     </View>
                     <Badge
@@ -1031,326 +1209,270 @@ export const StaffScreen: React.FC = () => {
                       size="sm"
                     />
                   </View>
-                  <Text style={styles.hwDesc}>{hw.description}</Text>
-                  <View style={{ marginTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 11, color: themeTokens.colors.textMuted }}>
+                  {hw.description ? (
+                    <Text style={styles.taskSnippet}>{hw.description}</Text>
+                  ) : null}
+                  <View style={styles.homeworkFooterRow}>
+                    <Text style={styles.homeworkDueDateText}>
                       Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString('en-IN') : 'Open'}
                     </Text>
-                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: themeTokens.colors.primary }}>
-                      Tap to Review & Grade &rarr;
+                    <Text style={styles.homeworkReviewLinkText}>
+                      Review Submissions & Grade ➔
                     </Text>
                   </View>
                 </Card>
-              ))}
-            </View>
-          )}
+              ))
+            )}
+          </ScrollView>
+        )}
 
-          {/* TAB: EXAMS & GRADING ROSTER */}
-          {activeTab === 'exams' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>🏆 Examinations & Grading ({examsList.length})</Text>
+        {/* SECONDARY SUBVIEW: EXAMS & MARKS ENTRY */}
+        {activeTab === 'exams' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4E342E" />}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionTitle}>Examinations & Marks ({examsList.length})</Text>
+                <Text style={styles.sectionSubTitle}>Scheduled tests and grading rosters</Text>
               </View>
-
-              {examsList.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No examinations scheduled for your assigned batches.</Text>
-                </Card>
-              ) : (
-                examsList.map((exam) => (
-                  <Card key={exam.id} style={{ marginBottom: 12 }}>
-                    <View style={styles.hwStaffRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.hwTitle}>{exam.title}</Text>
-                        <Text style={styles.hwBatchName}>
-                          {exam.batch?.name || 'Class Batch'} • {exam.subject?.name || 'All Subjects'}
-                        </Text>
-                      </View>
-                      <Badge
-                        label={
-                          exam.isResultsPublished
-                            ? 'RESULTS PUBLISHED'
-                            : exam.isSchedulePublished
-                            ? 'SCHEDULE PUBLISHED'
-                            : 'DRAFT'
-                        }
-                        variant={exam.isResultsPublished ? 'success' : exam.isSchedulePublished ? 'info' : 'warning'}
-                      />
-                    </View>
-
-                    {exam.description ? (
-                      <Text style={[styles.hwDesc, { marginTop: 6 }]}>{exam.description}</Text>
-                    ) : null}
-
-                    <View style={{ marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 12, color: themeTokens.colors.textMuted }}>
-                        Max: {exam.totalMarks || 100} marks • Pass: {exam.passingMarks || 40}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: themeTokens.colors.textSubtle }}>
-                        {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Date TBD'}
-                      </Text>
-                    </View>
-
-                    <MobileButton
-                      title={exam.isResultsPublished ? 'View Grade Roster →' : 'Enter Marks & Grade →'}
-                      onPress={() => setGradingExam(exam)}
-                      variant="primary"
-                      size="sm"
-                      fullWidth
-                      style={{ marginTop: 12 }}
-                    />
-                  </Card>
-                ))
-              )}
             </View>
-          )}
 
-          {/* TAB: MATERIALS MANAGEMENT */}
-          {activeTab === 'materials' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>📚 Learning Materials ({materialsList.length})</Text>
+            {examsList.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>🏆</Text>
+                <Text style={styles.emptyTitle}>No Scheduled Exams</Text>
+                <Text style={styles.emptyDesc}>Exams created for your assigned batches will appear here.</Text>
+              </Card>
+            ) : (
+              examsList.map((exam) => (
+                <Card key={exam.id} style={{ marginBottom: 12 }}>
+                  <View style={styles.taskCardHeader}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.taskTitle}>{exam.title}</Text>
+                      <Text style={styles.taskSub}>
+                        {exam.batch?.name || 'Class Batch'} • {exam.subject?.name || 'All Subjects'}
+                      </Text>
+                    </View>
+                    <Badge
+                      label={
+                        exam.isResultsPublished
+                          ? 'RESULTS PUBLISHED'
+                          : exam.isSchedulePublished
+                          ? 'SCHEDULE PUBLISHED'
+                          : 'DRAFT'
+                      }
+                      variant={exam.isResultsPublished ? 'success' : exam.isSchedulePublished ? 'info' : 'warning'}
+                    />
+                  </View>
+
+                  {exam.description ? (
+                    <Text style={[styles.taskSnippet, { marginTop: 6 }]}>{exam.description}</Text>
+                  ) : null}
+
+                  <View style={{ marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: themeTokens.colors.textMuted }}>
+                      Max: {exam.totalMarks || 100} • Pass: {exam.passingMarks || 40}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: themeTokens.colors.textSubtle }}>
+                      {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Date TBD'}
+                    </Text>
+                  </View>
+
+                  <MobileButton
+                    title={exam.isResultsPublished ? 'View Grade Roster →' : 'Enter Marks & Grade →'}
+                    onPress={() => setGradingExam(exam)}
+                    variant="primary"
+                    size="sm"
+                    fullWidth
+                    style={{ marginTop: 12 }}
+                  />
+                </Card>
+              ))
+            )}
+          </ScrollView>
+        )}
+
+        {/* SECONDARY SUBVIEW: PARENT CONVERSATIONS & CHAT */}
+        {activeTab === 'messages' && (
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            {activeConversation ? (
+              <View style={[styles.tabContent, { paddingHorizontal: 16, paddingTop: 10 }]}>
                 <TouchableOpacity
-                  onPress={() => setShowNewMaterialModal(true)}
-                  style={styles.addHwBtn}
+                  onPress={() => setActiveConversation(null)}
+                  style={styles.chatBackBtn}
                 >
-                  <Text style={styles.addHwBtnText}>+ New Material</Text>
+                  <Text style={styles.chatBackBtnText}>← All Conversations</Text>
                 </TouchableOpacity>
-              </View>
 
-              {materialsList.length === 0 ? (
-                <Card><Text style={styles.emptyText}>No learning materials created yet.</Text></Card>
-              ) : (
-                materialsList.map((mat) => (
-                  <Card key={mat.id}>
-                    <View style={styles.hwStaffRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.hwTitle}>{mat.title}</Text>
-                        <Text style={styles.hwBatchName}>
-                          Batch: {mat.batch?.name || 'Class'} &bull; Subject: {mat.subject?.name || 'All Subjects'}
-                        </Text>
-                      </View>
-                      <Badge label={mat.type} variant="info" size="sm" />
-                    </View>
-                    {mat.description ? <Text style={styles.hwDesc}>{mat.description}</Text> : null}
-                    {mat.content ? (
-                      <View style={{ marginTop: 6, padding: 8, backgroundColor: themeTokens.colors.surfaceMuted, borderRadius: 8 }}>
-                        <Text style={{ fontSize: 11, color: themeTokens.colors.textSecondary }} numberOfLines={3}>
-                          {mat.content}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => setAnalyticsMaterial(mat)}
-                        style={{
-                          paddingHorizontal: 10,
-                          paddingVertical: 6,
-                          borderRadius: 8,
-                          backgroundColor: '#E0F2FE',
-                          borderWidth: 1,
-                          borderColor: '#BAE6FD',
-                        }}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369A1' }}>
-                          📊 View Analytics
-                        </Text>
-                      </TouchableOpacity>
-
-                      <Badge
-                        label={mat.isPublished ? 'PUBLISHED' : 'DRAFT'}
-                        variant={mat.isPublished ? 'success' : 'warning'}
-                        size="sm"
-                      />
-                    </View>
-                  </Card>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* TAB 4: PARENT CHAT */}
-          {activeTab === 'messages' && (
-            <View>
-              {activeConversation ? (
-                <View>
-                  <TouchableOpacity
-                    onPress={() => setActiveConversation(null)}
-                    style={{ paddingVertical: 10, marginBottom: 8 }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: themeTokens.colors.espresso }}>
-                      ← Back to all conversations
+                <Card style={{ marginBottom: 10 }}>
+                  <Text style={styles.chatHeaderTitle}>
+                    {activeConversation.parent?.fullName || activeConversation.title || 'Parent Message'}
+                  </Text>
+                  {activeConversation.student && (
+                    <Text style={styles.chatHeaderSub}>
+                      Student: {activeConversation.student.fullName} ({activeConversation.student.admissionNumber})
                     </Text>
-                  </TouchableOpacity>
+                  )}
+                </Card>
 
-                  <Card>
-                    <Text style={styles.convTitle}>
-                      {activeConversation.parent?.fullName || activeConversation.title || 'Parent Message'}
-                    </Text>
-                    {activeConversation.student && (
-                      <Text style={styles.convSub}>
-                        Student: {activeConversation.student.fullName} ({activeConversation.student.admissionNumber})
-                      </Text>
-                    )}
-                  </Card>
-
-                  {/* Messages container */}
-                  <View style={{ marginVertical: 12, gap: 10 }}>
-                    {loadingMessages ? (
-                      <Card><Text style={styles.emptyText}>Loading message history...</Text></Card>
-                    ) : activeMessages.length === 0 ? (
-                      <Card><Text style={styles.emptyText}>No messages in this conversation yet.</Text></Card>
-                    ) : (
-                      activeMessages.map((m) => {
-                        const isMine = m.senderId === user?.id || m.isMine;
-                        return (
-                          <View
-                            key={m.id}
-                            style={{
-                              alignSelf: isMine ? 'flex-end' : 'flex-start',
-                              maxWidth: '85%',
-                              backgroundColor: isMine ? themeTokens.colors.espresso : '#ffffff',
-                              borderRadius: 14,
-                              padding: 10,
-                              borderWidth: isMine ? 0 : 1,
-                              borderColor: themeTokens.colors.border,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 10,
-                                fontWeight: '700',
-                                color: isMine ? '#d7ccc8' : themeTokens.colors.mocha,
-                                marginBottom: 2,
-                              }}
-                            >
-                              {isMine ? 'You' : m.sender?.fullName || 'Parent'}
-                            </Text>
-                            {m.attachmentType === 'AUDIO' && (
-                              <Text style={{ fontSize: 12, color: isMine ? '#fff' : '#2d1e18', fontStyle: 'italic' }}>
-                                🎤 Voice message
-                              </Text>
-                            )}
-                            {m.attachmentType === 'IMAGE' && (
-                              <Text style={{ fontSize: 12, color: isMine ? '#fff' : '#2d1e18', fontStyle: 'italic' }}>
-                                📷 Photo attachment
-                              </Text>
-                            )}
-                            {m.attachmentType === 'DOCUMENT' && (
-                              <Text style={{ fontSize: 12, color: isMine ? '#fff' : '#2d1e18', fontStyle: 'italic' }}>
-                                📄 {m.attachmentName || 'Document.pdf'}
-                              </Text>
-                            )}
-                            {Boolean(m.body || m.content) && (
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  color: isMine ? '#ffffff' : themeTokens.colors.textPrimary,
-                                  lineHeight: 18,
-                                }}
-                              >
-                                {m.body || m.content}
-                              </Text>
-                            )}
-                            <Text
-                              style={{
-                                fontSize: 9,
-                                color: isMine ? '#d7ccc8' : themeTokens.colors.textMuted,
-                                alignSelf: 'flex-end',
-                                marginTop: 4,
-                              }}
-                            >
-                              {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </Text>
-                          </View>
-                        );
-                      })
-                    )}
-                  </View>
-
-                  {/* Reply Input Bar */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                    <TextInput
-                      style={{
-                        flex: 1,
-                        backgroundColor: '#ffffff',
-                        borderWidth: 1,
-                        borderColor: themeTokens.colors.border,
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        fontSize: 13,
-                        color: themeTokens.colors.textPrimary,
-                      }}
-                      placeholder="Write reply to parent..."
-                      placeholderTextColor="#94a3b8"
-                      value={newStaffMessage}
-                      onChangeText={setNewStaffMessage}
-                    />
-                    <TouchableOpacity
-                      onPress={handleSendStaffMessage}
-                      disabled={!newStaffMessage.trim() || sendingStaffMessage}
-                      style={{
-                        backgroundColor: themeTokens.colors.espresso,
-                        paddingHorizontal: 16,
-                        paddingVertical: 10,
-                        borderRadius: 12,
-                        opacity: !newStaffMessage.trim() || sendingStaffMessage ? 0.5 : 1,
-                      }}
-                    >
-                      <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }}>Send</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>💬 Parent Conversations</Text>
-                    <TouchableOpacity
-                      onPress={() => setShowReviewsModal(true)}
-                      style={[styles.addHwBtn, { backgroundColor: '#F59E0B' }]}
-                    >
-                      <Text style={styles.addHwBtnText}>⭐ Reviews</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {conversations.length === 0 ? (
-                    <Card><Text style={styles.emptyText}>No parent conversation threads.</Text></Card>
+                {/* Message History */}
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 16, gap: 10 }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {loadingMessages ? (
+                    <Card><Text style={styles.emptyText}>Loading message history...</Text></Card>
+                  ) : activeMessages.length === 0 ? (
+                    <Card><Text style={styles.emptyText}>No messages in this thread yet.</Text></Card>
                   ) : (
-                    conversations.map((c) => (
-                      <Card key={c.id} onPress={() => openStaffConversation(c)}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={styles.convTitle}>{c.parent?.fullName || c.title || 'Parent Message'}</Text>
-                            {c.student && (
-                              <Text style={[styles.convSub, { color: themeTokens.colors.mocha, fontWeight: '600' }]}>
-                                Student: {c.student.fullName} ({c.student.admissionNumber})
-                              </Text>
-                            )}
-                            {c.lastMessage && (
-                              <Text style={styles.convSub} numberOfLines={1}>
-                                {c.lastMessage.body || (c.lastMessage.attachmentType ? `[${c.lastMessage.attachmentType}]` : 'Sent a message')}
-                              </Text>
-                            )}
-                          </View>
-                          {c.unreadCount > 0 ? (
-                            <Badge label={`${c.unreadCount} NEW`} variant="warning" size="sm" />
-                          ) : (
-                            <Badge label="OPEN" variant="info" size="sm" />
+                    activeMessages.map((m) => {
+                      const isMine = m.senderId === user?.id || m.isMine;
+                      return (
+                        <View
+                          key={m.id}
+                          style={[
+                            styles.messageBubble,
+                            isMine ? styles.messageBubbleMine : styles.messageBubbleTheirs,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.messageSenderText,
+                              isMine ? { color: '#D7CCC8' } : { color: '#6D4C41' },
+                            ]}
+                          >
+                            {isMine ? 'You' : m.sender?.fullName || 'Parent'}
+                          </Text>
+                          {m.attachmentType === 'AUDIO' && (
+                            <Text style={styles.attachmentNotice}>🎤 Voice note attachment</Text>
+                          )}
+                          {m.attachmentType === 'IMAGE' && (
+                            <Text style={styles.attachmentNotice}>📷 Photo attachment</Text>
+                          )}
+                          {m.attachmentType === 'DOCUMENT' && (
+                            <Text style={styles.attachmentNotice}>📄 {m.attachmentName || 'Document.pdf'}</Text>
+                          )}
+                          {Boolean(m.body || m.content) && (
+                            <Text
+                              style={[
+                                styles.messageBodyText,
+                                isMine ? { color: '#FFFFFF' } : { color: '#2D1E18' },
+                              ]}
+                            >
+                              {m.body || m.content}
+                            </Text>
+                          )}
+                          <Text
+                            style={[
+                              styles.messageTimeText,
+                              isMine ? { color: '#D7CCC8' } : { color: '#8D6E63' },
+                            ]}
+                          >
+                            {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+
+                {/* Reply Input Bar */}
+                <View style={[styles.chatInputBar, { marginBottom: 70 + insets.bottom }]}>
+                  <TextInput
+                    style={styles.chatTextInput}
+                    placeholder="Write reply to parent..."
+                    placeholderTextColor="#94a3b8"
+                    value={newStaffMessage}
+                    onChangeText={setNewStaffMessage}
+                  />
+                  <TouchableOpacity
+                    onPress={handleSendStaffMessage}
+                    disabled={!newStaffMessage.trim() || sendingStaffMessage}
+                    style={[
+                      styles.chatSendBtn,
+                      (!newStaffMessage.trim() || sendingStaffMessage) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={styles.chatSendBtnText}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.tabContent}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4E342E" />}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.sectionHeaderRow}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Parent Conversations ({conversations.length})</Text>
+                    <Text style={styles.sectionSubTitle}>Direct inquiries from student families</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setShowReviewsModal(true)}
+                    style={[styles.primaryActionBtn, { backgroundColor: '#F59E0B' }]}
+                  >
+                    <Text style={styles.primaryActionBtnText}>⭐ Reviews</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {conversations.length === 0 ? (
+                  <Card style={styles.emptyCard}>
+                    <Text style={styles.emptyIcon}>💬</Text>
+                    <Text style={styles.emptyTitle}>No Conversations</Text>
+                    <Text style={styles.emptyDesc}>Parent messages will appear here.</Text>
+                  </Card>
+                ) : (
+                  conversations.map((c) => (
+                    <Card key={c.id} onPress={() => openStaffConversation(c)} style={{ marginBottom: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.taskTitle}>{c.parent?.fullName || c.title || 'Parent Message'}</Text>
+                          {c.student && (
+                            <Text style={styles.taskSub}>
+                              Student: {c.student.fullName} ({c.student.admissionNumber})
+                            </Text>
+                          )}
+                          {c.lastMessage && (
+                            <Text style={styles.messageSnippet} numberOfLines={1}>
+                              {c.lastMessage.body || (c.lastMessage.attachmentType ? `[${c.lastMessage.attachmentType}]` : 'Sent a message')}
+                            </Text>
                           )}
                         </View>
-                      </Card>
-                    ))
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-        </ScrollView>
-      )}
+                        {c.unreadCount > 0 ? (
+                          <Badge label={`${c.unreadCount} NEW`} variant="warning" size="sm" />
+                        ) : (
+                          <Badge label="OPEN" variant="info" size="sm" />
+                        )}
+                      </View>
+                    </Card>
+                  ))
+                )}
+              </ScrollView>
+            )}
+          </KeyboardAvoidingView>
+        )}
+      </View>
 
+      {/* FIXED BOTTOM NAVIGATION BAR */}
+      <StaffBottomNav
+        activeTab={activeTab}
+        onSelectTab={(tab: StaffPrimaryTab) => setActiveTab(tab)}
+        unreadMoreCount={unreadMessagesCount + unreadNotifCount}
+      />
 
+      {/* ============================================================== */}
+      {/* ALL MODALS PRESERVED AND ACCESSIBLE */}
+      {/* ============================================================== */}
 
       {/* Homework Review & Grading Modal */}
       <Modal visible={Boolean(reviewHw)} transparent animationType="slide">
@@ -1398,66 +1520,70 @@ export const StaffScreen: React.FC = () => {
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <View>
                         <Text style={{ fontWeight: 'bold', fontSize: 13, color: '#1e293b' }}>
-                          {r.student.firstName} {r.student.lastName}
+                          {r.student.fullName} ({r.student.admissionNumber})
                         </Text>
-                        <Text style={{ fontSize: 10, color: '#64748b' }}>Adm: {r.student.admissionNumber}</Text>
+                        <Text style={{ fontSize: 11, color: '#64748b' }}>Status: {r.status}</Text>
                       </View>
                       <Badge
                         label={r.status}
-                        variant={r.status === 'COMPLETED' || r.status === 'GRADED' ? 'success' : r.status === 'SUBMITTED' ? 'info' : r.isOverdue ? 'danger' : 'warning'}
-                        size="sm"
+                        variant={r.status === 'COMPLETED' ? 'success' : r.status === 'SUBMITTED' ? 'indigo' : 'warning'}
                       />
                     </View>
 
                     {r.submission && (
                       <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
-                        {r.submission.studentNotes ? (
-                          <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#334155', marginBottom: 4 }}>
-                            "{r.submission.studentNotes}"
+                        <Text style={{ fontSize: 11, color: '#475569' }}>Submitted on: {new Date(r.submission.submittedAt).toLocaleDateString('en-IN')}</Text>
+                        {r.submission.content && (
+                          <Text style={{ fontSize: 12, color: '#1e293b', fontStyle: 'italic', marginVertical: 4 }}>
+                            "{r.submission.content}"
                           </Text>
-                        ) : null}
+                        )}
+                        {r.submission.attachmentUrl && (
+                          <Text style={{ fontSize: 11, color: '#2563eb', marginBottom: 4 }}>
+                            📎 Attachment uploaded
+                          </Text>
+                        )}
+                        {r.submission.grade && (
+                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#166534' }}>
+                            Grade: {r.submission.grade} {r.submission.feedback ? `(${r.submission.feedback})` : ''}
+                          </Text>
+                        )}
 
-                        {gradingSubId === r.submission.id ? (
-                          <View style={{ marginTop: 6, gap: 6 }}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setGradingSubId(gradingSubId === r.submission.id ? null : r.submission.id);
+                            setGradeText(r.submission.grade || '');
+                            setFeedbackText(r.submission.feedback || '');
+                          }}
+                          style={{ marginTop: 6 }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: themeTokens.colors.primary }}>
+                            {gradingSubId === r.submission.id ? 'Cancel Grading' : 'Grade Submission →'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {gradingSubId === r.submission.id && (
+                          <View style={{ marginTop: 8, padding: 8, backgroundColor: '#f1f5f9', borderRadius: 8 }}>
                             <TextInput
-                              style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 6, fontSize: 12 }}
-                              placeholder="Grade (e.g. A+ or 18/20)"
+                              style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 8, fontSize: 12, marginBottom: 6 }}
+                              placeholder="Grade (e.g. A, 9/10, Excellent)"
                               value={gradeText}
                               onChangeText={setGradeText}
                             />
                             <TextInput
-                              style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 6, fontSize: 12 }}
-                              placeholder="Feedback / Remarks"
+                              style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 8, fontSize: 12, marginBottom: 8 }}
+                              placeholder="Feedback / Remarks (optional)"
                               value={feedbackText}
                               onChangeText={setFeedbackText}
                             />
-                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6 }}>
-                              <TouchableOpacity onPress={() => setGradingSubId(null)} style={{ padding: 6 }}>
-                                <Text style={{ fontSize: 11, color: '#64748b' }}>Cancel</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => handleGradeStudent(r.submission.id)}
-                                style={{ backgroundColor: themeTokens.colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
-                              >
-                                <Text style={{ fontSize: 11, color: '#fff', fontWeight: 'bold' }}>Save</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        ) : (
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text style={{ fontSize: 11, color: '#1e293b' }}>
-                              Grade: <Text style={{ fontWeight: 'bold' }}>{r.submission.grade || 'Not Graded'}</Text>
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => {
-                                setGradingSubId(r.submission.id);
-                                setGradeText(r.submission.grade || '');
-                                setFeedbackText(r.submission.feedback || '');
-                              }}
-                              style={{ backgroundColor: '#e2e8f0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}
-                            >
-                              <Text style={{ fontSize: 10, fontWeight: 'bold' }}>Grade</Text>
-                            </TouchableOpacity>
+                            <MobileButton
+                              title="Save Grade & Feedback"
+                              onPress={() => handleGradeSubmission(r.submission.id)}
+                              loading={gradingSubmitting}
+                              variant="primary"
+                              size="sm"
+                              fullWidth
+                            />
                           </View>
                         )}
                       </View>
@@ -1470,29 +1596,53 @@ export const StaffScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* New Material Modal */}
+      {/* New Material Creation Modal */}
       <Modal visible={showNewMaterialModal} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Publish Study Material</Text>
-            <Text style={styles.modalSub}>Batch: {selectedBatch?.name || 'Selected'}</Text>
+            <Text style={styles.modalTitle}>Publish Learning Material</Text>
+            <Text style={styles.modalSub}>Batch: {selectedBatch?.name || 'Class'}</Text>
 
             <TextInput
-              style={styles.singleLineInput}
-              placeholder="Material Title (e.g. Chapter 4 Notes)"
-              placeholderTextColor="#64748b"
+              style={styles.modalInput}
+              placeholder="Material Title *"
               value={matTitle}
               onChangeText={setMatTitle}
             />
 
+            <View style={{ flexDirection: 'row', gap: 6, marginVertical: 8 }}>
+              {['PDF', 'DOCUMENT', 'AUDIO', 'ANNOUNCEMENT'].map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setMatType(t)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 6,
+                    alignItems: 'center',
+                    backgroundColor: matType === t ? themeTokens.colors.primary : '#f1f5f9',
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: matType === t ? '#fff' : '#64748b' }}>
+                    {t}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <TextInput
-              style={[styles.modalInput, { marginTop: 10 }]}
-              multiline
-              numberOfLines={3}
-              placeholder="Study Notes or Instructions..."
-              placeholderTextColor="#64748b"
+              style={styles.modalInput}
+              placeholder="Brief Description (optional)"
+              value={matDesc}
+              onChangeText={setMatDesc}
+            />
+
+            <TextInput
+              style={[styles.modalInput, { height: 80 }]}
+              placeholder="Material Content / Notes / Link..."
               value={matContent}
               onChangeText={setMatContent}
+              multiline
             />
 
             <View style={styles.modalBtnRow}>
@@ -1518,29 +1668,33 @@ export const StaffScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* New Homework Modal */}
+      {/* Homework Creation Modal */}
       <Modal visible={showNewHwModal} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Publish Homework</Text>
-            <Text style={styles.modalSub}>Batch: {selectedBatch?.name || 'Selected'}</Text>
+            <Text style={styles.modalTitle}>Assign New Homework</Text>
+            <Text style={styles.modalSub}>Batch: {selectedBatch?.name || 'Class'}</Text>
 
             <TextInput
-              style={styles.singleLineInput}
-              placeholder="Homework Title (e.g. Chapter 4 Practice Problems)"
-              placeholderTextColor="#64748b"
+              style={styles.modalInput}
+              placeholder="Homework Title *"
               value={hwTitle}
               onChangeText={setHwTitle}
             />
 
             <TextInput
-              style={[styles.modalInput, { marginTop: 10 }]}
-              multiline
-              numberOfLines={4}
-              placeholder="Description & instructions for students..."
-              placeholderTextColor="#64748b"
+              style={[styles.modalInput, { height: 70 }]}
+              placeholder="Instructions / Description *"
               value={hwDesc}
               onChangeText={setHwDesc}
+              multiline
+            />
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Due Date (YYYY-MM-DD, optional)"
+              value={hwDueDate}
+              onChangeText={setHwDueDate}
             />
 
             <View style={styles.modalBtnRow}>
@@ -1611,6 +1765,7 @@ export const StaffScreen: React.FC = () => {
         onCancel={() => setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })}
       />
 
+      {/* Staff Exam Grading Modal */}
       {gradingExam && (
         <StaffExamGradingModal
           isOpen={!!gradingExam}
@@ -1620,16 +1775,20 @@ export const StaffScreen: React.FC = () => {
         />
       )}
 
+      {/* Staff Review Reply Modal */}
       <StaffReviewReplyModal
         isOpen={showReviewsModal}
         onClose={() => setShowReviewsModal(false)}
       />
 
+      {/* Material Analytics Modal */}
       <MaterialAnalyticsModal
         isOpen={!!analyticsMaterial}
         material={analyticsMaterial}
         onClose={() => setAnalyticsMaterial(null)}
       />
+
+      {/* In-App Notifications Modal */}
       <NotificationModal
         visible={showNotificationModal}
         onClose={() => setShowNotificationModal(false)}
@@ -1643,597 +1802,664 @@ export const StaffScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: themeTokens.colors.background,
+    backgroundColor: '#F7F2EF',
   },
-  batchBar: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: themeTokens.colors.border,
+  mainContent: {
+    flex: 1,
   },
-  batchLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: themeTokens.colors.textMuted,
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  batchChips: {
-    gap: 8,
-  },
-  batchChip: {
-    backgroundColor: themeTokens.colors.surface,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-  },
-  batchChipActive: {
-    backgroundColor: themeTokens.colors.espresso,
-    borderColor: themeTokens.colors.espresso,
-  },
-  batchChipText: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  batchChipTextActive: {
-    color: themeTokens.colors.textLight,
-    fontWeight: '700',
-  },
-  tabBarWrapper: {
-    backgroundColor: themeTokens.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: themeTokens.colors.border,
-  },
-  tabBarScroll: {
-    flexDirection: 'row',
-    paddingHorizontal: 8,
-  },
-  tabItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTabItem: {
-    borderBottomColor: themeTokens.colors.espresso,
-  },
-  tabText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: themeTokens.colors.espresso,
-    fontWeight: '700',
-  },
-  content: {
+  tabContent: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 90, // Crucial: prevents content from being hidden behind bottom nav
   },
-  centerBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    color: themeTokens.colors.textMuted,
-    marginTop: 12,
-    fontSize: 13,
-  },
-  scannerHeader: {
+
+  // Subview Breadcrumb Bar (Back to More)
+  subviewBreadcrumbBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    backgroundColor: '#FDFBF7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEBE9',
   },
-  scannerTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: themeTokens.colors.textPrimary,
+  subviewBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  scannerSub: {
+  subviewBackBtnText: {
     fontSize: 12,
-    color: themeTokens.colors.textMuted,
-    marginTop: 2,
+    fontWeight: '800',
+    color: '#4E342E',
   },
-  launchScannerBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
+
+  // Batch Filter Chips Section
+  filterChipSection: {
+    marginBottom: 12,
   },
-  launchScannerBtnText: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-    fontSize: 14,
+  filterChipLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8D6E63',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  sectionHeader: {
+  batchChip: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+  },
+  batchChipActive: {
+    backgroundColor: '#4E342E',
+    borderColor: '#4E342E',
+  },
+  batchChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4E342E',
+  },
+  batchChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Search Bar
+  searchBarWrapper: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    marginBottom: 14,
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: '#2D1E18',
+  },
+
+  // Section Headers
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: themeTokens.colors.textPrimary,
+    color: '#2D1E18',
   },
-  sectionCount: {
-    fontSize: 12,
-    color: themeTokens.colors.primary,
-    fontWeight: '600',
-  },
-  controlHeading: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: themeTokens.colors.textMuted,
-    marginBottom: 8,
-  },
-  controlsRow: {
-    gap: 10,
-  },
-  pillGroup: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  pillBtn: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  pillBtnActive: {
-    backgroundColor: themeTokens.colors.espresso,
-    borderColor: themeTokens.colors.espresso,
-  },
-  pillBtnText: {
-    color: themeTokens.colors.textSecondary,
+  sectionSubTitle: {
     fontSize: 11,
-    fontWeight: '600',
+    color: '#8D6E63',
+    marginTop: 1,
   },
-  pillBtnTextActive: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-  },
-  statusPill: {
+  primaryActionBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
+    paddingVertical: 7,
   },
-  presentPill: {
-    backgroundColor: themeTokens.colors.successBg,
-    borderColor: themeTokens.colors.successBorder,
-  },
-  absentPill: {
-    backgroundColor: themeTokens.colors.errorBg,
-    borderColor: themeTokens.colors.errorBorder,
-  },
-  latePill: {
-    backgroundColor: themeTokens.colors.warningBg,
-    borderColor: themeTokens.colors.warningBorder,
-  },
-  statusPillText: {
-    color: themeTokens.colors.textSecondary,
+  primaryActionBtnText: {
+    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '600',
-  },
-  statusTextActive: {
-    fontWeight: 'bold',
-  },
-  confirmBox: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: themeTokens.colors.borderSubtle,
-  },
-  confirmTarget: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  submitAttBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitAttBtnText: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-  studentAttRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  studentInitialCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  studentInitial: {
-    color: themeTokens.colors.primary,
-    fontWeight: 'bold',
-  },
-  studentName: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
     fontWeight: '700',
   },
-  studentRoll: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
+
+  // Student Card
   studentCardRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
+  studentName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
   studentSub: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
+    color: '#8D6E63',
     marginTop: 2,
   },
   phoneText: {
-    color: themeTokens.colors.textSubtle,
     fontSize: 11,
-    marginTop: 4,
-  },
-  addHwBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  addHwBtnText: {
-    color: themeTokens.colors.textLight,
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  hwStaffRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  hwTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  hwBatchName: {
-    color: themeTokens.colors.primary,
-    fontSize: 11,
+    color: '#6D4C41',
     marginTop: 2,
   },
-  hwDesc: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  convTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  convSub: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  emptyText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-    paddingVertical: 10,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(45, 30, 24, 0.65)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: themeTokens.colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    padding: 20,
-  },
-  modalTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  modalSub: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  singleLineInput: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: themeTokens.colors.textPrimary,
-    fontSize: 13,
-  },
-  modalInput: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    borderRadius: 8,
-    padding: 12,
-    color: themeTokens.colors.textPrimary,
-    textAlignVertical: 'top',
-    height: 90,
-  },
-  modalBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modalCancelBtnText: {
-    color: themeTokens.colors.textSecondary,
-    fontWeight: '600',
-  },
-  modalSubmitBtn: {
-    flex: 1,
-    backgroundColor: themeTokens.colors.espresso,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modalSubmitBtnText: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-  },
-  admitStudentBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  admitStudentBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  actionRowContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  studentActionRow: {
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F7F2EF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   cardDetailsHint: {
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   cardDetailsHintText: {
     fontSize: 11,
-    color: '#8D6E63',
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#4E342E',
   },
   actionBtnGroup: {
     flexDirection: 'row',
     gap: 6,
   },
   actionBtnPass: {
-    backgroundColor: '#FAF5FF',
-    borderWidth: 1,
-    borderColor: '#D8B4FE',
+    backgroundColor: '#EDE7F6',
     paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   actionBtnPassText: {
     fontSize: 10,
-    fontWeight: 'bold',
-    color: '#6B21A8',
+    fontWeight: '700',
+    color: '#5E35B1',
   },
   actionBtnDisc: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
+    backgroundColor: '#FEE2E2',
     paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   actionBtnDiscText: {
     fontSize: 10,
-    fontWeight: 'bold',
-    color: '#475569',
+    fontWeight: '700',
+    color: '#991B1B',
   },
   actionBtnActive: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
+    backgroundColor: '#DCFCE7',
     paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   actionBtnActiveText: {
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#166534',
   },
-  voiceHeader: {
+
+  // Attendance Screen Styles
+  todayDateBanner: {
+    backgroundColor: '#FDFBF7',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    marginBottom: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  todayDateBannerTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4E342E',
+  },
+  todayDateBannerText: {
+    fontSize: 11,
+    color: '#6D4C41',
+    fontWeight: '600',
+  },
+  voiceSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2D1E18',
     marginBottom: 8,
   },
-  voiceListenToggleBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
+  liveListeningTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  voiceListenToggleBtnActive: {
-    backgroundColor: '#991B1B',
+  liveListeningText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#166534',
   },
-  voiceListenToggleBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  devBuildNoteBox: {
-    backgroundColor: '#FAF7F2',
+  voiceInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDFBF7',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#D7CCC8',
-    padding: 8,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  devBuildNoteText: {
-    fontSize: 10,
-    color: '#6D4C41',
-    lineHeight: 14,
-  },
-  voiceInputLabel: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#4E342E',
-    marginBottom: 4,
+    paddingHorizontal: 12,
   },
   voiceTextInput: {
-    backgroundColor: '#FDFBF7',
-    borderWidth: 1,
-    borderColor: '#D7CCC8',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    flex: 1,
+    paddingVertical: 9,
     fontSize: 12,
     color: '#2D1E18',
   },
-  voiceCandidateConfirmCard: {
-    backgroundColor: '#FAF7F2',
-    borderWidth: 2,
-    borderColor: '#4E342E',
+  voiceCandidateBox: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     marginTop: 10,
-  },
-  voiceCandidateHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  voiceInitialCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#4E342E',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceInitialText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
   },
   voiceCandidateName: {
     fontSize: 13,
-    fontWeight: 'bold',
-    color: '#2D1E18',
+    fontWeight: '800',
+    color: '#166534',
   },
-  voiceCandidateRoll: {
-    fontSize: 10,
-    color: '#6D4C41',
-    marginTop: 1,
-  },
-  voiceConfirmActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#D7CCC8',
-  },
-  voiceCancelBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  voiceCancelBtnText: {
-    color: '#6D4C41',
+  voiceCandidateMeta: {
     fontSize: 11,
-    fontWeight: '600',
+    color: '#15803D',
+    marginTop: 2,
   },
   voiceConfirmBtn: {
-    backgroundColor: '#047857',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    backgroundColor: '#166534',
     borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   voiceConfirmBtnText: {
     color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
-  voiceDisambiguationBox: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FCD34D',
-    borderRadius: 10,
-    padding: 10,
+  disambiguationBox: {
     marginTop: 10,
+    padding: 10,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
-  voiceDisambiguationTitle: {
+  disambiguationTitle: {
     fontSize: 11,
-    fontWeight: 'bold',
-    color: '#78350F',
+    fontWeight: '700',
+    color: '#B45309',
     marginBottom: 6,
   },
-  voiceDisambiguationList: {
+  disambiguationItem: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FEF3C7',
   },
-  voiceDisambigChip: {
-    backgroundColor: '#FFFFFF',
+  disambiguationItemText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#92400E',
+  },
+  disambiguationActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+
+  // Manual Check-in Styles
+  selectedStudentIndicator: {
+    backgroundColor: '#FDFBF7',
+    borderRadius: 10,
+    padding: 10,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: '#EFEBE9',
+    marginBottom: 10,
+  },
+  selectedStudentIndicatorLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8D6E63',
+    textTransform: 'uppercase',
+  },
+  selectedStudentIndicatorValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2D1E18',
+    marginTop: 2,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  toggleBtn: {
+    flex: 1,
+    backgroundColor: '#FDFBF7',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  toggleBtnActive: {
+    backgroundColor: '#4E342E',
+    borderColor: '#4E342E',
+  },
+  toggleBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  toggleBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  recordAttBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  recordAttBtnDisabled: {
+    opacity: 0.4,
+  },
+  recordAttBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Attendance Roster
+  studentAttRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  studentInitialCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#F5ECE8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  studentInitial: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#4E342E',
+  },
+  studentRoll: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 2,
+  },
+
+  // Materials & Tasks Cards
+  taskCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  taskTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  taskSub: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 2,
+  },
+  taskSnippet: {
+    fontSize: 11,
+    color: '#6D4C41',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  materialContentPreview: {
+    marginTop: 6,
+    padding: 8,
+    backgroundColor: '#FDFBF7',
+    borderRadius: 8,
+  },
+  materialContentText: {
+    fontSize: 11,
+    color: '#4E342E',
+  },
+  materialActionRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  analyticsBtn: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 6,
   },
-  voiceDisambigChipText: {
+  analyticsBtnText: {
     fontSize: 11,
-    color: '#78350F',
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  homeworkFooterRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  homeworkDueDateText: {
+    fontSize: 11,
+    color: '#8D6E63',
+  },
+  homeworkReviewLinkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4E342E',
+  },
+
+  // Chat Screen Styles
+  chatBackBtn: {
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  chatBackBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4E342E',
+  },
+  chatHeaderTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  chatHeaderSub: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 2,
+  },
+  messageBubble: {
+    maxWidth: '85%',
+    borderRadius: 14,
+    padding: 10,
+  },
+  messageBubbleMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#3E2723',
+  },
+  messageBubbleTheirs: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+  },
+  messageSenderText: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  messageBodyText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  messageTimeText: {
+    fontSize: 9,
+    alignSelf: 'flex-end',
+    marginTop: 4,
+  },
+  attachmentNotice: {
+    fontSize: 11,
+    color: '#D7CCC8',
+    fontStyle: 'italic',
+    marginBottom: 2,
+  },
+  chatInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 8,
+  },
+  chatTextInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#2D1E18',
+  },
+  chatSendBtn: {
+    backgroundColor: '#4E342E',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+  },
+  chatSendBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  messageSnippet: {
+    fontSize: 11,
+    color: '#6D4C41',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+
+  // Empty Card
+  emptyCard: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyIcon: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  emptyTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
+  emptyDesc: {
+    fontSize: 11,
+    color: '#8D6E63',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  emptyActionBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  emptyActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyText: {
+    fontSize: 12,
+    color: '#8D6E63',
+    textAlign: 'center',
+  },
+
+  // Modals
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  modalSub: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  modalInput: {
+    backgroundColor: '#FDFBF7',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#2D1E18',
+    marginBottom: 8,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modalCancelBtnText: {
+    fontSize: 12,
+    color: '#6D4C41',
     fontWeight: '600',
+  },
+  modalSubmitBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  modalSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

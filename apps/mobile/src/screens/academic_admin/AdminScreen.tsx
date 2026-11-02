@@ -14,22 +14,27 @@ import { useMobileAuth } from '../../context/AuthContext';
 import { useMobileToast } from '../../context/ToastContext';
 import { mobileApiFetch, generateIdempotencyKey } from '../../services/api';
 import { Header } from '../../components/Header';
-import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { NotificationModal } from '../../components/NotificationModal';
-import { StudentAvatar } from '../../components/StudentAvatar';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffAdminModal } from '../../components/StaffAdminModal';
-import { themeTokens } from '@tuition/shared';
+import {
+  AdminBottomNav,
+  AdminActiveTab,
+  AdminPrimaryTab,
+} from './components/AdminBottomNav';
+import { AdminHomeTab } from './components/AdminHomeTab';
+import { AdminStudentsTab } from './components/AdminStudentsTab';
+import { AdminStaffTab } from './components/AdminStaffTab';
+import { AdminMoreTab } from './components/AdminMoreTab';
 
 export const AdminScreen: React.FC = () => {
-  const { user, institute } = useMobileAuth();
+  const { user, institute, logout } = useMobileAuth();
   const { showToast } = useMobileToast();
 
-  const [activeTab, setActiveTab] = useState<'kpi' | 'batches' | 'staff' | 'students' | 'finance' | 'manualPayment'>('kpi');
+  const [activeTab, setActiveTab] = useState<AdminActiveTab>('home');
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -44,13 +49,18 @@ export const AdminScreen: React.FC = () => {
   const [staffList, setStaffList] = useState<any[]>([]);
   const [showStaffModal, setShowStaffModal] = useState(false);
 
+  // Materials & Homework overview
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [exams, setExams] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+
   // Batch Creation State
   const [showNewBatchModal, setShowNewBatchModal] = useState(false);
   const [batchName, setBatchName] = useState('');
   const [batchYear, setBatchYear] = useState('2026-2027');
   const [batchSubmitting, setBatchSubmitting] = useState(false);
 
-  // Modals
+  // Student Lifecycle Modals
   const [showAdmitModal, setShowAdmitModal] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [statusConfirm, setStatusConfirm] = useState<{
@@ -65,7 +75,7 @@ export const AdminScreen: React.FC = () => {
     loading: false,
   });
 
-  // Manual Payment Entry Form
+  // Manual Fee Collection Form
   const [paymentStudentId, setPaymentStudentId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE'>('UPI');
@@ -113,6 +123,22 @@ export const AdminScreen: React.FC = () => {
       if (staffRes.success && staffRes.data) {
         setStaffList(Array.isArray(staffRes.data) ? staffRes.data : staffRes.data.staff || []);
       }
+
+      // 7. Materials & Exams
+      const [matRes, exRes, revRes] = await Promise.all([
+        mobileApiFetch('/materials'),
+        mobileApiFetch('/exams'),
+        mobileApiFetch('/reviews'),
+      ]);
+      if (matRes.success && matRes.data) {
+        setMaterials(Array.isArray(matRes.data) ? matRes.data : matRes.data.materials || []);
+      }
+      if (exRes.success && exRes.data) {
+        setExams(Array.isArray(exRes.data) ? exRes.data : exRes.data.exams || []);
+      }
+      if (revRes.success && revRes.data) {
+        setReviews(Array.isArray(revRes.data) ? revRes.data : revRes.data.reviews || []);
+      }
     } catch (e) {
       console.warn('Error loading admin mobile data:', e);
     } finally {
@@ -123,16 +149,31 @@ export const AdminScreen: React.FC = () => {
 
   useEffect(() => {
     fetchAdminData();
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
   }, [fetchAdminData]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchAdminData();
+    mobileApiFetch('/notifications/unread-count')
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
   };
 
+  // Fee Collection Handler
   const handleRecordPayment = async () => {
     if (!paymentStudentId) {
-      showToast('Please select a student from the list', 'warning');
+      showToast('Please select an enrolled student', 'warning');
       return;
     }
     const amt = parseFloat(paymentAmount.trim());
@@ -161,11 +202,10 @@ export const AdminScreen: React.FC = () => {
         setPaymentAmount('');
         setPaymentReference('');
 
-        // Show receipt
         if (res.data.id) {
           const recRes = await mobileApiFetch(`/fees/payments/${res.data.id}/receipt`);
           if (recRes.success && recRes.data) {
-            setSelectedReceipt(recRes.data);
+            setSelectedReceipt(recRes.data.receipt || recRes.data);
             setShowReceiptModal(true);
           }
         }
@@ -174,12 +214,13 @@ export const AdminScreen: React.FC = () => {
         showToast(res.error || 'Failed to record payment', 'error');
       }
     } catch {
-      showToast('Network or server connection issue.', 'error');
+      showToast('Network error while recording payment', 'error');
     } finally {
       setPaymentSubmitting(false);
     }
   };
 
+  // Batch Creation Handler
   const handleCreateBatch = async () => {
     if (!batchName.trim()) {
       showToast('Please enter batch name', 'warning');
@@ -209,6 +250,7 @@ export const AdminScreen: React.FC = () => {
     }
   };
 
+  // Toggle Batch Active Status
   const handleToggleBatchStatus = async (batchId: string, currentStatus: boolean, bName: string) => {
     try {
       const res = await mobileApiFetch(`/academics/batches/${batchId}/status`, {
@@ -226,6 +268,27 @@ export const AdminScreen: React.FC = () => {
     }
   };
 
+  // Toggle Staff Active Status
+  const handleToggleStaffStatus = async (member: any) => {
+    const isActive = member.status === 'ACTIVE' || member.isActive !== false;
+    const newStatus = isActive ? 'INACTIVE' : 'ACTIVE';
+    try {
+      const res = await mobileApiFetch(`/staff/${member.id}/status`, {
+        method: 'PATCH',
+        body: { status: newStatus },
+      });
+      if (res.success) {
+        showToast(`Staff member marked as ${newStatus}`, 'success');
+        fetchAdminData();
+      } else {
+        showToast(res.error || 'Failed to update staff status', 'error');
+      }
+    } catch {
+      showToast('Network error updating staff', 'error');
+    }
+  };
+
+  // Student Lifecycle Status Confirmations
   const handleOpenStatusConfirm = (student: any, newStatus: string) => {
     setStatusConfirm({
       isOpen: true,
@@ -243,7 +306,7 @@ export const AdminScreen: React.FC = () => {
         method: 'PATCH',
         body: {
           status: statusConfirm.newStatus,
-          reason: `Status changed to ${statusConfirm.newStatus} by staff/admin`,
+          reason: `Status changed to ${statusConfirm.newStatus} by academic director`,
         },
       });
       if (res.success) {
@@ -267,525 +330,758 @@ export const AdminScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      {/* Top Header */}
       <Header
         title="Institute Director Portal"
-        subtitle={institute?.name || 'Academic Administration'}
+        subtitle={institute?.name || 'TuitionOS Academy'}
         onRefresh={onRefresh}
+        onOpenNotifications={() => setShowNotificationModal(true)}
+        unreadNotificationsCount={unreadNotifCount}
       />
 
-      {/* Tabs */}
-      <View style={styles.tabBarWrapper}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabBarScroll}
-        >
-          <TouchableOpacity
-            onPress={() => setActiveTab('kpi')}
-            style={[styles.tabItem, activeTab === 'kpi' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'kpi' && styles.activeTabText]}>
-              KPIs
+      {/* Sub-view Breadcrumb Header */}
+      {activeTab !== 'home' &&
+        activeTab !== 'students' &&
+        activeTab !== 'staff' &&
+        activeTab !== 'academics' &&
+        activeTab !== 'more' && (
+          <View style={styles.subViewHeader}>
+            <TouchableOpacity
+              onPress={() => setActiveTab('more')}
+              style={styles.backBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.backBtnText}>← Back to More Menu</Text>
+            </TouchableOpacity>
+            <Text style={styles.subViewTitle}>
+              {activeTab === 'attendance'
+                ? 'Campus Attendance & Safety Logs'
+                : activeTab === 'fees'
+                ? 'Fee Collections & Treasury'
+                : activeTab === 'homework'
+                ? 'Homework & Curriculum Files'
+                : activeTab === 'exams'
+                ? 'Exams & Result Publishing'
+                : activeTab === 'timetable'
+                ? 'Class Timetables & Schedules'
+                : activeTab === 'reviews'
+                ? 'Parent Reviews & Inquiries'
+                : 'Institute Context & Policies'}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('batches')}
-            style={[styles.tabItem, activeTab === 'batches' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'batches' && styles.activeTabText]}>
-              Batches ({batches.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('staff')}
-            style={[styles.tabItem, activeTab === 'staff' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>
-              Faculty ({staffList.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('students')}
-            style={[styles.tabItem, activeTab === 'students' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'students' && styles.activeTabText]}>
-              Directory ({students.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('finance')}
-            style={[styles.tabItem, activeTab === 'finance' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'finance' && styles.activeTabText]}>
-              Finance (₹)
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('manualPayment')}
-            style={[styles.tabItem, activeTab === 'manualPayment' && styles.activeTabItem]}
-          >
-            <Text style={[styles.tabText, activeTab === 'manualPayment' && styles.activeTabText]}>
-              Collect Fee
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+          </View>
+        )}
 
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={themeTokens.colors.primary} />
-          <Text style={styles.loadingText}>Compiling institute analytics...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeTokens.colors.primary} />}
-        >
-          {/* TAB 1: EXECUTIVE KPIs */}
-          {activeTab === 'kpi' && (
-            <View>
-              {/* Institute Profile Badge */}
-              <Card highlighted>
-                <View style={styles.instituteRow}>
-                  <View style={styles.instituteIconCircle}>
-                    <Text style={styles.instituteIcon}>🏛️</Text>
+      {/* Main Tab Content */}
+      <View style={styles.content}>
+        {/* TAB 1: EXECUTIVE HOME */}
+        {activeTab === 'home' && (
+          <AdminHomeTab
+            user={user}
+            institute={institute}
+            dashboardSummary={dashboardSummary}
+            financialSummary={financialSummary}
+            batches={batches}
+            students={students}
+            staffList={staffList}
+            outstandingReport={outstandingReport}
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenAdmitModal={() => setShowAdmitModal(true)}
+            onOpenStaffModal={() => setShowStaffModal(true)}
+            onOpenNewBatchModal={() => setShowNewBatchModal(true)}
+          />
+        )}
+
+        {/* TAB 2: STUDENTS DIRECTORY */}
+        {activeTab === 'students' && (
+          <AdminStudentsTab
+            students={students}
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onOpenAdmitModal={() => setShowAdmitModal(true)}
+            onSelectStudent={(stId) => setSelectedStudentId(stId)}
+            onStatusConfirm={handleOpenStatusConfirm}
+          />
+        )}
+
+        {/* TAB 3: FACULTY & STAFF */}
+        {activeTab === 'staff' && (
+          <AdminStaffTab
+            staffList={staffList}
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onOpenStaffModal={() => setShowStaffModal(true)}
+            onToggleStatus={handleToggleStaffStatus}
+          />
+        )}
+
+        {/* TAB 4: ACADEMICS & BATCHES */}
+        {activeTab === 'academics' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#4E342E"
+              />
+            }
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Academic Batches ({batches.length})</Text>
+                <Text style={styles.tabSub}>
+                  Class sections, curriculum subjects & active enrollments
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.actionPillBtn}
+                onPress={() => setShowNewBatchModal(true)}
+              >
+                <Text style={styles.actionPillBtnText}>+ New Batch</Text>
+              </TouchableOpacity>
+            </View>
+
+            {batches.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>🏫</Text>
+                <Text style={styles.emptyTitle}>No Batches Found</Text>
+                <Text style={styles.emptySub}>
+                  Click '+ New Batch' above to configure your academy's first class section.
+                </Text>
+              </View>
+            ) : (
+              batches.map((b) => (
+                <View key={b.id} style={styles.itemCard}>
+                  <View style={styles.itemCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.itemCardTitle}>{b.name}</Text>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            b.isActive !== false ? styles.badgeGreen : styles.badgeGray,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              b.isActive !== false ? styles.badgeGreenText : styles.badgeGrayText,
+                            ]}
+                          >
+                            {b.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.itemCardSub}>
+                        Academic Year: {b.academicYear} &bull; {b._count?.enrollments || 0} students enrolled
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.toggleBtn,
+                        b.isActive !== false ? styles.toggleBtnDeact : styles.toggleBtnReact,
+                      ]}
+                      onPress={() => handleToggleBatchStatus(b.id, b.isActive !== false, b.name)}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleBtnText,
+                          b.isActive !== false ? styles.toggleTextDeact : styles.toggleTextReact,
+                        ]}
+                      >
+                        {b.isActive !== false ? 'Deactivate' : 'Reactivate'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
+
+                  {b.batchSubjects && b.batchSubjects.length > 0 && (
+                    <View style={styles.subjectsContainer}>
+                      <Text style={styles.subjectsLabel}>Assigned Subjects:</Text>
+                      <View style={styles.subjectsPillRow}>
+                        {b.batchSubjects.map((bs: any, idx: number) => (
+                          <View key={idx} style={styles.subjectPill}>
+                            <Text style={styles.subjectPillText}>
+                              {bs.subject?.name || bs.name || 'Subject'}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              ))
+            )}
+          </ScrollView>
+        )}
+
+        {/* TAB 5: MORE MENU */}
+        {activeTab === 'more' && (
+          <AdminMoreTab
+            user={user}
+            institute={institute}
+            unreadCount={unreadNotifCount}
+            financialSummary={financialSummary}
+            outstandingReport={outstandingReport}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenNotifications={() => setShowNotificationModal(true)}
+            onSignOut={logout}
+          />
+        )}
+
+        {/* SUB-VIEW: CAMPUS ATTENDANCE */}
+        {activeTab === 'attendance' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Campus Attendance Logs</Text>
+                <Text style={styles.tabSub}>
+                  Voice recognition verification and parent gate notifications
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.itemCard}>
+              <Text style={styles.sectionHeading}>VOICE ROLL CALL & GATE STATUS</Text>
+              <Text style={styles.opsDesc}>
+                Real-time voice-based attendance verification and automated SMS/in-app gate check-in & check-out notices are actively running across all {batches.length} batches.
+              </Text>
+              <View style={styles.opsBadgeRow}>
+                <View style={[styles.statusBadge, styles.badgeGreen]}>
+                  <Text style={[styles.statusBadgeText, styles.badgeGreenText]}>
+                    VOICE AI OPERATIONAL
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, styles.badgeBlue]}>
+                  <Text style={[styles.statusBadgeText, styles.badgeBlueText]}>
+                    GATE ALERTS ACTIVE
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[styles.sectionHeading, { marginTop: 14 }]}>
+              BATCH ATTENDANCE READINESS ({batches.length})
+            </Text>
+
+            {batches.map((b) => (
+              <View key={b.id} style={styles.itemCard}>
+                <View style={styles.itemCardHeader}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.instName}>{institute?.name || 'Apex Academy of Science'}</Text>
-                    <Text style={styles.instMeta}>Code: {institute?.code || 'INST001'} • Academic Year 2026</Text>
+                    <Text style={styles.itemCardTitle}>{b.name}</Text>
+                    <Text style={styles.itemCardSub}>
+                      {b._count?.enrollments || 0} active students enrolled
+                    </Text>
                   </View>
-                  <Badge label="ACTIVE INSTITUTE" variant="success" size="sm" />
+                  <View style={[styles.statusBadge, styles.badgeGreen]}>
+                    <Text style={[styles.statusBadgeText, styles.badgeGreenText]}>
+                      READY
+                    </Text>
+                  </View>
                 </View>
-              </Card>
+              </View>
+            ))}
+          </ScrollView>
+        )}
 
-              {/* KPI Matrix */}
-              <View style={styles.matrixGrid}>
-                <View style={styles.kpiBox}>
-                  <Text style={styles.kpiLabel}>TOTAL STUDENTS</Text>
-                  <Text style={styles.kpiValue}>
-                    {dashboardSummary?.studentsCount || students.length || 0}
+        {/* SUB-VIEW: FEES & TREASURY */}
+        {activeTab === 'fees' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Fee Collections & Treasury</Text>
+                <Text style={styles.tabSub}>
+                  Record student payments & manage outstanding dues
+                </Text>
+              </View>
+            </View>
+
+            {/* Treasury Overview Card */}
+            <View style={styles.itemCard}>
+              <Text style={styles.sectionHeading}>INSTITUTE TREASURY SUMMARY</Text>
+              <View style={styles.metricTripletRow}>
+                <View style={styles.metricTripletCol}>
+                  <Text style={styles.metricTripletLabel}>TOTAL INVOICED</Text>
+                  <Text style={styles.metricTripletVal}>
+                    {formatRupee(financialSummary?.totalAssigned ?? financialSummary?.totalInvoiced ?? 0)}
                   </Text>
-                  <Text style={styles.kpiSub}>Active Enrollment</Text>
                 </View>
-
-                <View style={styles.kpiBox}>
-                  <Text style={styles.kpiLabel}>ACTIVE BATCHES</Text>
-                  <Text style={styles.kpiValue}>
-                    {dashboardSummary?.batchesCount || batches.length || 0}
-                  </Text>
-                  <Text style={styles.kpiSub}>Classes Running</Text>
-                </View>
-
-                <View style={styles.kpiBox}>
-                  <Text style={styles.kpiLabel}>COLLECTED REVENUE</Text>
-                  <Text style={[styles.kpiValue, { color: themeTokens.colors.success }]}>
+                <View style={styles.metricDivider} />
+                <View style={styles.metricTripletCol}>
+                  <Text style={styles.metricTripletLabel}>COLLECTIONS</Text>
+                  <Text style={[styles.metricTripletVal, { color: '#059669' }]}>
                     {formatRupee(financialSummary?.totalCollected ?? financialSummary?.totalCollections ?? 0)}
                   </Text>
-                  <Text style={styles.kpiSub}>Cleared to Date</Text>
                 </View>
-
-                <View style={styles.kpiBox}>
-                  <Text style={styles.kpiLabel}>OUTSTANDING DUES</Text>
-                  <Text style={[styles.kpiValue, { color: themeTokens.colors.error }]}>
+                <View style={styles.metricDivider} />
+                <View style={styles.metricTripletCol}>
+                  <Text style={styles.metricTripletLabel}>OUTSTANDING</Text>
+                  <Text
+                    style={[
+                      styles.metricTripletVal,
+                      { color: (financialSummary?.totalOutstanding || 0) > 0 ? '#DC2626' : '#2D1E18' },
+                    ]}
+                  >
                     {formatRupee(financialSummary?.totalOutstanding || 0)}
                   </Text>
-                  <Text style={styles.kpiSub}>Pending Recovery</Text>
                 </View>
               </View>
-
-              {/* Attendance & Campus Operations Overview */}
-              <Card style={{ marginTop: 14 }}>
-                <Text style={styles.cardSectionTitle}>📡 Campus Attendance & Notification Summary</Text>
-                <Text style={styles.opsNote}>
-                  Live voice-based attendance confirmation and in-app guardian notifications are operational for all registered batches.
-                </Text>
-                <View style={styles.opsRow}>
-                  <Badge label="VOICE ATTENDANCE READY" variant="info" size="sm" />
-                  <Badge label="IN-APP NOTIFICATIONS ACTIVE" variant="success" size="sm" />
-                </View>
-              </Card>
             </View>
-          )}
 
-          {/* TAB 2: BATCHES & CURRICULUM */}
-          {activeTab === 'batches' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>🏫 Academic Batches ({batches.length})</Text>
-                <TouchableOpacity
-                  onPress={() => setShowNewBatchModal(true)}
-                  style={styles.admitStudentBtn}
-                >
-                  <Text style={styles.admitStudentBtnText}>+ New Batch</Text>
-                </TouchableOpacity>
-              </View>
+            {/* Manual Payment Collection Form */}
+            <View style={[styles.itemCard, { marginTop: 12 }]}>
+              <Text style={styles.sectionHeading}>RECORD STUDENT FEE PAYMENT</Text>
+              <Text style={styles.formHelpText}>
+                Issue an electronic receipt directly with zero-duplicate protection.
+              </Text>
 
-              {batches.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>
-                    No academic batches found. Click "+ New Batch" to set up your first class section.
-                  </Text>
-                </Card>
-              ) : (
-                batches.map((b) => (
-                  <Card key={b.id}>
-                    <View style={styles.stuDirRow}>
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text style={styles.stuDirName}>{b.name}</Text>
-                          <Badge
-                            label={b.isActive ? 'ACTIVE' : 'INACTIVE'}
-                            variant={b.isActive ? 'success' : 'neutral'}
-                            size="sm"
-                          />
-                        </View>
-                        <Text style={styles.stuDirMeta}>
-                          Academic Year: {b.academicYear} • Enrolled: {b._count?.enrollments || 0} students
-                        </Text>
-                        {b.batchSubjects && b.batchSubjects.length > 0 && (
-                          <Text style={styles.stuDirEmail}>
-                            Subjects: {b.batchSubjects.map((bs: any) => bs.subject?.name || bs.name).join(', ')}
-                          </Text>
-                        )}
-                      </View>
-
-                      <TouchableOpacity
-                        style={b.isActive ? styles.actionBtnDisc : styles.actionBtnActive}
-                        onPress={() => handleToggleBatchStatus(b.id, b.isActive, b.name)}
-                      >
-                        <Text style={b.isActive ? styles.actionBtnDiscText : styles.actionBtnActiveText}>
-                          {b.isActive ? 'Deactivate' : 'Reactivate'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </Card>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* TAB: FACULTY & STAFF DIRECTORY */}
-          {activeTab === 'staff' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>👨‍🏫 Faculty & Staff ({staffList.length})</Text>
-                <TouchableOpacity
-                  style={styles.admitStudentBtn}
-                  onPress={() => setShowStaffModal(true)}
-                >
-                  <Text style={styles.admitStudentBtnText}>+ Add Faculty</Text>
-                </TouchableOpacity>
-              </View>
-
-              {staffList.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No faculty members registered in this institute yet.</Text>
-                </Card>
-              ) : (
-                staffList.map((member) => {
-                  const staffUser = member.user || member;
-                  const profile = member.profile || {};
-                  const code = member.employeeCode || profile.employeeCode || 'STF-STAFF';
-                  const assignedBatches = member.assignedBatches || member.batches || [];
-                  const isActive = member.status === 'ACTIVE' || member.isActive !== false;
-
+              {/* Student Picker */}
+              <Text style={styles.inputFieldLabel}>Select Enrolled Student:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipsScrollContent}
+              >
+                {students.map((st) => {
+                  const isSel = paymentStudentId === st.id;
+                  const name = st.user?.fullName || `${st.firstName || ''} ${st.lastName || ''}`.trim();
                   return (
-                    <Card key={member.id} style={{ marginBottom: 10 }}>
-                      <View style={styles.stuDirRow}>
-                        <StudentAvatar name={staffUser.fullName || 'Faculty Member'} size={44} />
-
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <Text style={styles.stuDirName}>{staffUser.fullName}</Text>
-                            <Badge label={code} variant="indigo" size="sm" />
-                            <Badge
-                              label={isActive ? 'ACTIVE' : 'INACTIVE'}
-                              variant={isActive ? 'success' : 'neutral'}
-                              size="sm"
-                            />
-                          </View>
-
-                          <Text style={styles.stuDirMeta}>
-                            Email: {staffUser.email || 'N/A'} {staffUser.phone ? `• Ph: ${staffUser.phone}` : ''}
-                          </Text>
-
-                          {assignedBatches.length > 0 && (
-                            <Text style={styles.stuDirEmail}>
-                              Assigned: {assignedBatches.map((b: any) => b.batch?.name || b.name || 'Batch').join(', ')}
-                            </Text>
-                          )}
-                        </View>
-
-                        <TouchableOpacity
-                          style={isActive ? styles.actionBtnDisc : styles.actionBtnActive}
-                          onPress={async () => {
-                            try {
-                              const newStatus = isActive ? 'INACTIVE' : 'ACTIVE';
-                              const res = await mobileApiFetch(`/staff/${member.id}/status`, {
-                                method: 'PATCH',
-                                body: JSON.stringify({ status: newStatus }),
-                              });
-                              if (res.success) {
-                                showToast(`Staff status updated to ${newStatus}`, 'success');
-                                fetchAdminData();
-                              } else {
-                                showToast(res.error || 'Failed to update status', 'error');
-                              }
-                            } catch (e: any) {
-                              showToast(e.message || 'Network error', 'error');
-                            }
-                          }}
-                        >
-                          <Text style={isActive ? styles.actionBtnDiscText : styles.actionBtnActiveText}>
-                            {isActive ? 'Deactivate' : 'Reactivate'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </Card>
-                  );
-                })
-              )}
-            </View>
-          )}
-
-          {/* TAB 2: FINANCIAL SUMMARY & REPORTS */}
-          {activeTab === 'finance' && (
-            <View>
-              <Card highlighted>
-                <Text style={styles.feeTitle}>INSTITUTE TREASURY SUMMARY</Text>
-                <View style={styles.finGrid}>
-                  <View style={styles.finCol}>
-                    <Text style={styles.finLabel}>Total Invoiced</Text>
-                    <Text style={styles.finVal}>
-                      {formatRupee(financialSummary?.totalAssigned ?? financialSummary?.totalInvoiced ?? 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.finCol}>
-                    <Text style={styles.finLabel}>Collections</Text>
-                    <Text style={[styles.finVal, { color: themeTokens.colors.success }]}>
-                      {formatRupee(financialSummary?.totalCollected ?? financialSummary?.totalCollections ?? 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.finCol}>
-                    <Text style={styles.finLabel}>Outstanding</Text>
-                    <Text style={[styles.finVal, { color: themeTokens.colors.error }]}>
-                      {formatRupee(financialSummary?.totalOutstanding || 0)}
-                    </Text>
-                  </View>
-                </View>
-              </Card>
-
-              {/* Outstanding Receivables List */}
-              <View style={[styles.sectionHeader, { marginTop: 14 }]}>
-                <Text style={styles.sectionTitle}>⚠️ Outstanding Fees by Student</Text>
-                <Text style={styles.sectionCount}>
-                  {outstandingReport?.students?.length || 0} students
-                </Text>
-              </View>
-
-              {outstandingReport?.students?.length === 0 ? (
-                <Card><Text style={styles.emptyText}>All student fees are fully paid up! No outstanding dues.</Text></Card>
-              ) : (
-                outstandingReport?.students?.map((item: any) => (
-                  <Card key={item.studentId}>
-                    <View style={styles.outRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.outName}>{item.studentName || 'Student'}</Text>
-                        <Text style={styles.outRoll}>Adm: {item.admissionNumber || item.rollNumber || '—'} • Batch: {item.batchName}</Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.outAmt}>{formatRupee(item.balanceAmount)}</Text>
-                        <Badge label="DUE" variant="danger" size="sm" />
-                      </View>
-                    </View>
-                  </Card>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* TAB 3: COLLECT FEE (Manual Payment Entry) */}
-          {activeTab === 'manualPayment' && (
-            <View>
-              <Card highlighted>
-                <Text style={styles.formTitle}>Record Student Fee Payment</Text>
-                <Text style={styles.formSubtitle}>
-                  Issue an official receipt directly to student & parent with zero-duplicate idempotency protection.
-                </Text>
-
-                {/* Student Select */}
-                <Text style={styles.inputLabel}>Select Enrolled Student:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.studentChipsScroll}>
-                  {students.map((st) => {
-                    const isSelected = paymentStudentId === st.id;
-                    return (
-                      <TouchableOpacity
-                        key={st.id}
-                        onPress={() => setPaymentStudentId(st.id)}
-                        style={[styles.stChip, isSelected && styles.stChipActive]}
-                      >
-                        <Text style={[styles.stChipText, isSelected && styles.stChipTextActive]}>
-                          {st.user?.fullName} ({st.admissionNumber || '—'})
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-
-                {/* Amount */}
-                <Text style={[styles.inputLabel, { marginTop: 14 }]}>Payment Amount (₹ INR):</Text>
-                <TextInput
-                  style={styles.textInput}
-                  keyboardType="numeric"
-                  placeholder="e.g. 5000"
-                  placeholderTextColor={themeTokens.colors.textSubtle}
-                  value={paymentAmount}
-                  onChangeText={setPaymentAmount}
-                />
-
-                {/* Payment Method Selector */}
-                <Text style={[styles.inputLabel, { marginTop: 14 }]}>Payment Mode:</Text>
-                <View style={styles.methodRow}>
-                  {(['UPI', 'CASH', 'BANK_TRANSFER', 'CHEQUE'] as const).map((method) => {
-                    const isSelected = paymentMethod === method;
-                    return (
-                      <TouchableOpacity
-                        key={method}
-                        onPress={() => setPaymentMethod(method)}
-                        style={[styles.methodBtn, isSelected && styles.methodBtnActive]}
-                      >
-                        <Text style={[styles.methodBtnText, isSelected && styles.methodBtnTextActive]}>
-                          {method}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Transaction Ref */}
-                <Text style={[styles.inputLabel, { marginTop: 14 }]}>
-                  Transaction Reference / UTR (Optional):
-                </Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. UPI/2026/0491823"
-                  placeholderTextColor={themeTokens.colors.textSubtle}
-                  value={paymentReference}
-                  onChangeText={setPaymentReference}
-                />
-
-                <TouchableOpacity
-                  onPress={handleRecordPayment}
-                  style={styles.recordBtn}
-                  disabled={paymentSubmitting}
-                >
-                  {paymentSubmitting ? (
-                    <ActivityIndicator color={themeTokens.colors.textLight} size="small" />
-                  ) : (
-                    <Text style={styles.recordBtnText}>Collect Payment & Generate Receipt</Text>
-                  )}
-                </TouchableOpacity>
-              </Card>
-            </View>
-          )}
-
-          {/* TAB 4: STUDENTS & BATCHES DIRECTORY */}
-          {activeTab === 'students' && (
-            <View>
-              <View style={styles.sectionHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>👨‍🎓 Student Directory</Text>
-                  <Text style={styles.sectionCount}>{students.length} enrolled</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.admitStudentBtn}
-                  onPress={() => setShowAdmitModal(true)}
-                >
-                  <Text style={styles.admitStudentBtnText}>+ Admit Student</Text>
-                </TouchableOpacity>
-              </View>
-
-              {students.map((st) => (
-                <Card key={st.id} onPress={() => setSelectedStudentId(st.id)}>
-                  <View style={styles.stuDirRow}>
-                    <StudentAvatar studentId={st.id} photoUrl={st.photoUrl} name={st.user?.fullName || `${st.firstName} ${st.lastName}`} size={38} style={{ marginRight: 10 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.stuDirName}>{st.user?.fullName || `${st.firstName} ${st.lastName}`}</Text>
-                      <Text style={styles.stuDirMeta}>
-                        Adm: {st.admissionNumber || '—'}
-                      </Text>
-                      <Text style={styles.stuDirEmail}>
-                        {st.enrollments?.[0]?.batch?.name ? `Class: ${st.enrollments[0].batch.name}` : (st.batch?.name ? `Class: ${st.batch.name}` : 'Unassigned')}
-                      </Text>
-                    </View>
-                    <Badge
-                      label={st.status || 'ACTIVE'}
-                      variant={st.status === 'ACTIVE' ? 'success' : st.status === 'PASSED_OUT' ? 'indigo' : 'neutral'}
-                      size="sm"
-                    />
-                  </View>
-
-                  {/* Lifecycle Action Buttons */}
-                  <View style={styles.actionRowContainer}>
                     <TouchableOpacity
-                      style={styles.cardDetailsHint}
-                      onPress={() => setSelectedStudentId(st.id)}
+                      key={st.id}
+                      onPress={() => setPaymentStudentId(st.id)}
+                      style={[styles.stChip, isSel && styles.stChipActive]}
                     >
-                      <Text style={styles.cardDetailsHintText}>Tap for Full Details ➔</Text>
+                      <Text style={[styles.stChipText, isSel && styles.stChipTextActive]}>
+                        {name} ({st.admissionNumber || '—'})
+                      </Text>
                     </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
-                    <View style={styles.actionBtnGroup}>
-                      {st.status === 'ACTIVE' ? (
-                        <>
-                          <TouchableOpacity
-                            style={styles.actionBtnPass}
-                            onPress={() => handleOpenStatusConfirm(st, 'PASSED_OUT')}
-                          >
-                            <Text style={styles.actionBtnPassText}>Mark Passed</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.actionBtnDisc}
-                            onPress={() => handleOpenStatusConfirm(st, 'DISCONTINUED')}
-                          >
-                            <Text style={styles.actionBtnDiscText}>Discontinue</Text>
-                          </TouchableOpacity>
-                        </>
-                      ) : (
-                        <TouchableOpacity
-                          style={styles.actionBtnActive}
-                          onPress={() => handleOpenStatusConfirm(st, 'ACTIVE')}
-                        >
-                          <Text style={styles.actionBtnActiveText}>Reactivate</Text>
-                        </TouchableOpacity>
-                      )}
+              {/* Amount */}
+              <Text style={[styles.inputFieldLabel, { marginTop: 12 }]}>
+                Payment Amount (₹ INR):
+              </Text>
+              <TextInput
+                style={styles.textInput}
+                keyboardType="numeric"
+                placeholder="e.g. 5000"
+                placeholderTextColor="#8D6E63"
+                value={paymentAmount}
+                onChangeText={setPaymentAmount}
+              />
+
+              {/* Payment Mode Selector */}
+              <Text style={[styles.inputFieldLabel, { marginTop: 12 }]}>
+                Payment Mode:
+              </Text>
+              <View style={styles.paymentMethodRow}>
+                {(['UPI', 'CASH', 'BANK_TRANSFER', 'CHEQUE'] as const).map((method) => {
+                  const isSel = paymentMethod === method;
+                  return (
+                    <TouchableOpacity
+                      key={method}
+                      onPress={() => setPaymentMethod(method)}
+                      style={[styles.methodBtn, isSel && styles.methodBtnActive]}
+                    >
+                      <Text style={[styles.methodBtnText, isSel && styles.methodBtnTextActive]}>
+                        {method}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Transaction Ref */}
+              <Text style={[styles.inputFieldLabel, { marginTop: 12 }]}>
+                Transaction Reference / UTR (Optional):
+              </Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. UPI/2026/0491823"
+                placeholderTextColor="#8D6E63"
+                value={paymentReference}
+                onChangeText={setPaymentReference}
+              />
+
+              <TouchableOpacity
+                onPress={handleRecordPayment}
+                style={[
+                  styles.submitPaymentBtn,
+                  paymentSubmitting && styles.submitPaymentBtnDisabled,
+                ]}
+                disabled={paymentSubmitting}
+              >
+                {paymentSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.submitPaymentBtnText}>
+                    Collect Payment & Generate Receipt
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Outstanding Receivables */}
+            <Text style={[styles.sectionHeading, { marginTop: 16 }]}>
+              ⚠️ OUTSTANDING DUES BY STUDENT ({outstandingReport?.students?.length || 0})
+            </Text>
+
+            {outstandingReport?.students?.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>🎉</Text>
+                <Text style={styles.emptyTitle}>All Student Fees Cleared</Text>
+                <Text style={styles.emptySub}>
+                  No outstanding receivables currently recorded for this institute.
+                </Text>
+              </View>
+            ) : (
+              outstandingReport?.students?.map((item: any) => (
+                <View key={item.studentId} style={styles.itemCard}>
+                  <View style={styles.itemCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemCardTitle}>{item.studentName}</Text>
+                      <Text style={styles.itemCardSub}>
+                        Adm: {item.admissionNumber || item.rollNumber || '—'} &bull; Batch: {item.batchName}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={[styles.itemCardTitle, { color: '#DC2626' }]}>
+                        {formatRupee(item.balanceAmount)}
+                      </Text>
+                      <View style={[styles.statusBadge, styles.badgeDanger]}>
+                        <Text style={[styles.statusBadgeText, styles.badgeDangerText]}>
+                          DUE
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </Card>
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      )}
+                </View>
+              ))
+            )}
+          </ScrollView>
+        )}
 
-      {/* Official Receipt Modal */}
-      <ReceiptModal
-        visible={showReceiptModal}
-        onClose={() => setShowReceiptModal(false)}
-        receipt={selectedReceipt}
-      />
+        {/* SUB-VIEW: HOMEWORK & CURRICULUM */}
+        {activeTab === 'homework' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Curriculum & Homework</Text>
+                <Text style={styles.tabSub}>
+                  {materials.length} learning files published across all batches
+                </Text>
+              </View>
+            </View>
+
+            {materials.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>📚</Text>
+                <Text style={styles.emptyTitle}>No Materials Found</Text>
+                <Text style={styles.emptySub}>
+                  Faculty members have not uploaded batch study materials yet.
+                </Text>
+              </View>
+            ) : (
+              materials.map((m) => (
+                <View key={m.id} style={styles.itemCard}>
+                  <View style={styles.itemCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemCardTitle}>{m.title}</Text>
+                      <Text style={styles.itemCardSub}>
+                        {m.subject?.name || m.subject || 'Class Subject'} &bull; Type: {m.type}
+                      </Text>
+                    </View>
+                    <View style={[styles.statusBadge, styles.badgeBlue]}>
+                      <Text style={[styles.statusBadgeText, styles.badgeBlueText]}>
+                        PUBLISHED
+                      </Text>
+                    </View>
+                  </View>
+                  {m.description ? (
+                    <Text style={styles.opsDesc}>{m.description}</Text>
+                  ) : null}
+                  <Text style={styles.itemDateText}>
+                    📅 Uploaded: {new Date(m.createdAt).toLocaleDateString('en-IN')}
+                  </Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        )}
+
+        {/* SUB-VIEW: EXAMS & RESULTS */}
+        {activeTab === 'exams' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Examinations ({exams.length})</Text>
+                <Text style={styles.tabSub}>
+                  Test schedules and published grade results
+                </Text>
+              </View>
+            </View>
+
+            {exams.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>🏆</Text>
+                <Text style={styles.emptyTitle}>No Scheduled Exams</Text>
+                <Text style={styles.emptySub}>
+                  There are no examinations scheduled or published yet.
+                </Text>
+              </View>
+            ) : (
+              exams.map((ex) => (
+                <View key={ex.id} style={styles.itemCard}>
+                  <View style={styles.itemCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemCardTitle}>{ex.title}</Text>
+                      <Text style={styles.itemCardSub}>
+                        {ex.subject?.name || ex.subject || 'Subject'} &bull; Total: {ex.totalMarks || 100} pts
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        ex.isResultsPublished ? styles.badgeGreen : styles.badgeBlue,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          ex.isResultsPublished ? styles.badgeGreenText : styles.badgeBlueText,
+                        ]}
+                      >
+                        {ex.isResultsPublished ? 'RESULTS PUBLISHED' : 'SCHEDULED'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.itemDateText}>
+                    📅 Exam Date: {new Date(ex.examDate).toLocaleDateString('en-IN')}
+                  </Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        )}
+
+        {/* SUB-VIEW: TIMETABLES */}
+        {activeTab === 'timetable' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Master Timetable</Text>
+                <Text style={styles.tabSub}>
+                  Weekly class schedules for all {batches.length} batches
+                </Text>
+              </View>
+            </View>
+
+            {batches.map((b) => (
+              <View key={b.id} style={styles.itemCard}>
+                <Text style={styles.itemCardTitle}>{b.name}</Text>
+                <Text style={styles.itemCardSub}>
+                  Academic Year: {b.academicYear}
+                </Text>
+                {b.batchSubjects && b.batchSubjects.length > 0 ? (
+                  <View style={{ marginTop: 8 }}>
+                    {b.batchSubjects.map((bs: any, idx: number) => (
+                      <View key={idx} style={styles.timetableRow}>
+                        <Text style={styles.timetableSubject}>
+                          📖 {bs.subject?.name || bs.name}
+                        </Text>
+                        <Text style={styles.timetableSchedule}>
+                          {bs.schedule || 'Scheduled session'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={[styles.opsDesc, { marginTop: 6 }]}>
+                    No subject timetables linked yet.
+                  </Text>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        {/* SUB-VIEW: PARENT REVIEWS & INQUIRIES */}
+        {activeTab === 'reviews' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Guardian Inquiries & Feedback</Text>
+                <Text style={styles.tabSub}>
+                  Parent ratings, private questions & official responses
+                </Text>
+              </View>
+            </View>
+
+            {reviews.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>⭐</Text>
+                <Text style={styles.emptyTitle}>No Reviews Found</Text>
+                <Text style={styles.emptySub}>
+                  No parent reviews or private inquiries submitted yet.
+                </Text>
+              </View>
+            ) : (
+              reviews.map((rev) => (
+                <View key={rev.id} style={styles.itemCard}>
+                  <View style={styles.itemCardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.starsText}>
+                        {'★'.repeat(rev.rating || 5)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          rev.status === 'RESOLVED'
+                            ? styles.badgeGreen
+                            : rev.status === 'REPLIED'
+                            ? styles.badgeBlue
+                            : styles.badgeOrange,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            rev.status === 'RESOLVED'
+                              ? styles.badgeGreenText
+                              : rev.status === 'REPLIED'
+                              ? styles.badgeBlueText
+                              : styles.badgeOrangeText,
+                          ]}
+                        >
+                          {rev.status || 'NEW'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.itemDateText}>
+                      📅 {new Date(rev.createdAt).toLocaleDateString('en-IN')}
+                    </Text>
+                  </View>
+
+                  {rev.subject ? (
+                    <Text style={styles.reviewSubjectText}>{rev.subject}</Text>
+                  ) : null}
+
+                  <Text style={styles.opsDesc}>
+                    {rev.reviewText || rev.comment}
+                  </Text>
+
+                  {(rev.replyText || rev.response) && (
+                    <View style={styles.replyBox}>
+                      <Text style={styles.replyBoxTitle}>Academy Reply:</Text>
+                      <Text style={styles.replyBoxText}>
+                        {rev.replyText || rev.response}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))
+            )}
+          </ScrollView>
+        )}
+
+        {/* SUB-VIEW: SETTINGS & CONTEXT */}
+        {activeTab === 'settings' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.tabScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tabHeaderRow}>
+              <View>
+                <Text style={styles.tabHeading}>Institute Context & Policies</Text>
+                <Text style={styles.tabSub}>
+                  Isolation boundaries & campus configuration
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.itemCard}>
+              <Text style={styles.sectionHeading}>INSTITUTE PROFILE</Text>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Institute Name:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {institute?.name || 'TuitionOS Academy'}
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Institute Code:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {institute?.code || 'INST001'}
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Academic Year:</Text>
+                <Text style={styles.profileFieldValue}>2026-2027</Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Security Isolation:</Text>
+                <Text style={[styles.profileFieldValue, { color: '#059669' }]}>
+                  Institute Scoped ✓
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.itemCard, { marginTop: 12 }]}>
+              <Text style={styles.sectionHeading}>SECURITY & ROLE BOUNDARIES</Text>
+              <Text style={styles.opsDesc}>
+                This session is strictly authorized under ACADEMIC_ADMIN authority. All operations are isolated to this institute. Super-Admin lifecycle operations (tenant creation, billing subscription) are strictly partitioned.
+              </Text>
+            </View>
+          </ScrollView>
+        )}
+      </View>
 
       {/* New Batch Modal */}
       <Modal visible={showNewBatchModal} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Create Academic Batch</Text>
-            <Text style={styles.modalSub}>Configure a new class section for this institute</Text>
+            <Text style={styles.modalSub}>
+              Configure a new class section for this institute
+            </Text>
 
             <TextInput
               style={styles.textInput}
               placeholder="Batch Name (e.g. Class 10 - Batch A)"
-              placeholderTextColor="#A1887F"
+              placeholderTextColor="#8D6E63"
               value={batchName}
               onChangeText={setBatchName}
             />
@@ -793,47 +1089,44 @@ export const AdminScreen: React.FC = () => {
             <TextInput
               style={[styles.textInput, { marginTop: 10 }]}
               placeholder="Academic Year (e.g. 2026-2027)"
-              placeholderTextColor="#A1887F"
+              placeholderTextColor="#8D6E63"
               value={batchYear}
               onChangeText={setBatchYear}
             />
 
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+            <View style={styles.modalBtnRow}>
               <TouchableOpacity
                 onPress={() => setShowNewBatchModal(false)}
-                style={{
-                  flex: 1,
-                  backgroundColor: themeTokens.colors.surfaceMuted,
-                  borderWidth: 1,
-                  borderColor: themeTokens.colors.border,
-                  paddingVertical: 12,
-                  borderRadius: 8,
-                  alignItems: 'center',
-                }}
+                style={styles.modalCancelBtn}
+                disabled={batchSubmitting}
               >
-                <Text style={{ color: themeTokens.colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleCreateBatch}
-                style={{
-                  flex: 1,
-                  backgroundColor: themeTokens.colors.espresso,
-                  paddingVertical: 12,
-                  borderRadius: 8,
-                  alignItems: 'center',
-                }}
+                style={[
+                  styles.modalSubmitBtn,
+                  batchSubmitting && styles.modalSubmitBtnDisabled,
+                ]}
                 disabled={batchSubmitting}
               >
                 {batchSubmitting ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>Create Batch</Text>
+                  <Text style={styles.modalSubmitBtnText}>Create Batch</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* Official Receipt Modal */}
+      <ReceiptModal
+        visible={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        receipt={selectedReceipt}
+      />
 
       {/* Admit Student Modal */}
       <AdmitStudentModal
@@ -848,6 +1141,14 @@ export const AdminScreen: React.FC = () => {
         studentId={selectedStudentId}
         onClose={() => setSelectedStudentId(null)}
         onStudentUpdated={fetchAdminData}
+      />
+
+      {/* Staff Admin Modal */}
+      <StaffAdminModal
+        isOpen={showStaffModal}
+        onClose={() => setShowStaffModal(false)}
+        batches={batches}
+        onStaffCreated={fetchAdminData}
       />
 
       {/* Confirmation Modal for Lifecycle Status Actions */}
@@ -874,22 +1175,32 @@ export const AdminScreen: React.FC = () => {
             ? 'Confirm Discontinue'
             : 'Reactivate'
         }
-        variant={statusConfirm.newStatus === 'DISCONTINUED' ? 'danger' : statusConfirm.newStatus === 'PASSED_OUT' ? 'warning' : 'primary'}
+        variant={
+          statusConfirm.newStatus === 'DISCONTINUED'
+            ? 'danger'
+            : statusConfirm.newStatus === 'PASSED_OUT'
+            ? 'warning'
+            : 'primary'
+        }
         loading={statusConfirm.loading}
         onConfirm={handleConfirmStatusChange}
-        onCancel={() => setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })}
+        onCancel={() =>
+          setStatusConfirm({ isOpen: false, student: null, newStatus: '', loading: false })
+        }
       />
 
-      <StaffAdminModal
-        isOpen={showStaffModal}
-        onClose={() => setShowStaffModal(false)}
-        batches={batches}
-        onStaffCreated={fetchAdminData}
-      />
+      {/* Notification Modal */}
       <NotificationModal
         visible={showNotificationModal}
         onClose={() => setShowNotificationModal(false)}
         onUnreadCountChange={setUnreadNotifCount}
+      />
+
+      {/* Pinned Bottom Navigation */}
+      <AdminBottomNav
+        activeTab={activeTab}
+        onSelectTab={(tab: AdminPrimaryTab) => setActiveTab(tab)}
+        unreadCount={unreadNotifCount}
       />
     </View>
   );
@@ -898,409 +1209,492 @@ export const AdminScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: themeTokens.colors.background,
-  },
-  tabBarWrapper: {
-    backgroundColor: themeTokens.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: themeTokens.colors.border,
-  },
-  tabBarScroll: {
-    flexDirection: 'row',
-    paddingHorizontal: 8,
-  },
-  tabItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTabItem: {
-    borderBottomColor: themeTokens.colors.espresso,
-  },
-  tabText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: themeTokens.colors.espresso,
-    fontWeight: '700',
+    backgroundColor: '#FAF7F5',
   },
   content: {
     flex: 1,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+
+  // Sub-view breadcrumb bar
+  subViewHeader: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEBE9',
   },
-  centerBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
+  backBtn: {
+    paddingVertical: 2,
+    marginBottom: 4,
   },
-  loadingText: {
-    color: themeTokens.colors.textMuted,
-    marginTop: 12,
-    fontSize: 13,
+  backBtnText: {
+    fontSize: 12,
+    color: '#4E342E',
+    fontWeight: '700',
   },
-  instituteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  instituteIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  instituteIcon: {
-    fontSize: 22,
-  },
-  instName: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 16,
+  subViewTitle: {
+    fontSize: 15,
     fontWeight: '800',
+    color: '#2D1E18',
   },
-  instMeta: {
-    color: themeTokens.colors.textMuted,
+
+  // Tab Content
+  tabContent: {
+    flex: 1,
+  },
+  tabScrollContent: {
+    padding: 16,
+    paddingBottom: 110,
+  },
+  tabHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tabHeading: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  tabSub: {
     fontSize: 11,
+    color: '#8D6E63',
     marginTop: 2,
   },
-  matrixGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
+  actionPillBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  kpiBox: {
-    width: '48%',
+  actionPillBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // Item Card Common
+  itemCard: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 14,
-    backgroundColor: themeTokens.colors.surface,
     borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    shadowColor: themeTokens.colors.espresso,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    borderColor: '#EFEBE9',
+    marginBottom: 10,
+    shadowColor: '#2D1E18',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
     elevation: 2,
   },
-  kpiLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: themeTokens.colors.textMuted,
-    letterSpacing: 0.5,
+  itemCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  kpiValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: themeTokens.colors.textPrimary,
-    marginVertical: 4,
-  },
-  kpiSub: {
-    fontSize: 11,
-    color: themeTokens.colors.taupe,
-  },
-  cardSectionTitle: {
-    color: themeTokens.colors.textPrimary,
+  itemCardTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  itemCardSub: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 1,
+  },
+  itemDateText: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 6,
+  },
+
+  // Status Badges
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  badgeGreen: {
+    backgroundColor: '#ECFDF5',
+  },
+  badgeGreenText: {
+    color: '#059669',
+  },
+  badgeBlue: {
+    backgroundColor: '#EFF6FF',
+  },
+  badgeBlueText: {
+    color: '#2563EB',
+  },
+  badgeOrange: {
+    backgroundColor: '#FFFBEB',
+  },
+  badgeOrangeText: {
+    color: '#D97706',
+  },
+  badgeDanger: {
+    backgroundColor: '#FEF2F2',
+  },
+  badgeDangerText: {
+    color: '#DC2626',
+  },
+  badgeGray: {
+    backgroundColor: '#F3F4F6',
+  },
+  badgeGrayText: {
+    color: '#6B7280',
+  },
+
+  // Toggle button
+  toggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  toggleBtnDeact: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  toggleBtnReact: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  toggleBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  toggleTextDeact: {
+    color: '#DC2626',
+  },
+  toggleTextReact: {
+    color: '#059669',
+  },
+
+  // Subjects in Batch
+  subjectsContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F5ECE8',
+  },
+  subjectsLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8D6E63',
+    marginBottom: 4,
+  },
+  subjectsPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  subjectPill: {
+    backgroundColor: '#F5ECE8',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  subjectPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4E342E',
+  },
+
+  // Operations Description
+  opsDesc: {
+    fontSize: 12,
+    color: '#6D4C41',
+    lineHeight: 16,
+    marginTop: 6,
+  },
+  opsBadgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#8D6E63',
+    letterSpacing: 0.8,
     marginBottom: 6,
   },
-  opsNote: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
+
+  // Metric Triplet Row
+  metricTripletRow: {
+    flexDirection: 'row',
+    backgroundColor: '#FAF7F5',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    marginTop: 8,
+  },
+  metricTripletCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricTripletLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#8D6E63',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  metricTripletVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  metricDivider: {
+    width: 1,
+    backgroundColor: '#EFEBE9',
+  },
+
+  // Form Fields
+  formHelpText: {
+    fontSize: 11,
+    color: '#8D6E63',
     marginBottom: 10,
   },
-  opsRow: {
+  inputFieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4E342E',
+    marginBottom: 4,
+  },
+  chipsScrollContent: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  stChip: {
+    backgroundColor: '#FAF7F5',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+  },
+  stChipActive: {
+    backgroundColor: '#4E342E',
+    borderColor: '#4E342E',
+  },
+  stChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4E342E',
+  },
+  stChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  textInput: {
+    backgroundColor: '#FAF7F5',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#2D1E18',
+  },
+  paymentMethodRow: {
     flexDirection: 'row',
     gap: 8,
   },
-  feeTitle: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
-  finGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  finCol: {
-    alignItems: 'center',
-  },
-  finLabel: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 11,
-  },
-  finVal: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '900',
-    marginTop: 4,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: themeTokens.colors.textPrimary,
-  },
-  sectionCount: {
-    fontSize: 12,
-    color: themeTokens.colors.primary,
-    fontWeight: '600',
-  },
-  emptyText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-    paddingVertical: 10,
-  },
-  outRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  outName: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  outRoll: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  outAmt: {
-    color: themeTokens.colors.error,
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  formTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  formSubtitle: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 2,
-    marginBottom: 14,
-  },
-  inputLabel: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  studentChipsScroll: {
-    flexDirection: 'row',
-    marginBottom: 6,
-  },
-  stChip: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-  },
-  stChipActive: {
-    backgroundColor: themeTokens.colors.espresso,
-    borderColor: themeTokens.colors.espresso,
-  },
-  stChipText: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  stChipTextActive: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-  },
-  textInput: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-  },
-  methodRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
   methodBtn: {
     flex: 1,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
+    backgroundColor: '#FAF7F5',
+    borderRadius: 8,
     paddingVertical: 8,
-    borderRadius: 6,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
   },
   methodBtnActive: {
-    backgroundColor: themeTokens.colors.espresso,
-    borderColor: themeTokens.colors.espresso,
+    backgroundColor: '#4E342E',
+    borderColor: '#4E342E',
   },
   methodBtnText: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4E342E',
   },
   methodBtnTextActive: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-  },
-  recordBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 18,
-    shadowColor: themeTokens.colors.espresso,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  recordBtnText: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  stuDirRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  stuDirName: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  stuDirMeta: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  stuDirEmail: {
-    color: themeTokens.colors.textSubtle,
-    fontSize: 11,
-    marginTop: 4,
-  },
-  admitStudentBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  admitStudentBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
-  actionRowContainer: {
+  submitPaymentBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  submitPaymentBtnDisabled: {
+    opacity: 0.6,
+  },
+  submitPaymentBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  // Timetable row
+  timetableRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F7F2EF',
-  },
-  cardDetailsHint: {
     paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5ECE8',
   },
-  cardDetailsHintText: {
+  timetableSubject: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
+  timetableSchedule: {
     fontSize: 11,
+    color: '#8D6E63',
+  },
+
+  // Reviews
+  starsText: {
+    fontSize: 14,
+    color: '#F59E0B',
+  },
+  reviewSubjectText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2D1E18',
+    marginTop: 6,
+  },
+  replyBox: {
+    backgroundColor: '#FAF7F5',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4E342E',
+  },
+  replyBoxTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#4E342E',
+    marginBottom: 2,
+  },
+  replyBoxText: {
+    fontSize: 11,
+    color: '#2D1E18',
+  },
+
+  // Settings
+  profileRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5ECE8',
+  },
+  profileFieldLabel: {
+    fontSize: 12,
     color: '#8D6E63',
     fontWeight: '600',
   },
-  actionBtnGroup: {
-    flexDirection: 'row',
-    gap: 6,
+  profileFieldValue: {
+    fontSize: 12,
+    color: '#2D1E18',
+    fontWeight: '700',
   },
-  actionBtnPass: {
-    backgroundColor: '#FAF5FF',
-    borderWidth: 1,
-    borderColor: '#D8B4FE',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  actionBtnPassText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#6B21A8',
-  },
-  actionBtnDisc: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  actionBtnDiscText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#475569',
-  },
-  actionBtnActive: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  actionBtnActiveText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#166534',
-  },
+
+  // Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(45, 30, 24, 0.65)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    padding: 20,
+    padding: 16,
   },
   modalCard: {
-    backgroundColor: themeTokens.colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
   },
   modalTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2D1E18',
   },
   modalSub: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 2,
     marginBottom: 12,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 14,
+  },
+  modalCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modalCancelBtnText: {
+    fontSize: 12,
+    color: '#6D4C41',
+    fontWeight: '600',
+  },
+  modalSubmitBtn: {
+    backgroundColor: '#4E342E',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  modalSubmitBtnDisabled: {
+    opacity: 0.6,
+  },
+  modalSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Empty Card
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    marginTop: 10,
+  },
+  emptyIcon: {
+    fontSize: 36,
+    marginBottom: 8,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  emptySub: {
+    fontSize: 11,
+    color: '#8D6E63',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 16,
   },
 });
