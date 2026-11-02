@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "db:inspect": "tsx scripts/inspect-db.ts",
     "prisma:generate": "prisma generate",
@@ -25,7 +25,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.12.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@types/multer": "^1.4.12"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",

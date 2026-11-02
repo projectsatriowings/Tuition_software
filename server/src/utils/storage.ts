@@ -55,7 +55,7 @@ export function sanitizeFilename(filename: string): string {
  * Configure Multer disk storage for local environment
  */
 const storage = multer.diskStorage({
-  destination: (req: Request, file, cb) => {
+  destination: (req: Request, file: any, cb: any) => {
     const instituteId = (req as any).instituteId || 'general';
     const instituteDir = path.join(LOCAL_STORAGE_DIR, instituteId);
     if (!fs.existsSync(instituteDir)) {
@@ -63,7 +63,7 @@ const storage = multer.diskStorage({
     }
     cb(null, instituteDir);
   },
-  filename: (req, file, cb) => {
+  filename: (req: any, file: any, cb: any) => {
     const safeName = sanitizeFilename(file.originalname);
     const uniquePrefix = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
     cb(null, `${uniquePrefix}-${safeName}`);
@@ -76,7 +76,7 @@ const storage = multer.diskStorage({
 export const fileUpload = multer({
   storage,
   limits: { fileSize: MAX_FILE_SIZE_BYTES },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: any, file: any, cb: any) => {
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -91,7 +91,7 @@ export const fileUpload = multer({
 export const photoUpload = multer({
   storage,
   limits: { fileSize: MAX_PHOTO_SIZE_BYTES },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: any, file: any, cb: any) => {
     if (ALLOWED_PHOTO_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
