@@ -12,6 +12,8 @@ import { api } from '../services/api';
 import { useMobileToast } from '../context/ToastContext';
 import { useMobileAuth } from '../context/AuthContext';
 import { StudentAvatar } from './StudentAvatar';
+import { PressableScale, AnimatedSheet } from '../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 
 interface StudentDetailsModalProps {
   visible: boolean;

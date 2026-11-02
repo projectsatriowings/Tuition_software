@@ -23,6 +23,8 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { NotificationModal } from '../../components/NotificationModal';
 import { PushNotificationService } from '../../services/pushNotification.service';
 import { StudentAvatar } from '../../components/StudentAvatar';
+import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffExamGradingModal } from '../../components/StaffExamGradingModal';

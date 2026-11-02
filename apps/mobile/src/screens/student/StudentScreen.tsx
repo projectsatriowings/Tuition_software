@@ -14,6 +14,8 @@ import {
 import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
+import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { NotificationModal } from '../../components/NotificationModal';
 import { MaterialViewerModal } from '../../components/MaterialViewerModal';
@@ -1297,9 +1299,24 @@ export const StudentScreen: React.FC = () => {
       </View>
 
       {/* Homework Submission Modal */}
-      <Modal visible={!!submittingHw} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+      <Modal
+        visible={!!submittingHw}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setSubmittingHw(null);
+          setSubmissionContent('');
+        }}
+      >
+        <TouchableWithoutFeedback
+          onPress={() => {
+            setSubmittingHw(null);
+            setSubmissionContent('');
+          }}
+        >
+          <View style={styles.modalBackdrop}>
+            <TouchableWithoutFeedback>
+              <AnimatedDialog style={styles.modalCard}>
             <Text style={styles.modalTitle}>Submit Assignment</Text>
             <Text style={styles.modalSub}>{submittingHw?.title}</Text>
             <TextInput
@@ -1312,29 +1329,37 @@ export const StudentScreen: React.FC = () => {
               onChangeText={setSubmissionContent}
             />
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity
+              <PressableScale
                 onPress={() => {
                   setSubmittingHw(null);
                   setSubmissionContent('');
                 }}
                 style={styles.modalCancelBtn}
+                activeScale={0.96}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </PressableScale>
+              <PressableScale
                 onPress={handleSubmitHomework}
                 style={styles.modalSubmitBtn}
                 disabled={submissionLoading}
+                activeScale={0.96}
+                accessibilityRole="button"
+                accessibilityLabel="Submit Work"
               >
                 {submissionLoading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={styles.modalSubmitBtnText}>Submit Work</Text>
                 )}
-              </TouchableOpacity>
+              </PressableScale>
             </View>
+              </AnimatedDialog>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Official Receipt Modal */}

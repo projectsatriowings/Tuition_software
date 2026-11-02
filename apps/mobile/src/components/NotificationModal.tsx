@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { mobileApiFetch } from '../services/api';
 import { themeTokens } from '@tuition/shared';
+import { PressableScale } from '../theme/motion';
 
 export interface NotificationItem {
   id: string;

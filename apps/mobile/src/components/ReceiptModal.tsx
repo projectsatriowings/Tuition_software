@@ -9,6 +9,8 @@ import {
   Alert,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { PressableScale, AnimatedSheet } from '../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 
 interface ReceiptData {
   receiptNumber: string;

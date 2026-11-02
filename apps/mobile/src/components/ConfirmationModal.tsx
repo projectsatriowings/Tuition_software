@@ -8,7 +8,7 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
-import { PressableScale } from '../theme/motion';
+import { PressableScale, AnimatedDialog } from '../theme/motion';
 
 export interface ConfirmationModalProps {
   isOpen: boolean;
@@ -74,7 +74,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       <TouchableWithoutFeedback onPress={handleSafeCancel}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={styles.modalCard}>
+            <AnimatedDialog style={styles.modalCard}>
               <View style={[styles.iconCircle, { borderColor: iconColor }]}>
                 <Text style={[styles.iconText, { color: iconColor }]}>{iconSymbol}</Text>
               </View>
@@ -113,7 +113,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                   )}
                 </PressableScale>
               </View>
-            </View>
+            </AnimatedDialog>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   modalCard: {
     width: '100%',
@@ -135,75 +135,73 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 24,
-    borderWidth: 1,
-    borderColor: '#D7CCC8',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 10,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
   },
   iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   iconText: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
   },
   titleText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: themeTokens.colors.espresso,
-    textAlign: 'center',
+    fontWeight: '800',
+    color: '#2D1E18',
     marginBottom: 8,
+    textAlign: 'center',
   },
   messageText: {
     fontSize: 14,
-    color: themeTokens.colors.textMuted,
+    color: '#5D4037',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 24,
   },
   buttonRow: {
     flexDirection: 'row',
-    width: '100%',
     gap: 12,
+    width: '100%',
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 13,
+    paddingVertical: 12,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#D7CCC8',
+    backgroundColor: '#F5ECE8',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FAF7F5',
   },
   cancelBtnText: {
+    color: '#5D4037',
+    fontWeight: '700',
     fontSize: 14,
-    fontWeight: '600',
-    color: themeTokens.colors.espresso,
   },
   confirmBtn: {
     flex: 1,
-    paddingVertical: 13,
+    paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   confirmBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
     color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
   btnDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
 });

@@ -3,12 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Animated,
   Platform,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ToastType, themeTokens } from '@tuition/shared';
+import { ToastType } from '@tuition/shared';
+import { useReducedMotion, motionTokens, PressableScale } from '../theme/motion';
 
 interface ToastMessage {
   id: string;
@@ -30,35 +31,76 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentToast, setCurrentToast] = useState<ToastMessage | null>(null);
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(-120)).current;
+  const reducedMotion = useReducedMotion();
+
+  const translateY = useRef(new Animated.Value(-24)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastToastRef = useRef<{ message: string; type: ToastType; time: number } | null>(null);
 
   const hideToast = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (reducedMotion) {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: motionTokens.duration.fast,
+        useNativeDriver: true,
+      }).start(() => {
+        setCurrentToast(null);
+      });
+      return;
+    }
+
     Animated.parallel([
       Animated.timing(translateY, {
-        toValue: -120,
-        duration: 250,
+        toValue: -20,
+        duration: 150,
+        easing: motionTokens.easing.inOut,
         useNativeDriver: true,
       }),
       Animated.timing(opacity, {
         toValue: 0,
-        duration: 200,
+        duration: 150,
+        easing: motionTokens.easing.inOut,
         useNativeDriver: true,
       }),
     ]).start(() => {
       setCurrentToast(null);
     });
-  }, [translateY, opacity]);
+  }, [reducedMotion, translateY, opacity]);
 
   const showToast = useCallback(
-    (message: string, type: ToastType = 'info', duration: number = 3500) => {
+    (message: string, type: ToastType = 'info', duration: number = 2800) => {
+      const now = Date.now();
+
+      // Avoid stacking duplicate animations or duplicate toasts for a single action
+      if (
+        lastToastRef.current &&
+        lastToastRef.current.message === message &&
+        lastToastRef.current.type === type &&
+        now - lastToastRef.current.time < 650
+      ) {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        if (duration > 0) {
+          timerRef.current = setTimeout(() => {
+            hideToast();
+          }, duration);
+        }
+        return;
+      }
+
+      lastToastRef.current = { message, type, time: now };
+
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
 
       const toast: ToastMessage = {
-        id: `${Date.now()}`,
+        id: `${now}`,
         message,
         type,
         duration,
@@ -66,19 +108,32 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       setCurrentToast(toast);
 
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          friction: 8,
-          tension: 50,
-          useNativeDriver: true,
-        }),
+      if (reducedMotion) {
+        translateY.setValue(0);
+        opacity.setValue(0);
         Animated.timing(opacity, {
           toValue: 1,
-          duration: 200,
+          duration: motionTokens.duration.fast,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      } else {
+        translateY.setValue(-24);
+        opacity.setValue(0);
+        Animated.parallel([
+          Animated.timing(translateY, {
+            toValue: 0,
+            duration: 180,
+            easing: motionTokens.easing.standard,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: 180,
+            easing: motionTokens.easing.standard,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
 
       if (duration > 0) {
         timerRef.current = setTimeout(() => {
@@ -86,7 +141,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }, duration);
       }
     },
-    [hideToast, translateY, opacity]
+    [hideToast, reducedMotion, translateY, opacity]
   );
 
   const success = useCallback((msg: string, d?: number) => showToast(msg, 'success', d), [showToast]);
@@ -109,36 +164,44 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ]}
           pointerEvents="box-none"
         >
-          <View
-            style={[
-              styles.toastCard,
-              currentToast.type === 'success' && styles.successCard,
-              currentToast.type === 'error' && styles.errorCard,
-              currentToast.type === 'warning' && styles.warningCard,
-              currentToast.type === 'info' && styles.infoCard,
-            ]}
-          >
-            <View style={styles.contentRow}>
-              <Text style={styles.badgeIcon}>
-                {currentToast.type === 'success' ? '✓' : currentToast.type === 'error' ? '✕' : currentToast.type === 'warning' ? '⚠' : 'ℹ'}
-              </Text>
-              <Text
-                style={[
-                  styles.messageText,
-                  currentToast.type === 'success' && styles.successText,
-                  currentToast.type === 'error' && styles.errorText,
-                  currentToast.type === 'warning' && styles.warningText,
-                  currentToast.type === 'info' && styles.infoText,
-                ]}
-                numberOfLines={3}
-              >
-                {currentToast.message}
-              </Text>
-              <TouchableOpacity onPress={hideToast} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={styles.dismissBtn}>✕</Text>
-              </TouchableOpacity>
+          <TouchableWithoutFeedback onPress={hideToast} accessibilityRole="alert">
+            <View
+              style={[
+                styles.toastCard,
+                currentToast.type === 'success' && styles.successCard,
+                currentToast.type === 'error' && styles.errorCard,
+                currentToast.type === 'warning' && styles.warningCard,
+                currentToast.type === 'info' && styles.infoCard,
+              ]}
+            >
+              <View style={styles.contentRow}>
+                <Text style={styles.badgeIcon}>
+                  {currentToast.type === 'success' ? '✓' : currentToast.type === 'error' ? '✕' : currentToast.type === 'warning' ? '⚠' : 'ℹ'}
+                </Text>
+                <Text
+                  style={[
+                    styles.messageText,
+                    currentToast.type === 'success' && styles.successText,
+                    currentToast.type === 'error' && styles.errorText,
+                    currentToast.type === 'warning' && styles.warningText,
+                    currentToast.type === 'info' && styles.infoText,
+                  ]}
+                  numberOfLines={3}
+                >
+                  {currentToast.message}
+                </Text>
+                <PressableScale
+                  onPress={hideToast}
+                  activeScale={0.88}
+                  style={styles.dismissBtnWrapper}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss notification"
+                >
+                  <Text style={styles.dismissBtn}>✕</Text>
+                </PressableScale>
+              </View>
             </View>
-          </View>
+          </TouchableWithoutFeedback>
         </Animated.View>
       )}
     </ToastContext.Provider>
@@ -192,6 +255,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2D1E18',
     lineHeight: 18,
+  },
+  dismissBtnWrapper: {
+    padding: 4,
   },
   dismissBtn: {
     fontSize: 13,

@@ -20,6 +20,8 @@ import { NotificationModal } from '../../components/NotificationModal';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffAdminModal } from '../../components/StaffAdminModal';
+import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 import {
   AdminBottomNav,
   AdminActiveTab,
@@ -1070,55 +1072,70 @@ export const AdminScreen: React.FC = () => {
       </View>
 
       {/* New Batch Modal */}
-      <Modal visible={showNewBatchModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Create Academic Batch</Text>
-            <Text style={styles.modalSub}>
-              Configure a new class section for this institute
-            </Text>
+      <Modal
+        visible={showNewBatchModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowNewBatchModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowNewBatchModal(false)}>
+          <View style={styles.modalBackdrop}>
+            <TouchableWithoutFeedback>
+              <AnimatedDialog style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Create Academic Batch</Text>
+                <Text style={styles.modalSub}>
+                  Configure a new class section for this institute
+                </Text>
 
-            <TextInput
-              style={styles.textInput}
-              placeholder="Batch Name (e.g. Class 10 - Batch A)"
-              placeholderTextColor="#8D6E63"
-              value={batchName}
-              onChangeText={setBatchName}
-            />
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Batch Name (e.g. Class 10 - Batch A)"
+                  placeholderTextColor="#8D6E63"
+                  value={batchName}
+                  onChangeText={setBatchName}
+                />
 
-            <TextInput
-              style={[styles.textInput, { marginTop: 10 }]}
-              placeholder="Academic Year (e.g. 2026-2027)"
-              placeholderTextColor="#8D6E63"
-              value={batchYear}
-              onChangeText={setBatchYear}
-            />
+                <TextInput
+                  style={[styles.textInput, { marginTop: 10 }]}
+                  placeholder="Academic Year (e.g. 2026-2027)"
+                  placeholderTextColor="#8D6E63"
+                  value={batchYear}
+                  onChangeText={setBatchYear}
+                />
 
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                onPress={() => setShowNewBatchModal(false)}
-                style={styles.modalCancelBtn}
-                disabled={batchSubmitting}
-              >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleCreateBatch}
-                style={[
-                  styles.modalSubmitBtn,
-                  batchSubmitting && styles.modalSubmitBtnDisabled,
-                ]}
-                disabled={batchSubmitting}
-              >
-                {batchSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalSubmitBtnText}>Create Batch</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+                <View style={styles.modalBtnRow}>
+                  <PressableScale
+                    onPress={() => setShowNewBatchModal(false)}
+                    style={styles.modalCancelBtn}
+                    disabled={batchSubmitting}
+                    activeScale={0.96}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel"
+                  >
+                    <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                  </PressableScale>
+                  <PressableScale
+                    onPress={handleCreateBatch}
+                    style={[
+                      styles.modalSubmitBtn,
+                      batchSubmitting && styles.modalSubmitBtnDisabled,
+                    ]}
+                    disabled={batchSubmitting}
+                    activeScale={0.96}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create Batch"
+                  >
+                    {batchSubmitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.modalSubmitBtnText}>Create Batch</Text>
+                    )}
+                  </PressableScale>
+                </View>
+              </AnimatedDialog>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Official Receipt Modal */}

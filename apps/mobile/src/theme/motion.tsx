@@ -528,3 +528,210 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
     </Pressable>
   );
 };
+
+/**
+ * Helper: Dialog Entrance (Fade with slight scale 0.94 -> 1.0)
+ */
+export function dialogEntrance(
+  scaleAnim: Animated.Value,
+  opacityAnim: Animated.Value,
+  options?: {
+    duration?: number;
+    initialScale?: number;
+    useNativeDriver?: boolean;
+    reducedMotion?: boolean;
+  }
+): Animated.CompositeAnimation {
+  const {
+    duration = motionTokens.duration.normal,
+    initialScale = 0.94,
+    useNativeDriver = true,
+    reducedMotion = false,
+  } = options || {};
+
+  if (reducedMotion) {
+    scaleAnim.setValue(1);
+    return Animated.timing(opacityAnim, {
+      toValue: 1,
+      duration: motionTokens.duration.fast,
+      useNativeDriver,
+    });
+  }
+
+  scaleAnim.setValue(initialScale);
+  opacityAnim.setValue(0);
+
+  return Animated.parallel([
+    Animated.timing(opacityAnim, {
+      toValue: 1,
+      duration,
+      easing: motionTokens.easing.standard,
+      useNativeDriver,
+    }),
+    Animated.timing(scaleAnim, {
+      toValue: 1,
+      duration,
+      easing: motionTokens.easing.standard,
+      useNativeDriver,
+    }),
+  ]);
+}
+
+/**
+ * Helper: Bottom Sheet Entrance (Short slide 36px -> 0px with subtle fade)
+ */
+export function sheetSlideEntrance(
+  translateAnim: Animated.Value,
+  opacityAnim: Animated.Value,
+  options?: {
+    distance?: number;
+    duration?: number;
+    useNativeDriver?: boolean;
+    reducedMotion?: boolean;
+  }
+): Animated.CompositeAnimation {
+  const {
+    distance = motionTokens.distance.sheetSlide,
+    duration = motionTokens.duration.normal,
+    useNativeDriver = true,
+    reducedMotion = false,
+  } = options || {};
+
+  if (reducedMotion) {
+    translateAnim.setValue(0);
+    return Animated.timing(opacityAnim, {
+      toValue: 1,
+      duration: motionTokens.duration.fast,
+      useNativeDriver,
+    });
+  }
+
+  translateAnim.setValue(distance);
+  opacityAnim.setValue(0);
+
+  return Animated.parallel([
+    Animated.timing(opacityAnim, {
+      toValue: 1,
+      duration,
+      easing: motionTokens.easing.standard,
+      useNativeDriver,
+    }),
+    Animated.timing(translateAnim, {
+      toValue: 0,
+      duration,
+      easing: motionTokens.easing.standard,
+      useNativeDriver,
+    }),
+  ]);
+}
+
+export interface AnimatedDialogProps {
+  children: React.ReactNode;
+  visible?: boolean;
+  style?: StyleProp<ViewStyle>;
+  duration?: number;
+  initialScale?: number;
+}
+
+/**
+ * AnimatedDialog: Enterprise-appropriate dialog wrapper.
+ * Subtle fade-in combined with gentle scale (0.94 -> 1.0).
+ * Bypasses spatial scale when Reduced Motion is enabled.
+ */
+export const AnimatedDialog: React.FC<AnimatedDialogProps> = ({
+  children,
+  visible = true,
+  style,
+  duration = motionTokens.duration.normal,
+  initialScale = 0.94,
+}) => {
+  const reducedMotion = useReducedMotion();
+  const scaleAnim = useRef(new Animated.Value(reducedMotion ? 1 : initialScale)).current;
+  const opacityAnim = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    if (reducedMotion) {
+      scaleAnim.setValue(1);
+      opacityAnim.setValue(1);
+      return;
+    }
+    const anim = dialogEntrance(scaleAnim, opacityAnim, {
+      duration,
+      initialScale,
+      reducedMotion,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [visible, reducedMotion, duration, initialScale, scaleAnim, opacityAnim]);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: opacityAnim,
+          transform: [{ scale: scaleAnim }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
+export interface AnimatedSheetProps {
+  children: React.ReactNode;
+  visible?: boolean;
+  style?: StyleProp<ViewStyle>;
+  distance?: number;
+  duration?: number;
+}
+
+/**
+ * AnimatedSheet: Bottom sheet / drawer entrance wrapper.
+ * Short vertical slide (36px -> 0px) combined with subtle fade.
+ * Respects accessibility reduced-motion preferences.
+ */
+export const AnimatedSheet: React.FC<AnimatedSheetProps> = ({
+  children,
+  visible = true,
+  style,
+  distance = motionTokens.distance.sheetSlide,
+  duration = motionTokens.duration.normal,
+}) => {
+  const reducedMotion = useReducedMotion();
+  const translateAnim = useRef(new Animated.Value(reducedMotion ? 0 : distance)).current;
+  const opacityAnim = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    if (reducedMotion) {
+      translateAnim.setValue(0);
+      opacityAnim.setValue(1);
+      return;
+    }
+    const anim = sheetSlideEntrance(translateAnim, opacityAnim, {
+      distance,
+      duration,
+      reducedMotion,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [visible, reducedMotion, distance, duration, translateAnim, opacityAnim]);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: opacityAnim,
+          transform: [{ translateY: translateAnim }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+

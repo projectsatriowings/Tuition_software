@@ -11,6 +11,8 @@ import {
   Alert,
 } from 'react-native';
 import { mobileApiFetch } from '../../../services/api';
+import { PressableScale, AnimatedDialog } from '../../../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 
 interface InstituteDetailsModalProps {
   visible: boolean;

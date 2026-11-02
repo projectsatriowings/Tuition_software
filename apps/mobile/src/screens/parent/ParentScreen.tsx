@@ -15,6 +15,8 @@ import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
 import { ReceiptModal } from '../../components/ReceiptModal';
+import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { TouchableWithoutFeedback } from 'react-native';
 import { NotificationModal } from '../../components/NotificationModal';
 import { MaterialViewerModal } from '../../components/MaterialViewerModal';
 import { PushNotificationService } from '../../services/pushNotification.service';
@@ -1594,9 +1596,16 @@ export const ParentScreen: React.FC = () => {
       </View>
 
       {/* Review / Private Inquiry Modal */}
-      <Modal visible={showReviewModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+      <Modal
+        visible={showReviewModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowReviewModal(false)}>
+          <View style={styles.modalBackdrop}>
+            <TouchableWithoutFeedback>
+              <AnimatedDialog style={styles.modalCard}>
             <Text style={styles.modalTitle}>Write Private Inquiry / Review</Text>
             <Text style={styles.modalSub}>
               Directly delivered to TuitionOS academy administration
@@ -1641,30 +1650,38 @@ export const ParentScreen: React.FC = () => {
             />
 
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity
+              <PressableScale
                 onPress={() => setShowReviewModal(false)}
                 style={styles.modalCancelBtn}
                 disabled={submittingReview}
+                activeScale={0.96}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </PressableScale>
+              <PressableScale
                 onPress={handleSubmitReview}
                 style={[
                   styles.modalSubmitBtn,
                   submittingReview && styles.modalSubmitBtnDisabled,
                 ]}
                 disabled={submittingReview}
+                activeScale={0.96}
+                accessibilityRole="button"
+                accessibilityLabel="Submit Message"
               >
                 {submittingReview ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.modalSubmitBtnText}>Submit Message</Text>
                 )}
-              </TouchableOpacity>
+              </PressableScale>
             </View>
+              </AnimatedDialog>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Receipt Modal */}
