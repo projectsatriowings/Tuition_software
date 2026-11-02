@@ -10,12 +10,12 @@ export interface StaffAvatarProps {
   alt?: string;
 }
 
-const SIZE_MAP: Record<string, { container: string; text: string }> = {
-  xs: { container: 'w-6 h-6', text: 'text-[10px]' },
-  sm: { container: 'w-8 h-8', text: 'text-xs' },
-  md: { container: 'w-10 h-10', text: 'text-sm' },
-  lg: { container: 'w-14 h-14', text: 'text-base' },
-  xl: { container: 'w-20 h-20', text: 'text-xl' },
+const SIZE_MAP: Record<string, { container: string; text: string; sizePx: number }> = {
+  xs: { container: 'w-6 h-6', text: 'text-[10px]', sizePx: 24 },
+  sm: { container: 'w-8 h-8', text: 'text-xs', sizePx: 32 },
+  md: { container: 'w-10 h-10', text: 'text-sm', sizePx: 40 },
+  lg: { container: 'w-14 h-14', text: 'text-base', sizePx: 56 },
+  xl: { container: 'w-20 h-20', text: 'text-xl', sizePx: 80 },
 };
 
 const PASTEL_BG_COLORS = [
@@ -111,7 +111,8 @@ export const StaffAvatar: React.FC<StaffAvatarProps> = ({
         src={computedSrc}
         alt={alt || name || 'Staff photograph'}
         onError={() => setHasError(true)}
-        className={`${sizeClass.container} rounded-2xl object-cover border border-[#D7CCC8]/80 shadow-2xs shrink-0 select-none ${className}`}
+        className={`${sizeClass.container} rounded-2xl object-cover border border-[#D7CCC8]/80 shadow-2xs shrink-0 select-none block ${className}`}
+        style={{ width: `${sizeClass.sizePx}px`, height: `${sizeClass.sizePx}px`, objectFit: 'cover' }}
         loading="lazy"
       />
     );
@@ -120,6 +121,7 @@ export const StaffAvatar: React.FC<StaffAvatarProps> = ({
   return (
     <div
       className={`${sizeClass.container} ${colorClass} rounded-2xl flex items-center justify-center font-bold tracking-tight shadow-2xs border border-[#D7CCC8]/80 shrink-0 select-none ${sizeClass.text} ${className}`}
+      style={{ width: `${sizeClass.sizePx}px`, height: `${sizeClass.sizePx}px` }}
       aria-label={name || 'Staff avatar'}
       title={name || 'Staff Member'}
     >
@@ -127,4 +129,3 @@ export const StaffAvatar: React.FC<StaffAvatarProps> = ({
     </div>
   );
 };
-

@@ -436,30 +436,33 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#D7CCC8] flex flex-col sm:flex-row items-center gap-4">
               <div className="relative shrink-0">
                 {photoPreview ? (
-                  <div className="relative group">
-                    <img
-                      src={photoPreview}
-                      alt="Staff Preview"
-                      className="w-18 h-18 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-xs"
-                    />
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-[#8D6E63] shadow-xs bg-stone-100 flex items-center justify-center shrink-0">
+                      <img
+                        src={photoPreview}
+                        alt="Staff Preview"
+                        className="w-full h-full object-cover block"
+                        style={{ width: '80px', height: '80px', objectFit: 'cover' }}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={handleRemovePhoto}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700 shadow-xs transition-colors"
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700 shadow-md transition-colors z-10"
                       title="Remove photo"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ) : (
-                  <div className="w-18 h-18 rounded-2xl bg-[#EFEBE9] text-[#8D6E63] border-2 border-dashed border-[#D7CCC8] flex flex-col items-center justify-center text-center p-2">
+                  <div className="w-20 h-20 rounded-2xl bg-[#EFEBE9] text-[#8D6E63] border-2 border-dashed border-[#D7CCC8] flex flex-col items-center justify-center text-center p-2 shrink-0">
                     <Camera className="w-6 h-6 mb-1 text-[#A1887F]" />
                     <span className="text-[10px] font-bold text-[#6D4C41]">Photo</span>
                   </div>
                 )}
               </div>
 
-              <div className="flex-1 text-center sm:text-left space-y-1">
+              <div className="flex-1 text-center sm:text-left space-y-1 min-w-0">
                 <div className="flex items-center justify-center sm:justify-between">
                   <span className="text-xs font-bold text-[#2D1E18]">
                     Staff Photograph <span className="text-[#8D6E63] font-normal">(Optional)</span>
@@ -742,11 +745,14 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           <div className="space-y-4">
             <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl flex items-center gap-4">
               {photoPreview ? (
-                <img
-                  src={photoPreview}
-                  alt="Staff Thumbnail"
-                  className="w-14 h-14 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-xs shrink-0"
-                />
+                <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-[#8D6E63] shadow-xs bg-stone-100 shrink-0">
+                  <img
+                    src={photoPreview}
+                    alt="Staff Thumbnail"
+                    className="w-full h-full object-cover block"
+                    style={{ width: '56px', height: '56px', objectFit: 'cover' }}
+                  />
+                </div>
               ) : (
                 <div className="w-14 h-14 rounded-2xl bg-[#EFEBE9] text-[#4E342E] font-bold text-sm flex items-center justify-center border border-[#D7CCC8] shrink-0">
                   {fullName.slice(0, 2).toUpperCase() || 'ST'}
