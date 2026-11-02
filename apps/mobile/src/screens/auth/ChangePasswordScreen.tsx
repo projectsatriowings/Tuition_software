@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
 import { themeTokens } from '@tuition/shared';
+import {
+  FadeInView,
+  SlideInView,
+  PressableScale,
+  useAndroidBackHandler,
+} from '../../theme/motion';
 
 export const ChangePasswordScreen: React.FC = () => {
   const { user, changePassword, logout } = useMobileAuth();
@@ -25,6 +33,21 @@ export const ChangePasswordScreen: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Android hardware back button handler: prompt user before aborting
+  const handleBackPress = useCallback(() => {
+    Alert.alert(
+      'Exit Setup?',
+      'Are you sure you want to cancel and sign out? You will need to reset your password on next sign-in.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: logout },
+      ]
+    );
+    return true; // Consume the back event
+  }, [logout]);
+
+  useAndroidBackHandler(handleBackPress);
 
   const handleSubmit = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -60,84 +83,104 @@ export const ChangePasswordScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <View style={styles.iconCircle}>
-          <Text style={styles.lockIcon}>🔒</Text>
-        </View>
-
-        <Text style={styles.title}>Update Your Password</Text>
-        <Text style={styles.subtitle}>
-          Hello {user?.fullName || 'there'}, security policy requires you to set a new password on your first sign in.
-        </Text>
-
-        {errorMsg && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+    <KeyboardAvoidingView
+      style={styles.keyboardContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <SlideInView distance={10} duration={240} style={styles.card}>
+          <View style={styles.iconCircle}>
+            <Text style={styles.lockIcon}>🔒</Text>
           </View>
-        )}
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Current Temporary Password</Text>
-          <TextInput
-            style={styles.input}
-            secureTextEntry
-            placeholder="Enter temporary password"
-            placeholderTextColor={themeTokens.colors.textSubtle}
-            value={currentPassword}
-            onChangeText={setCurrentPassword}
-          />
-        </View>
+          <Text style={styles.title}>Update Your Password</Text>
+          <Text style={styles.subtitle}>
+            Hello {user?.fullName || 'there'}, security policy requires you to set a new password on your first sign in.
+          </Text>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>New Secure Password</Text>
-          <TextInput
-            style={styles.input}
-            secureTextEntry
-            placeholder="At least 8 characters"
-            placeholderTextColor={themeTokens.colors.textSubtle}
-            value={newPassword}
-            onChangeText={setNewPassword}
-          />
-        </View>
+          {errorMsg ? (
+            <FadeInView duration={160} style={styles.errorBox}>
+              <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+            </FadeInView>
+          ) : null}
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Confirm New Password</Text>
-          <TextInput
-            style={styles.input}
-            secureTextEntry
-            placeholder="Repeat new password"
-            placeholderTextColor={themeTokens.colors.textSubtle}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
-        </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Current Temporary Password</Text>
+            <TextInput
+              style={styles.input}
+              secureTextEntry
+              placeholder="Enter temporary password"
+              placeholderTextColor={themeTokens.colors.textSubtle}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+            />
+          </View>
 
-        <TouchableOpacity
-          style={[styles.submitBtn, loading && styles.btnDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-          activeOpacity={0.85}
-        >
-          {loading ? (
-            <ActivityIndicator color={themeTokens.colors.textLight} />
-          ) : (
-            <Text style={styles.submitBtnText}>Update Password & Continue</Text>
-          )}
-        </TouchableOpacity>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>New Secure Password</Text>
+            <TextInput
+              style={styles.input}
+              secureTextEntry
+              placeholder="At least 8 characters"
+              placeholderTextColor={themeTokens.colors.textSubtle}
+              value={newPassword}
+              onChangeText={setNewPassword}
+            />
+          </View>
 
-        <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-          <Text style={styles.logoutBtnText}>Cancel & Sign Out</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Confirm New Password</Text>
+            <TextInput
+              style={styles.input}
+              secureTextEntry
+              placeholder="Repeat new password"
+              placeholderTextColor={themeTokens.colors.textSubtle}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+          </View>
+
+          <PressableScale
+            onPress={handleSubmit}
+            disabled={loading}
+            activeScale={0.97}
+            style={[styles.submitBtn, loading && styles.btnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Update Password & Continue"
+          >
+            {loading ? (
+              <ActivityIndicator color={themeTokens.colors.textLight} />
+            ) : (
+              <Text style={styles.submitBtnText}>Update Password & Continue</Text>
+            )}
+          </PressableScale>
+
+          <PressableScale
+            onPress={logout}
+            activeScale={0.98}
+            style={styles.logoutBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel & Sign Out"
+          >
+            <Text style={styles.logoutBtnText}>Cancel & Sign Out</Text>
+          </PressableScale>
+        </SlideInView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  keyboardContainer: {
     flex: 1,
     backgroundColor: themeTokens.colors.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
   },
@@ -169,61 +212,63 @@ const styles = StyleSheet.create({
     fontSize: 26,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
     color: themeTokens.colors.textPrimary,
+    fontSize: 20,
+    fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 13,
     color: themeTokens.colors.textMuted,
-    textAlign: 'center',
+    fontSize: 13,
     lineHeight: 18,
+    textAlign: 'center',
     marginBottom: 20,
   },
   errorBox: {
-    backgroundColor: themeTokens.colors.errorBg,
+    backgroundColor: themeTokens.colors.surfaceMuted,
+    borderRadius: 8,
+    padding: 10,
     borderWidth: 1,
-    borderColor: themeTokens.colors.errorBorder,
-    borderRadius: 10,
-    padding: 12,
+    borderColor: themeTokens.colors.error,
     marginBottom: 16,
   },
   errorText: {
     color: themeTokens.colors.error,
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   inputGroup: {
     marginBottom: 16,
   },
   label: {
-    fontSize: 13,
+    color: themeTokens.colors.textMuted,
+    fontSize: 12,
     fontWeight: '600',
-    color: themeTokens.colors.textSecondary,
     marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
+    backgroundColor: themeTokens.colors.background,
     borderWidth: 1,
     borderColor: themeTokens.colors.border,
     borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    padding: 12,
     color: themeTokens.colors.textPrimary,
     fontSize: 14,
   },
   submitBtn: {
-    backgroundColor: themeTokens.colors.espresso,
+    backgroundColor: themeTokens.colors.primary,
     borderRadius: 12,
-    paddingVertical: 14,
+    padding: 15,
     alignItems: 'center',
-    marginTop: 10,
-    shadowColor: themeTokens.colors.espresso,
-    shadowOffset: { width: 0, height: 3 },
+    marginTop: 8,
+    shadowColor: themeTokens.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 6,
+    shadowRadius: 4,
     elevation: 3,
   },
   btnDisabled: {
@@ -231,15 +276,16 @@ const styles = StyleSheet.create({
   },
   submitBtnText: {
     color: themeTokens.colors.textLight,
-    fontWeight: '700',
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   logoutBtn: {
-    marginTop: 16,
+    marginTop: 12,
+    padding: 10,
     alignItems: 'center',
   },
   logoutBtnText: {
-    color: themeTokens.colors.taupe,
+    color: themeTokens.colors.textMuted,
     fontSize: 13,
     fontWeight: '600',
   },
