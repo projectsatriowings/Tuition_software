@@ -1,13 +1,11 @@
 import {
-  PrismaClient,
   StaffWFHAuthorization,
   WFHAuthorizationScope,
   WFHAuthorizationStatus,
   WFHReasonCategory,
   StaffAttendanceMode,
 } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../prisma.js';
 
 export {
   StaffWFHAuthorization,

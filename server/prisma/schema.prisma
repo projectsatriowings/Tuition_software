@@ -306,6 +306,8 @@ model StaffProfile {
 
   @@unique([instituteId, employeeCode])
   @@index([instituteId])
+  @@index([instituteId, department])
+  @@index([instituteId, designation])
 }
 
 model StaffQualification {
@@ -424,6 +426,7 @@ model Student {
 
   @@unique([instituteId, admissionNumber])
   @@index([instituteId])
+  @@index([instituteId, status])
   @@index([status])
   @@index([firstName, lastName])
   @@index([createdByUserId])
@@ -1229,6 +1232,7 @@ model StaffAttendanceSession {
   @@index([staffId])
   @@index([status])
   @@index([attendanceMode])
+  @@index([instituteId, status, attendanceDate])
 }
 
 model StaffAttendanceEvent {

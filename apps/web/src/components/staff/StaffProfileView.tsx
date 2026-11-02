@@ -39,6 +39,7 @@ import {
 
 interface StaffProfileViewProps {
   staffId: string;
+  initialStaff?: StaffMember | null;
   onBack: () => void;
   onUpdated?: () => void;
   batches: Batch[];
@@ -56,13 +57,14 @@ type TabType =
 
 export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
   staffId,
+  initialStaff,
   onBack,
   onUpdated,
   batches,
   onOpenBatchAssignments,
 }) => {
-  const [staff, setStaff] = useState<StaffMember | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [staff, setStaff] = useState<StaffMember | null>(initialStaff || null);
+  const [loading, setLoading] = useState(!initialStaff);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
@@ -160,6 +162,45 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
   const [resetMsg, setResetMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+
+  const populateForms = (s: StaffMember) => {
+    setPersonalForm({
+      fullName: s.user?.fullName || '',
+      phone: s.user?.phone || '',
+      dob: s.dob ? s.dob.split('T')[0] : '',
+      gender: s.gender || '',
+      altPhone: s.altPhone || '',
+      personalEmail: s.personalEmail || '',
+      emergencyContactName: s.emergencyContactName || '',
+      emergencyContactRelation: s.emergencyContactRelation || '',
+      emergencyContactPhone: s.emergencyContactPhone || '',
+      currentAddressLine1: s.currentAddressLine1 || '',
+      currentAddressLine2: s.currentAddressLine2 || '',
+      currentCity: s.currentCity || '',
+      currentState: s.currentState || '',
+      currentPostalCode: s.currentPostalCode || '',
+      currentCountry: s.currentCountry || 'India',
+      permanentAddressLine1: s.permanentAddressLine1 || '',
+      permanentAddressLine2: s.permanentAddressLine2 || '',
+      permanentCity: s.permanentCity || '',
+      permanentState: s.permanentState || '',
+      permanentPostalCode: s.permanentPostalCode || '',
+      permanentCountry: s.permanentCountry || 'India',
+      sameAsCurrentAddress: !!s.sameAsCurrentAddress,
+    });
+
+    setEmploymentForm({
+      employeeCode: s.employeeCode || '',
+      designation: s.designation || '',
+      department: s.department || '',
+      employmentType: s.employmentType || 'FULL_TIME',
+      joiningDate: s.joiningDate ? s.joiningDate.split('T')[0] : '',
+      probationEndDate: s.probationEndDate ? s.probationEndDate.split('T')[0] : '',
+      workLocation: s.workLocation || '',
+      employmentNotes: s.employmentNotes || '',
+    });
+  };
+
   // Load Staff Details
   const fetchStaffDetails = async () => {
     try {
@@ -169,44 +210,7 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
       if (res.success && res.data?.staff) {
         const s: StaffMember = res.data.staff;
         setStaff(s);
-
-        // Populate personal form
-        setPersonalForm({
-          fullName: s.user?.fullName || '',
-          phone: s.user?.phone || '',
-          dob: s.dob ? s.dob.split('T')[0] : '',
-          gender: s.gender || '',
-          altPhone: s.altPhone || '',
-          personalEmail: s.personalEmail || '',
-          emergencyContactName: s.emergencyContactName || '',
-          emergencyContactRelation: s.emergencyContactRelation || '',
-          emergencyContactPhone: s.emergencyContactPhone || '',
-          currentAddressLine1: s.currentAddressLine1 || '',
-          currentAddressLine2: s.currentAddressLine2 || '',
-          currentCity: s.currentCity || '',
-          currentState: s.currentState || '',
-          currentPostalCode: s.currentPostalCode || '',
-          currentCountry: s.currentCountry || 'India',
-          permanentAddressLine1: s.permanentAddressLine1 || '',
-          permanentAddressLine2: s.permanentAddressLine2 || '',
-          permanentCity: s.permanentCity || '',
-          permanentState: s.permanentState || '',
-          permanentPostalCode: s.permanentPostalCode || '',
-          permanentCountry: s.permanentCountry || 'India',
-          sameAsCurrentAddress: !!s.sameAsCurrentAddress,
-        });
-
-        // Populate employment form
-        setEmploymentForm({
-          employeeCode: s.employeeCode || '',
-          designation: s.designation || '',
-          department: s.department || '',
-          employmentType: s.employmentType || 'FULL_TIME',
-          joiningDate: s.joiningDate ? s.joiningDate.split('T')[0] : '',
-          probationEndDate: s.probationEndDate ? s.probationEndDate.split('T')[0] : '',
-          workLocation: s.workLocation || '',
-          employmentNotes: s.employmentNotes || '',
-        });
+        populateForms(s);
       } else {
         setError('Staff profile could not be loaded');
       }

@@ -1,30 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { Login } from './pages/Login';
-import { SuperAdminDashboard } from './pages/SuperAdminDashboard';
-import { AcademicAdminDashboard } from './pages/AcademicAdminDashboard';
-import { StaffManagement } from './pages/StaffManagement';
-import { StaffAttendanceAdmin } from './pages/StaffAttendanceAdmin';
-import { StaffMyAttendance } from './pages/StaffMyAttendance';
-import { StudentManagement } from './pages/StudentManagement';
-import { AcademicsManagement } from './pages/AcademicsManagement';
-import { AttendanceManagement } from './pages/AttendanceManagement';
-import { ParentPortal } from './pages/ParentPortal';
-import { StudentPortal } from './pages/StudentPortal';
-import { MaterialsManagement } from './pages/MaterialsManagement';
-import { HomeworkManagement } from './pages/HomeworkManagement';
-import { ExaminationsManagement } from './pages/ExaminationsManagement';
-import { QuestionGenerator } from './pages/QuestionGenerator/QuestionGenerator';
-import { ProgressReviewsManagement } from './pages/ProgressReviewsManagement';
-import { MessagingInbox } from './pages/MessagingInbox';
-import { FeesManagement } from './pages/FeesManagement';
+import { PageSkeleton } from './components/PageSkeleton';
 import { ToastProvider } from './context/ToastContext';
-
 import { motion, AnimatePresence } from 'framer-motion';
 import { pageTransitionVariants } from './utils/animations';
+
+// Route-level code splitting via React.lazy
+const SuperAdminDashboard = lazy(() => import('./pages/SuperAdminDashboard').then((m) => ({ default: m.SuperAdminDashboard })));
+const AcademicAdminDashboard = lazy(() => import('./pages/AcademicAdminDashboard').then((m) => ({ default: m.AcademicAdminDashboard })));
+const StaffManagement = lazy(() => import('./pages/StaffManagement').then((m) => ({ default: m.StaffManagement })));
+const StaffAttendanceAdmin = lazy(() => import('./pages/StaffAttendanceAdmin').then((m) => ({ default: m.StaffAttendanceAdmin })));
+const StaffMyAttendance = lazy(() => import('./pages/StaffMyAttendance').then((m) => ({ default: m.StaffMyAttendance })));
+const StudentManagement = lazy(() => import('./pages/StudentManagement').then((m) => ({ default: m.StudentManagement })));
+const AcademicsManagement = lazy(() => import('./pages/AcademicsManagement').then((m) => ({ default: m.AcademicsManagement })));
+const AttendanceManagement = lazy(() => import('./pages/AttendanceManagement').then((m) => ({ default: m.AttendanceManagement })));
+const ParentPortal = lazy(() => import('./pages/ParentPortal').then((m) => ({ default: m.ParentPortal })));
+const StudentPortal = lazy(() => import('./pages/StudentPortal').then((m) => ({ default: m.StudentPortal })));
+const MaterialsManagement = lazy(() => import('./pages/MaterialsManagement').then((m) => ({ default: m.MaterialsManagement })));
+const HomeworkManagement = lazy(() => import('./pages/HomeworkManagement').then((m) => ({ default: m.HomeworkManagement })));
+const ExaminationsManagement = lazy(() => import('./pages/ExaminationsManagement').then((m) => ({ default: m.ExaminationsManagement })));
+const QuestionGenerator = lazy(() => import('./pages/QuestionGenerator/QuestionGenerator').then((m) => ({ default: m.QuestionGenerator })));
+const ProgressReviewsManagement = lazy(() => import('./pages/ProgressReviewsManagement').then((m) => ({ default: m.ProgressReviewsManagement })));
+const MessagingInbox = lazy(() => import('./pages/MessagingInbox').then((m) => ({ default: m.MessagingInbox })));
+const FeesManagement = lazy(() => import('./pages/FeesManagement').then((m) => ({ default: m.FeesManagement })));
+
+const getDefaultTabForRole = (role?: string): string => {
+  switch (role) {
+    case 'SUPER_ADMIN':
+      return 'super_admin_dashboard';
+    case 'ACADEMIC_ADMIN':
+      return 'academic_dashboard';
+    case 'STAFF':
+      return 'my_attendance';
+    case 'PARENT':
+      return 'parent_dashboard';
+    case 'STUDENT':
+      return 'student_portal';
+    default:
+      return 'academic_dashboard';
+  }
+};
+
+const isTabAllowedForRole = (tab: string, role?: string): boolean => {
+  if (!role) return false;
+  switch (role) {
+    case 'SUPER_ADMIN':
+      return ['super_admin_dashboard', 'staff_attendance', 'staff', 'students', 'academics', 'exams', 'fees'].includes(tab);
+    case 'ACADEMIC_ADMIN':
+      return ['academic_dashboard', 'staff', 'staff_attendance', 'students', 'academics', 'exams', 'question_generator', 'progress_reviews', 'messaging', 'fees'].includes(tab);
+    case 'STAFF':
+      return ['my_attendance', 'attendance', 'academic_dashboard', 'students', 'materials', 'homework', 'exams', 'progress_reviews', 'messaging'].includes(tab);
+    case 'PARENT':
+      return tab === 'parent_portal' || tab.startsWith('parent_') || tab === 'progress_reviews';
+    case 'STUDENT':
+      return ['student_portal', 'materials', 'homework', 'exams', 'progress_reviews'].includes(tab) || tab.startsWith('student_');
+    default:
+      return false;
+  }
+};
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -36,25 +73,16 @@ const AppContent: React.FC = () => {
     return 'academic_dashboard';
   });
 
-  
-
   useEffect(() => {
     if (user) {
       const raw = window.location.pathname.replace(/^\//, '').trim();
-      if (raw && raw !== '/') {
-        setCurrentTab(raw === 'learning_materials' ? 'materials' : raw);
+      const targetTab = raw === 'learning_materials' ? 'materials' : raw;
+      if (targetTab && isTabAllowedForRole(targetTab, user.role)) {
+        setCurrentTab(targetTab);
       } else {
-        if (user.role === 'SUPER_ADMIN') {
-          setCurrentTab('super_admin_dashboard');
-        } else if (user.role === 'ACADEMIC_ADMIN') {
-          setCurrentTab('academic_dashboard');
-        } else if (user.role === 'STAFF') {
-          setCurrentTab('my_attendance');
-        } else if (user.role === 'PARENT') {
-          setCurrentTab('parent_dashboard');
-        } else if (user.role === 'STUDENT') {
-          setCurrentTab('student_portal');
-        }
+        const defaultTab = getDefaultTabForRole(user.role);
+        setCurrentTab(defaultTab);
+        window.history.replaceState({}, '', `/${defaultTab}`);
       }
     }
   }, [user]);
@@ -63,13 +91,23 @@ const AppContent: React.FC = () => {
     const handleTabChange = (e: any) => {
       const { tab } = e.detail || {};
       if (tab) {
-        setCurrentTab(tab === 'learning_materials' ? 'materials' : tab);
+        const normalized = tab === 'learning_materials' ? 'materials' : tab;
+        if (!user || isTabAllowedForRole(normalized, user.role)) {
+          setCurrentTab(normalized);
+        }
       }
     };
     const handlePopState = () => {
       const raw = window.location.pathname.replace(/^\//, '').trim();
       if (raw) {
-        setCurrentTab(raw === 'learning_materials' ? 'materials' : raw);
+        const normalized = raw === 'learning_materials' ? 'materials' : raw;
+        if (!user || isTabAllowedForRole(normalized, user.role)) {
+          setCurrentTab(normalized);
+        } else if (user) {
+          const defaultTab = getDefaultTabForRole(user.role);
+          setCurrentTab(defaultTab);
+          window.history.replaceState({}, '', `/${defaultTab}`);
+        }
       }
     };
 
@@ -79,14 +117,13 @@ const AppContent: React.FC = () => {
       window.removeEventListener('tuitionos:tab-change', handleTabChange);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (user?.role === 'ACADEMIC_ADMIN' && (currentTab === 'materials' || currentTab === 'homework' || currentTab === 'attendance' || currentTab === 'my_attendance')) {
-      setCurrentTab('staff_attendance');
-    }
-    if (user?.role === 'STAFF' && (currentTab === 'fees' || currentTab === 'academics' || currentTab === 'staff' || currentTab === 'staff_attendance')) {
-      setCurrentTab('my_attendance');
+    if (user && !isTabAllowedForRole(currentTab, user.role)) {
+      const defaultTab = getDefaultTabForRole(user.role);
+      setCurrentTab(defaultTab);
+      window.history.replaceState({}, '', `/${defaultTab}`);
     }
   }, [user, currentTab]);
 
@@ -114,71 +151,72 @@ const AppContent: React.FC = () => {
 
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#F7F2EF]">
           <div className="max-w-7xl mx-auto">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentTab}
-                variants={pageTransitionVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-              >
-                {currentTab === 'super_admin_dashboard' && (
-                  <SuperAdminDashboard />
-                )}
+            <Suspense fallback={<PageSkeleton />}>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentTab}
+                  variants={pageTransitionVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  {currentTab === 'super_admin_dashboard' && user.role === 'SUPER_ADMIN' && (
+                    <SuperAdminDashboard />
+                  )}
 
-                {currentTab === 'academic_dashboard' && (
-                  <AcademicAdminDashboard onNavigateTab={(tab) => setCurrentTab(tab)} />
-                )}
+                  {currentTab === 'academic_dashboard' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF' || user.role === 'SUPER_ADMIN') && (
+                    <AcademicAdminDashboard onNavigateTab={(tab) => setCurrentTab(tab)} />
+                  )}
 
-                {currentTab === 'staff' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <StaffManagement />}
+                  {currentTab === 'staff' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <StaffManagement />}
 
-                {currentTab === 'staff_attendance' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
-                  <StaffAttendanceAdmin onNavigateTab={(tab) => setCurrentTab(tab)} />
-                )}
+                  {currentTab === 'staff_attendance' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
+                    <StaffAttendanceAdmin onNavigateTab={(tab) => setCurrentTab(tab)} />
+                  )}
 
-                {currentTab === 'my_attendance' && user.role === 'STAFF' && <StaffMyAttendance />}
+                  {currentTab === 'my_attendance' && user.role === 'STAFF' && <StaffMyAttendance />}
 
-                {currentTab === 'students' && <StudentManagement />}
+                  {currentTab === 'students' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'STAFF') && <StudentManagement />}
 
-                {currentTab === 'academics' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
-                  <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
-                )}
+                  {currentTab === 'academics' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
+                    <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
+                  )}
 
-                {currentTab === 'attendance' && user.role === 'STAFF' && <AttendanceManagement />}
+                  {currentTab === 'attendance' && user.role === 'STAFF' && <AttendanceManagement />}
 
-                {(currentTab === 'parent_portal' || currentTab.startsWith('parent_')) && (
-                  <ParentPortal
-                    initialTab={
-                      currentTab === 'parent_portal' || currentTab === 'parent_dashboard'
-                        ? 'dashboard'
-                        : currentTab.replace('parent_', '')
-                    }
-                  />
-                )}
+                  {(currentTab === 'parent_portal' || currentTab.startsWith('parent_')) && user.role === 'PARENT' && (
+                    <ParentPortal
+                      initialTab={
+                        currentTab === 'parent_portal' || currentTab === 'parent_dashboard'
+                          ? 'dashboard'
+                          : currentTab.replace('parent_', '')
+                      }
+                    />
+                  )}
 
-                {currentTab === 'student_portal' && <StudentPortal />}
+                  {currentTab === 'student_portal' && user.role === 'STUDENT' && <StudentPortal />}
 
-                {currentTab === 'materials' && user?.role !== 'ACADEMIC_ADMIN' && <MaterialsManagement />}
+                  {currentTab === 'materials' && (user.role === 'STAFF' || user.role === 'STUDENT') && <MaterialsManagement />}
 
-                {currentTab === 'homework' && user?.role !== 'ACADEMIC_ADMIN' && <HomeworkManagement />}
+                  {currentTab === 'homework' && (user.role === 'STAFF' || user.role === 'STUDENT') && <HomeworkManagement />}
 
-                {currentTab === 'exams' && <ExaminationsManagement />}
+                  {currentTab === 'exams' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'STAFF' || user.role === 'STUDENT') && <ExaminationsManagement />}
 
-                {currentTab === 'question_generator' && <QuestionGenerator />}
+                  {currentTab === 'question_generator' && user.role === 'ACADEMIC_ADMIN' && <QuestionGenerator />}
 
-                {currentTab === 'progress_reviews' && <ProgressReviewsManagement />}
+                  {currentTab === 'progress_reviews' && <ProgressReviewsManagement />}
 
-                {currentTab === 'messaging' && <MessagingInbox />}
-                {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
-              </motion.div>
-            </AnimatePresence>
+                  {currentTab === 'messaging' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF') && <MessagingInbox />}
+                  {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
+                </motion.div>
+              </AnimatePresence>
+            </Suspense>
           </div>
         </main>
       </div>
     </div>
   );
 };
-
 
 export default function App() {
   return (
