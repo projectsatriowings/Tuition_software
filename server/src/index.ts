@@ -47,7 +47,7 @@ app.use(
 );
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (origin: any, callback: any) => {
       // In development, allow localhost, local network, and non-browser clients (mobile apps, curl, server-to-server)
       if (!origin || config.nodeEnv !== 'production') {
         return callback(null, true);
