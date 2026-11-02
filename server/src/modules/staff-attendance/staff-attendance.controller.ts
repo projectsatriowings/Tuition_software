@@ -1,5 +1,32 @@
+// In-memory cache for institute timezone & hours to eliminate 250ms cross-continent round trips
+interface CachedInstituteSettings {
+  timezone: string;
+  workEndTime: string | null;
+  expiry: number;
+}
+const instituteSettingsCache = new Map<string, CachedInstituteSettings>();
+
+async function getCachedInstituteSettings(instituteId: string): Promise<CachedInstituteSettings> {
+  const cached = instituteSettingsCache.get(instituteId);
+  if (cached && cached.expiry > Date.now()) {
+    return cached;
+  }
+  const inst = await prisma.institute.findUnique({
+    where: { id: instituteId },
+    select: { timezone: true, workEndTime: true },
+  });
+  const val: CachedInstituteSettings = {
+    timezone: inst?.timezone || 'Asia/Kolkata',
+    workEndTime: inst?.workEndTime || null,
+    expiry: Date.now() + 300000,
+  };
+  instituteSettingsCache.set(instituteId, val);
+  return val;
+}
+
 import { Response } from 'express';
-import { PrismaClient, StaffAttendanceStatus, StaffAttendanceEventType } from '@prisma/client';
+import { StaffAttendanceStatus, StaffAttendanceEventType } from '@prisma/client';
+import { prisma } from '../../prisma.js';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
@@ -22,7 +49,7 @@ import {
   WFHReasonCategory,
 } from './wfh.service.js';
 
-const prisma = new PrismaClient();
+
 
 // Helper to get local date in Institute timezone as a UTC midnight Date
 export function getLocalDateForInstitute(date = new Date(), timezone = 'Asia/Kolkata'): Date {
@@ -782,29 +809,30 @@ export async function getAdminDashboardSummary(req: AuthenticatedRequest, res: R
       return;
     }
 
-    const institute = await prisma.institute.findUnique({
-      where: { id: instituteId },
-      select: { timezone: true, workEndTime: true },
-    });
+    const instSettings = await getCachedInstituteSettings(instituteId);
+    const today = getLocalDateForInstitute(new Date(), instSettings.timezone);
 
-    const timezone = institute?.timezone || 'Asia/Kolkata';
-    const today = getLocalDateForInstitute(new Date(), timezone);
-
-    // Total active staff in institute
-    const totalActiveStaff = await prisma.staffProfile.count({
-      where: {
-        instituteId,
-        user: { isActive: true },
-      },
-    });
-
-    // Today's sessions
-    const todaySessions = await prisma.staffAttendanceSession.findMany({
-      where: {
-        instituteId,
-        attendanceDate: today,
-      },
-    });
+    // Concurrently fetch active staff count and today's sessions
+    const [totalActiveStaff, todaySessions] = await Promise.all([
+      prisma.staffProfile.count({
+        where: {
+          instituteId,
+          user: { isActive: true },
+        },
+      }),
+      prisma.staffAttendanceSession.findMany({
+        where: {
+          instituteId,
+          attendanceDate: today,
+        },
+        select: {
+          id: true,
+          status: true,
+          isLate: true,
+          checkOutTime: true,
+        },
+      }),
+    ]);
 
     const presentToday = todaySessions.filter((s) =>
       ['CHECKED_IN', 'CHECKED_OUT', 'LATE', 'MANUALLY_CORRECTED'].includes(s.status)
@@ -850,14 +878,11 @@ export async function getAdminDailyRegister(req: AuthenticatedRequest, res: Resp
 
     const { date, search, status, department, mode } = req.query;
 
-    const institute = await prisma.institute.findUnique({
-      where: { id: instituteId },
-      select: { timezone: true },
-    });
+    const instSettings = await getCachedInstituteSettings(instituteId);
 
     const targetDate = date && typeof date === 'string'
       ? new Date(`${date}T00:00:00.000Z`)
-      : getLocalDateForInstitute(new Date(), institute?.timezone || 'Asia/Kolkata');
+      : getLocalDateForInstitute(new Date(), instSettings.timezone);
 
     // Fetch all active staff
     const staffWhere: any = {
@@ -879,29 +904,55 @@ export async function getAdminDailyRegister(req: AuthenticatedRequest, res: Resp
       ];
     }
 
-    const allStaff = await prisma.staffProfile.findMany({
-      where: staffWhere,
-      include: {
-        user: { select: { fullName: true, email: true, phone: true } },
-      },
-      orderBy: { employeeCode: 'asc' },
-    });
-
-    // Fetch sessions for this date
-    const sessions = await prisma.staffAttendanceSession.findMany({
-      where: {
-        instituteId,
-        attendanceDate: targetDate,
-      },
-      include: {
-        events: {
-          orderBy: { serverTimestamp: 'asc' },
+    // Parallel fetch: Staff Profiles + Sessions in 1 concurrent round trip
+    const [allStaff, sessions] = await Promise.all([
+      prisma.staffProfile.findMany({
+        where: staffWhere,
+        select: {
+          id: true,
+          employeeCode: true,
+          designation: true,
+          department: true,
+          workLocation: true,
+          avatarUrl: true,
+          user: { select: { fullName: true, email: true, phone: true } },
         },
-        correctedBy: {
-          select: { fullName: true, email: true },
+        orderBy: { employeeCode: 'asc' },
+      }),
+      prisma.staffAttendanceSession.findMany({
+        where: {
+          instituteId,
+          attendanceDate: targetDate,
         },
-      },
-    });
+        select: {
+          id: true,
+          staffId: true,
+          status: true,
+          attendanceMode: true,
+          checkInTime: true,
+          checkOutTime: true,
+          workDurationMinutes: true,
+          isLate: true,
+          isManuallyCorrected: true,
+          correctionReason: true,
+          wfhAuthorizationId: true,
+          correctedBy: {
+            select: { fullName: true, email: true },
+          },
+          events: {
+            select: {
+              eventType: true,
+              serverTimestamp: true,
+              distanceFromCenter: true,
+              accuracy: true,
+              isWithinGeofence: true,
+              validationOutcome: true,
+            },
+            orderBy: { serverTimestamp: 'asc' },
+          },
+        },
+      }),
+    ]);
 
     const sessionMap = new Map(sessions.map((s) => [s.staffId, s]));
 

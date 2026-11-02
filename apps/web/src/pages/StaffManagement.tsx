@@ -52,7 +52,7 @@ export const StaffManagement: React.FC = () => {
   }, [openMenuStaffId]);
 
   // Selected staff profile view state
-  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
 
   // Add staff modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -107,7 +107,10 @@ export const StaffManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
+    const timer = setTimeout(() => {
+      fetchData();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const handleOpenAssignmentModal = (item: StaffMember) => {
@@ -327,12 +330,13 @@ export const StaffManagement: React.FC = () => {
   };
 
   // If a staff profile is selected, render the full Profile View
-  if (selectedStaffId) {
+  if (selectedStaff) {
     return (
       <StaffProfileView
-        staffId={selectedStaffId}
+        staffId={selectedStaff.id}
+        initialStaff={selectedStaff}
         onBack={() => {
-          setSelectedStaffId(null);
+          setSelectedStaff(null);
           fetchData();
         }}
         onUpdated={fetchData}
@@ -410,7 +414,7 @@ export const StaffManagement: React.FC = () => {
                 staff.map((item) => (
                   <tr
                     key={item.id}
-                    onClick={() => setSelectedStaffId(item.id)}
+                    onClick={() => setSelectedStaff(item)}
                     className="hover:bg-[#FAF8F5] cursor-pointer transition-colors group"
                   >
                     <td className="py-3.5 px-4">
@@ -521,7 +525,7 @@ export const StaffManagement: React.FC = () => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setOpenMenuStaffId(null);
-                                setSelectedStaffId(item.id);
+                                setSelectedStaff(item);
                               }}
                               className="w-full text-left px-3.5 py-2 hover:bg-[#FAF8F5] hover:text-[#4E342E] flex items-center gap-2.5 transition-colors"
                             >
@@ -726,7 +730,7 @@ export const StaffManagement: React.FC = () => {
                       const id = createdStaffId;
                       setCreatedCredential(null);
                       setCreatedStaffId(null);
-                      setSelectedStaffId(id);
+                      setSelectedStaff(staff.find((s) => s.id === id) || ({ id } as any));
                     }}
                     className="inline-flex items-center justify-center gap-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition"
                   >

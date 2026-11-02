@@ -169,7 +169,17 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
     const staffList = await prisma.staffProfile.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        id: true,
+        instituteId: true,
+        userId: true,
+        employeeCode: true,
+        designation: true,
+        department: true,
+        employmentType: true,
+        avatarUrl: true,
+        permissionsJson: true,
+        createdAt: true,
         user: {
           select: {
             id: true,
@@ -182,25 +192,27 @@ export async function listStaff(req: AuthenticatedRequest, res: Response) {
           },
         },
         assignments: {
-          include: {
+          select: {
+            id: true,
+            batchId: true,
             batch: {
               select: {
                 id: true,
                 name: true,
+                code: true,
                 academicYear: true,
               },
             },
           },
         },
         batchSubjects: {
-          include: {
+          select: {
+            id: true,
+            batchId: true,
+            subjectId: true,
             batch: { select: { id: true, name: true, code: true } },
             subject: { select: { id: true, name: true, code: true } },
           },
-        },
-        qualifications: {
-          orderBy: { yearOfPassing: 'desc' },
-          take: 3,
         },
       },
     });
@@ -530,8 +542,17 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
           },
         },
         assignments: {
-          include: {
-            batch: true,
+          select: {
+            id: true,
+            batchId: true,
+            batch: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                academicYear: true,
+              },
+            },
           },
         },
         batchSubjects: {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { ParentDashboardView } from './parent/ParentDashboardView';
 import { ParentAttendanceView } from './parent/ParentAttendanceView';
 import { ParentCommunicationView } from './parent/ParentCommunicationView';
@@ -29,6 +30,7 @@ interface ParentPortalProps {
 }
 
 export const ParentPortal: React.FC<ParentPortalProps> = ({ initialTab = 'dashboard' }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<string>(initialTab);
   const [children, setChildren] = useState<any[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -45,6 +47,10 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({ initialTab = 'dashbo
 
   // Initial load: Fetch children and dashboard summary
   const loadPortalData = async () => {
+    if (user && user.role !== 'PARENT') {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -153,6 +159,28 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({ initialTab = 'dashbo
     },
     { id: 'profile', label: 'Student Profile', icon: User },
   ];
+
+  if (user && user.role !== 'PARENT') {
+    return (
+      <div className="p-8 rounded-3xl bg-amber-50 border border-amber-200 text-amber-900 text-sm text-center space-y-4 max-w-lg mx-auto mt-12 shadow-sm">
+        <AlertCircle className="w-10 h-10 mx-auto text-amber-600" />
+        <h3 className="font-bold text-base text-[#3E2723]">Parent Portal Access Only</h3>
+        <p className="text-xs text-[#5D4037]">
+          You are currently signed in as <strong>{user.fullName}</strong> ({user.role?.replace('_', ' ')}).
+          The Parent Portal is reserved for registered student guardians.
+        </p>
+        <button
+          onClick={() => {
+            const dest = user.role === 'ACADEMIC_ADMIN' ? 'academic_dashboard' : user.role === 'STAFF' ? 'my_attendance' : 'super_admin_dashboard';
+            window.location.href = '/' + dest;
+          }}
+          className="px-5 py-2.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white font-bold text-xs inline-flex items-center gap-2 shadow-sm transition-all"
+        >
+          Return to My Dashboard
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

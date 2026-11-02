@@ -1,11 +1,11 @@
 import { Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { InAppNotificationService } from '../notifications/inapp-notification.service.js';
 import { getAuthorizedStudentScope, isStudentAuthorized } from '../students/student-authorization.service.js';
 
-const prisma = new PrismaClient();
+import { prisma } from '../../prisma.js';
 
 export const FEEDBACK_CATEGORIES = [
   'Academic Progress',
