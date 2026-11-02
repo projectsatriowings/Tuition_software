@@ -60,6 +60,7 @@ export const StaffMyAttendance: React.FC = () => {
   // Staff WFH Requests & Modal
   const [myWfhRequests, setMyWfhRequests] = useState<any[]>([]);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestDurationType, setRequestDurationType] = useState<'SINGLE_DAY' | 'DATE_RANGE'>('SINGLE_DAY');
   const [requestStartDate, setRequestStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [requestEndDate, setRequestEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [requestReasonCategory, setRequestReasonCategory] = useState('WEATHER_DISRUPTION');
@@ -423,11 +424,12 @@ export const StaffMyAttendance: React.FC = () => {
     }
     try {
       setRequestSubmitting(true);
+      const finalEndDate = requestDurationType === 'SINGLE_DAY' ? requestStartDate : requestEndDate;
       const res = await apiFetch('/staff-attendance/wfh/request', {
         method: 'POST',
         body: JSON.stringify({
           startDate: requestStartDate,
-          endDate: requestEndDate,
+          endDate: finalEndDate,
           reasonCategory: requestReasonCategory,
           reason: requestReason.trim(),
           notes: requestNotes.trim() || undefined,
@@ -716,7 +718,11 @@ export const StaffMyAttendance: React.FC = () => {
                       .filter((r) => r.status === 'PENDING')
                       .map((req) => (
                         <div key={req.id} className="text-[11px] text-stone-700">
-                          • {new Date(req.startDate).toLocaleDateString()} to {new Date(req.endDate).toLocaleDateString()} — {req.reason}
+                          • {(() => {
+                            const s = new Date(req.startDate).toLocaleDateString();
+                            const e = new Date(req.endDate).toLocaleDateString();
+                            return s === e ? `${s} (Single Day)` : `${s} to ${e}`;
+                          })()} — {req.reason}
                         </div>
                       ))}
                   </div>
@@ -1134,28 +1140,80 @@ export const StaffMyAttendance: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmitWfhRequest} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center justify-between p-1 bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl mb-1">
+                <span className="text-xs font-semibold text-[#8D6E63] ml-2">Duration:</span>
+                <div className="inline-flex rounded-lg p-0.5 bg-white border border-[#D7CCC8]/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequestDurationType('SINGLE_DAY');
+                      setRequestEndDate(requestStartDate);
+                    }}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                      requestDurationType === 'SINGLE_DAY'
+                        ? 'bg-[#4E342E] text-white shadow-xs'
+                        : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                    }`}
+                  >
+                    Single Day
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequestDurationType('DATE_RANGE')}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                      requestDurationType === 'DATE_RANGE'
+                        ? 'bg-[#4E342E] text-white shadow-xs'
+                        : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                    }`}
+                  >
+                    Multiple Days
+                  </button>
+                </div>
+              </div>
+
+              {requestDurationType === 'SINGLE_DAY' ? (
                 <div>
-                  <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Start Date *</label>
+                  <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Date *</label>
                   <input
                     type="date"
                     required
                     value={requestStartDate}
-                    onChange={(e) => setRequestStartDate(e.target.value)}
+                    onChange={(e) => {
+                      setRequestStartDate(e.target.value);
+                      setRequestEndDate(e.target.value);
+                    }}
                     className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#2D1E18] mb-1">End Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={requestEndDate}
-                    onChange={(e) => setRequestEndDate(e.target.value)}
-                    className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
-                  />
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Start Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={requestStartDate}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setRequestStartDate(val);
+                        if (requestEndDate < val) setRequestEndDate(val);
+                      }}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#2D1E18] mb-1">End Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={requestEndDate}
+                      min={requestStartDate}
+                      onChange={(e) => setRequestEndDate(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Reason Category *</label>

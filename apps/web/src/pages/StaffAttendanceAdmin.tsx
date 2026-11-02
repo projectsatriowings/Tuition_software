@@ -73,6 +73,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
   const [wfhScope, setWfhScope] = useState<'INSTITUTE_WIDE' | 'INDIVIDUAL' | 'GROUP'>('INSTITUTE_WIDE');
   const [wfhStaffId, setWfhStaffId] = useState('');
   const [wfhSelectedStaffIds, setWfhSelectedStaffIds] = useState<string[]>([]);
+  const [wfhDurationType, setWfhDurationType] = useState<'SINGLE_DAY' | 'DATE_RANGE'>('SINGLE_DAY');
   const [wfhStartDate, setWfhStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [wfhEndDate, setWfhEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [wfhReasonCategory, setWfhReasonCategory] = useState('WEATHER_DISRUPTION');
@@ -429,10 +430,11 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
   const handleCreateWfhAuthorization = async () => {
     try {
       setWfhCreating(true);
+      const finalEndDate = wfhDurationType === 'SINGLE_DAY' ? wfhStartDate : wfhEndDate;
       const payload: any = {
         scope: wfhScope,
         startDate: wfhStartDate,
-        endDate: wfhEndDate,
+        endDate: finalEndDate,
         reasonCategory: wfhReasonCategory,
         reason: wfhReason.trim(),
         notes: wfhNotes.trim() || undefined,
@@ -944,7 +946,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Authorization Scope *</label>
                 <select
@@ -958,24 +960,79 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">Start Date *</label>
-                <input
-                  type="date"
-                  value={wfhStartDate}
-                  onChange={(e) => setWfhStartDate(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
-                />
-              </div>
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-[#2D1E18]">
+                    {wfhDurationType === 'SINGLE_DAY' ? 'Date *' : 'Dates (From / To) *'}
+                  </label>
+                  <div className="inline-flex rounded-lg border border-[#D7CCC8] p-0.5 bg-[#FAF8F5]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWfhDurationType('SINGLE_DAY');
+                        setWfhEndDate(wfhStartDate);
+                      }}
+                      className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-md transition-all ${
+                        wfhDurationType === 'SINGLE_DAY'
+                          ? 'bg-[#4E342E] text-white shadow-xs'
+                          : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                      }`}
+                    >
+                      Single Day
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWfhDurationType('DATE_RANGE')}
+                      className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-md transition-all ${
+                        wfhDurationType === 'DATE_RANGE'
+                          ? 'bg-[#4E342E] text-white shadow-xs'
+                          : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                      }`}
+                    >
+                      Multiple Days
+                    </button>
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#2D1E18] mb-1">End Date *</label>
-                <input
-                  type="date"
-                  value={wfhEndDate}
-                  onChange={(e) => setWfhEndDate(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
-                />
+                {wfhDurationType === 'SINGLE_DAY' ? (
+                  <div>
+                    <input
+                      type="date"
+                      value={wfhStartDate}
+                      onChange={(e) => {
+                        setWfhStartDate(e.target.value);
+                        setWfhEndDate(e.target.value);
+                      }}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <input
+                        type="date"
+                        value={wfhStartDate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setWfhStartDate(val);
+                          if (wfhEndDate < val) setWfhEndDate(val);
+                        }}
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                        title="Start Date"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="date"
+                        value={wfhEndDate}
+                        min={wfhStartDate}
+                        onChange={(e) => setWfhEndDate(e.target.value)}
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-[#D7CCC8] bg-[#FAF8F5] text-[#2D1E18] focus:outline-none"
+                        title="End Date"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1143,7 +1200,11 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                             <div className="text-[10px] text-[#8D6E63]">{req.staff?.employeeCode}</div>
                           </td>
                           <td className="py-3 px-4 text-stone-700">
-                            {new Date(req.startDate).toLocaleDateString()} to {new Date(req.endDate).toLocaleDateString()}
+                            {(() => {
+                              const s = new Date(req.startDate).toLocaleDateString();
+                              const e = new Date(req.endDate).toLocaleDateString();
+                              return s === e ? `${s} (Single Day)` : `${s} to ${e}`;
+                            })()}
                           </td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 text-stone-700">
@@ -1282,7 +1343,11 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-stone-700 font-mono text-[11px]">
-                          {new Date(auth.startDate).toLocaleDateString()} to {new Date(auth.endDate).toLocaleDateString()}
+                          {(() => {
+                            const s = new Date(auth.startDate).toLocaleDateString();
+                            const e = new Date(auth.endDate).toLocaleDateString();
+                            return s === e ? `${s} (Single Day)` : `${s} to ${e}`;
+                          })()}
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 text-stone-700">
@@ -1969,7 +2034,9 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
                 <div className="flex justify-between">
                   <span className="text-[#8D6E63]">Dates:</span>
                   <span className="font-semibold text-[#2D1E18]">
-                    {wfhStartDate} to {wfhEndDate}
+                    {wfhDurationType === 'SINGLE_DAY' || wfhStartDate === wfhEndDate
+                      ? `${wfhStartDate} (Single Day)`
+                      : `${wfhStartDate} to ${wfhEndDate}`}
                   </span>
                 </div>
                 <div className="flex justify-between">
