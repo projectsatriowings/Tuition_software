@@ -4,11 +4,11 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   TextInput,
   RefreshControl,
 } from 'react-native';
 import { StudentAvatar } from '../../../components/StudentAvatar';
+import { PressableScale } from '../../../theme/motion';
 
 interface AdminStudentsTabProps {
   students: any[];
@@ -62,13 +62,15 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
               {students.length} total registered students
             </Text>
           </View>
-          <TouchableOpacity
+          <PressableScale
             style={styles.admitBtn}
             onPress={onOpenAdmitModal}
-            activeOpacity={0.8}
+            activeScale={0.96}
+            accessibilityRole="button"
+            accessibilityLabel="Admit Student"
           >
             <Text style={styles.admitBtnText}>+ Admit Student</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
 
         {/* Search Input */}
@@ -83,9 +85,14 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
             clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <PressableScale
+              onPress={() => setSearchQuery('')}
+              activeScale={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
               <Text style={styles.clearSearchText}>✕</Text>
-            </TouchableOpacity>
+            </PressableScale>
           )}
         </View>
 
@@ -98,9 +105,13 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
           {(['ALL', 'ACTIVE', 'PASSED_OUT', 'DISCONTINUED'] as const).map((filter) => {
             const isSel = statusFilter === filter;
             return (
-              <TouchableOpacity
+              <PressableScale
                 key={filter}
                 onPress={() => setStatusFilter(filter)}
+                activeScale={0.96}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`${filter} filter`}
                 style={[styles.filterChip, isSel && styles.filterChipActive]}
               >
                 <Text
@@ -110,16 +121,20 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                   ]}
                 >
                   {filter === 'ALL'
-                    ? `ALL (${students.length})`
-                    : filter.replace('_', ' ')}
+                    ? `All (${students.length})`
+                    : filter === 'ACTIVE'
+                    ? 'Active'
+                    : filter === 'PASSED_OUT'
+                    ? 'Passed Out'
+                    : 'Discontinued'}
                 </Text>
-              </TouchableOpacity>
+              </PressableScale>
             );
           })}
         </ScrollView>
       </View>
 
-      {/* Student List */}
+      {/* Student Cards List */}
       <ScrollView
         style={styles.listContainer}
         contentContainerStyle={styles.listContent}
@@ -134,12 +149,12 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
       >
         {filteredStudents.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>👨‍🎓</Text>
+            <Text style={styles.emptyIcon}>🎓</Text>
             <Text style={styles.emptyTitle}>No Students Found</Text>
             <Text style={styles.emptySub}>
               {searchQuery
-                ? `No students match "${searchQuery}" in this filter.`
-                : 'No students enrolled under this filter category.'}
+                ? 'No student matches your search query.'
+                : 'No students matching the selected status filter.'}
             </Text>
           </View>
         ) : (
@@ -153,10 +168,13 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
 
             return (
               <View key={st.id} style={styles.studentCard}>
-                <TouchableOpacity
+                <PressableScale
                   style={styles.cardMainRow}
                   onPress={() => onSelectStudent(st.id)}
-                  activeOpacity={0.7}
+                  activeScale={0.985}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View profile for ${fullName}`}
                 >
                   <StudentAvatar
                     studentId={st.id}
@@ -205,40 +223,52 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                       </Text>
                     )}
                   </View>
-                </TouchableOpacity>
+                </PressableScale>
 
                 {/* Bottom Actions Row */}
                 <View style={styles.cardActionsRow}>
-                  <TouchableOpacity
+                  <PressableScale
                     style={styles.detailsBtn}
                     onPress={() => onSelectStudent(st.id)}
+                    activeScale={0.96}
+                    accessibilityRole="button"
+                    accessibilityLabel="View full profile"
                   >
                     <Text style={styles.detailsBtnText}>View Full Profile ➔</Text>
-                  </TouchableOpacity>
+                  </PressableScale>
 
                   <View style={styles.lifecycleBtnRow}>
                     {status === 'ACTIVE' ? (
                       <>
-                        <TouchableOpacity
+                        <PressableScale
                           style={styles.passBtn}
                           onPress={() => onStatusConfirm(st, 'PASSED_OUT')}
+                          activeScale={0.95}
+                          accessibilityRole="button"
+                          accessibilityLabel="Mark student passed out"
                         >
                           <Text style={styles.passBtnText}>Mark Passed</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                        </PressableScale>
+                        <PressableScale
                           style={styles.discBtn}
                           onPress={() => onStatusConfirm(st, 'DISCONTINUED')}
+                          activeScale={0.95}
+                          accessibilityRole="button"
+                          accessibilityLabel="Discontinue student"
                         >
                           <Text style={styles.discBtnText}>Discontinue</Text>
-                        </TouchableOpacity>
+                        </PressableScale>
                       </>
                     ) : (
-                      <TouchableOpacity
+                      <PressableScale
                         style={styles.reactivateBtn}
                         onPress={() => onStatusConfirm(st, 'ACTIVE')}
+                        activeScale={0.95}
+                        accessibilityRole="button"
+                        accessibilityLabel="Reactivate student"
                       >
                         <Text style={styles.reactivateBtnText}>Reactivate</Text>
-                      </TouchableOpacity>
+                      </PressableScale>
                     )}
                   </View>
                 </View>
@@ -507,4 +537,3 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
-

@@ -8,8 +8,10 @@ import {
   ViewStyle,
   TextStyle,
   StyleProp,
+  GestureResponderEvent,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { useReducedMotion, motionTokens } from '../../theme/motion';
 
 export interface MobileButtonProps {
   title: string;
@@ -23,6 +25,8 @@ export interface MobileButtonProps {
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   fullWidth?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
 }
 
 export const MobileButton: React.FC<MobileButtonProps> = ({
@@ -37,26 +41,62 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   style,
   textStyle,
   fullWidth = false,
+  accessibilityLabel,
+  testID,
 }) => {
+  const reducedMotion = useReducedMotion();
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(1)).current;
+  const lastPressTime = useRef<number>(0);
 
   const handlePressIn = () => {
     if (disabled || loading) return;
-    Animated.spring(scaleAnim, {
-      toValue: 0.96,
+
+    if (!reducedMotion) {
+      Animated.spring(scaleAnim, {
+        toValue: 0.97,
+        useNativeDriver: true,
+        speed: motionTokens.easing.spring.speed,
+        bounciness: motionTokens.easing.spring.bounciness,
+      }).start();
+    }
+
+    Animated.timing(opacityAnim, {
+      toValue: 0.88,
+      duration: motionTokens.duration.micro,
       useNativeDriver: true,
-      speed: 40,
-      bounciness: 4,
     }).start();
   };
 
   const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
+    if (disabled || loading) return;
+
+    if (!reducedMotion) {
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: motionTokens.easing.spring.speed,
+        bounciness: motionTokens.easing.spring.bounciness,
+      }).start();
+    }
+
+    Animated.timing(opacityAnim, {
       toValue: 1,
+      duration: motionTokens.duration.fast,
       useNativeDriver: true,
-      speed: 40,
-      bounciness: 4,
     }).start();
+  };
+
+  const handlePress = () => {
+    if (disabled || loading) return;
+
+    // Prevent double submission while an existing action is processing
+    const now = Date.now();
+    if (now - lastPressTime.current < 450) {
+      return;
+    }
+    lastPressTime.current = now;
+    onPress();
   };
 
   const getVariantStyles = (): { btn: ViewStyle; text: TextStyle; spinnerColor: string } => {
@@ -123,20 +163,9 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
             borderColor: 'transparent',
           },
           text: {
-            color: themeTokens.colors.primary,
+            color: themeTokens.colors.textPrimary,
           },
           spinnerColor: themeTokens.colors.primary,
-        };
-      default:
-        return {
-          btn: {
-            backgroundColor: themeTokens.colors.primary,
-            borderColor: themeTokens.colors.primary,
-          },
-          text: {
-            color: themeTokens.colors.textLight,
-          },
-          spinnerColor: themeTokens.colors.textLight,
         };
     }
   };
@@ -146,7 +175,7 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
       case 'sm':
         return {
           btn: {
-            paddingVertical: 8,
+            paddingVertical: 7,
             paddingHorizontal: 12,
             minHeight: 36,
             borderRadius: themeTokens.radii.md,
@@ -189,20 +218,26 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   return (
     <Animated.View
       style={[
-        { transform: [{ scale: scaleAnim }] },
+        {
+          opacity: opacityAnim,
+          transform: [{ scale: scaleAnim }],
+        },
         fullWidth && styles.fullWidth,
       ]}
     >
       <Pressable
-        onPress={onPress}
+        onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled || loading}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel || title}
+        testID={testID}
         style={[
           styles.baseButton,
           vStyles.btn,
           sStyles.btn,
-          disabled && styles.disabledButton,
+          (disabled || loading) && styles.disabledButton,
           style,
         ]}
       >
@@ -238,32 +273,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    shadowColor: '#3E2723',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  },
+  fullWidth: {
+    width: '100%',
   },
   baseText: {
     fontWeight: themeTokens.typography.weights.semibold,
     textAlign: 'center',
   },
-  fullWidth: {
-    width: '100%',
-  },
   disabledButton: {
-    opacity: 0.5,
-    backgroundColor: themeTokens.colors.borderSubtle,
-    borderColor: themeTokens.colors.border,
+    opacity: 0.55,
   },
   disabledText: {
-    color: themeTokens.colors.textSubtle,
+    opacity: 0.8,
   },
   iconTextLeft: {
-    marginLeft: 6,
+    marginLeft: 8,
   },
   iconTextRight: {
-    marginRight: 6,
+    marginRight: 8,
   },
 });
-

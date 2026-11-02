@@ -9,6 +9,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { StudentAvatar } from '../../../components/StudentAvatar';
+import { PressableScale } from '../../../theme/motion';
 
 interface AdminStaffTabProps {
   staffList: any[];
@@ -50,13 +51,9 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
               {staffList.length} registered academic instructors
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={onOpenStaffModal}
-            activeOpacity={0.8}
-          >
+          <PressableScale style={styles.addBtn} onPress={onOpenStaffModal} activeScale={0.96}>
             <Text style={styles.addBtnText}>+ Add Faculty</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
 
         {/* Search Input */}
@@ -163,13 +160,7 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
                     </Text>
                   </View>
 
-                  <TouchableOpacity
-                    style={[
-                      styles.toggleBtn,
-                      isActive ? styles.toggleBtnDeact : styles.toggleBtnReact,
-                    ]}
-                    onPress={() => onToggleStatus(member)}
-                  >
+                  <PressableScale style={[styles.toggleBtn, isActive ? styles.toggleBtnDeact : styles.toggleBtnReact]} onPress={() => onToggleStatus(member)} activeScale={0.96}>
                     <Text
                       style={[
                         styles.toggleBtnText,
@@ -178,7 +169,7 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
                     >
                       {isActive ? 'Deactivate' : 'Reactivate'}
                     </Text>
-                  </TouchableOpacity>
+                  </PressableScale>
                 </View>
               </View>
             );

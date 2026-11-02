@@ -2,12 +2,12 @@ import React from 'react';
 import {
   ScrollView,
   Text,
-  TouchableOpacity,
   StyleSheet,
   ViewStyle,
   StyleProp,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { PressableScale } from '../../theme/motion';
 
 export interface FilterOption<T = string> {
   id: T;
@@ -37,10 +37,13 @@ export function FilterPills<T extends string | number>({
       {options.map((opt) => {
         const isSelected = opt.id === selectedId;
         return (
-          <TouchableOpacity
+          <PressableScale
             key={String(opt.id)}
             onPress={() => onSelect(opt.id)}
-            activeOpacity={0.7}
+            activeScale={0.96}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`${opt.label} filter`}
             style={[
               styles.pill,
               isSelected ? styles.pillSelected : styles.pillUnselected,
@@ -64,7 +67,7 @@ export function FilterPills<T extends string | number>({
                 {opt.badge}
               </Text>
             )}
-          </TouchableOpacity>
+          </PressableScale>
         );
       })}
     </ScrollView>
@@ -121,4 +124,3 @@ const styles = StyleSheet.create({
     color: themeTokens.colors.textSecondary,
   },
 });
-

@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Modal,
   ScrollView,
-  TouchableOpacity,
   TextInput,
   ActivityIndicator,
   Alert,
@@ -13,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { mobileApiFetch } from '../../../services/api';
+import { PressableScale } from '../../../theme/motion';
 
 interface CreateInstituteModalProps {
   visible: boolean;
@@ -38,6 +38,7 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
   const [adminInitialPassword, setAdminInitialPassword] = useState('Password#123');
 
   const [submitting, setSubmitting] = useState(false);
+  const lastPressTime = useRef<number>(0);
 
   const resetForm = () => {
     setName('');
@@ -49,28 +50,41 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
     setAdminEmail('');
     setAdminPhone('');
     setAdminInitialPassword('Password#123');
+    setSubmitting(false);
   };
 
   const handleClose = () => {
+    if (submitting) return;
     resetForm();
     onClose();
   };
 
   const handleCreate = async () => {
+    if (submitting) return;
+
+    // Double submission prevention
+    const now = Date.now();
+    if (now - lastPressTime.current < 450) return;
+    lastPressTime.current = now;
+
+    // Client Validation
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Institute name is required.');
+      Alert.alert('Required Field', 'Please enter the institute name.');
       return;
     }
     if (!adminFullName.trim()) {
-      Alert.alert('Validation Error', 'Academic Admin full name is required.');
+      Alert.alert('Required Field', 'Please enter the initial Administrator full name.');
       return;
     }
     if (!adminEmail.trim()) {
-      Alert.alert('Validation Error', 'Academic Admin login email is required.');
+      Alert.alert('Required Field', 'Please enter a valid administrator email address.');
       return;
     }
     if (!adminInitialPassword || adminInitialPassword.length < 8) {
-      Alert.alert('Validation Error', 'Admin password must be at least 8 characters.');
+      Alert.alert(
+        'Password Security',
+        'Initial administrator password must be at least 8 characters long.'
+      );
       return;
     }
 
@@ -91,28 +105,41 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
 
       const res = await mobileApiFetch('/institutes', {
         method: 'POST',
-        body: payload,
+        body: JSON.stringify(payload),
       });
 
-      if (res.success) {
+      if (res.success && res.data) {
         Alert.alert(
-          'Institute Created Successfully',
-          `Tenant '${name}' has been provisioned.\nAdmin Login: ${adminEmail.trim().toLowerCase()}`
+          'Institute Provisioned',
+          `Successfully registered "${res.data.name}" with tenant code: ${res.data.code}.\n\nAcademic Admin login: ${payload.adminEmail}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                resetForm();
+                onSuccess();
+              },
+            },
+          ]
         );
-        handleClose();
-        onSuccess();
       } else {
-        Alert.alert('Creation Failed', res.error || 'Failed to create institute');
+        Alert.alert(
+          'Provisioning Failed',
+          res.error || 'Server rejected institute provisioning request.'
+        );
       }
     } catch (e: any) {
-      Alert.alert('Network Error', e.message || 'Could not connect to server.');
+      Alert.alert(
+        'Network Error',
+        e.message || 'Unable to connect to TuitionOS Cloud server.'
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalBackdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -126,9 +153,16 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
                 Configure multi-tenant isolated institute & administrator
               </Text>
             </View>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+            <PressableScale
+              onPress={handleClose}
+              disabled={submitting}
+              activeScale={0.92}
+              style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
+            </PressableScale>
           </View>
 
           <ScrollView
@@ -169,7 +203,7 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
               autoCapitalize="none"
             />
 
-            <Text style={styles.fieldLabel}>Contact Phone (Optional)</Text>
+            <Text style={styles.fieldLabel}>Official Contact Phone (Optional)</Text>
             <TextInput
               style={styles.textInput}
               placeholder="e.g. +91 98765 43210"
@@ -181,22 +215,24 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
 
             <Text style={styles.fieldLabel}>Campus Address (Optional)</Text>
             <TextInput
-              style={styles.textInput}
-              placeholder="e.g. 124 Main Street, Chennai"
+              style={[styles.textInput, styles.textArea]}
+              placeholder="e.g. 12, Anna Salai, Chennai, TN"
               placeholderTextColor="#8D6E63"
               value={address}
               onChangeText={setAddress}
+              multiline
+              numberOfLines={2}
             />
 
-            {/* Academic Admin Section */}
-            <Text style={[styles.sectionHeading, { marginTop: 14 }]}>
-              ACADEMIC ADMIN PROVISIONING
+            {/* Admin Info Section */}
+            <Text style={[styles.sectionHeading, { marginTop: 18 }]}>
+              ACADEMIC ADMIN (DIRECTOR) ACCOUNT
             </Text>
 
             <Text style={styles.fieldLabel}>Admin Full Name *</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="e.g. Dr. Ramesh Kumar"
+              placeholder="e.g. Dr. K. Ramanathan"
               placeholderTextColor="#8D6E63"
               value={adminFullName}
               onChangeText={setAdminFullName}
@@ -235,25 +271,31 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
 
           {/* Action Buttons */}
           <View style={styles.modalBtnRow}>
-            <TouchableOpacity
+            <PressableScale
               onPress={handleClose}
-              style={styles.cancelBtn}
+              style={[styles.cancelBtn, submitting && styles.btnDisabled]}
               disabled={submitting}
+              activeScale={0.97}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
             >
               <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+            </PressableScale>
 
-            <TouchableOpacity
+            <PressableScale
               onPress={handleCreate}
               style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
               disabled={submitting}
+              activeScale={0.97}
+              accessibilityRole="button"
+              accessibilityLabel="Provision Institute"
             >
               {submitting ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text style={styles.submitBtnText}>Provision Institute</Text>
               )}
-            </TouchableOpacity>
+            </PressableScale>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -271,8 +313,8 @@ const styles = StyleSheet.create({
   modalCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    padding: 16,
     maxHeight: '90%',
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -282,16 +324,15 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F5ECE8',
-    paddingBottom: 10,
-    marginBottom: 10,
+    borderBottomColor: '#EFEBE9',
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#2D1E18',
+    color: '#3E2723',
   },
   modalSub: {
     fontSize: 11,
@@ -299,68 +340,74 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F5ECE8',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 6,
   },
   closeBtnText: {
-    fontSize: 14,
-    color: '#4E342E',
-    fontWeight: '700',
+    fontSize: 16,
+    color: '#8D6E63',
+    fontWeight: 'bold',
   },
   formScroll: {
-    maxHeight: 400,
+    paddingVertical: 12,
   },
   sectionHeading: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    color: '#8D6E63',
-    letterSpacing: 0.8,
-    marginBottom: 6,
+    color: '#4E342E',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    backgroundColor: '#F5ECE8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
   fieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#4E342E',
-    marginTop: 6,
-    marginBottom: 3,
+    color: '#5D4037',
+    marginBottom: 4,
+    marginTop: 8,
   },
   textInput: {
     backgroundColor: '#FAF7F5',
     borderWidth: 1,
-    borderColor: '#D7CCC8',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderColor: '#EFEBE9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     fontSize: 13,
-    color: '#2D1E18',
+    color: '#3E2723',
+  },
+  textArea: {
+    minHeight: 50,
+    textAlignVertical: 'top',
   },
   modalBtnRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 14,
-    paddingTop: 10,
+    gap: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F5ECE8',
+    borderTopColor: '#EFEBE9',
   },
   cancelBtn: {
     paddingHorizontal: 14,
     paddingVertical: 9,
+    borderRadius: 8,
   },
   cancelBtnText: {
     fontSize: 12,
     color: '#6D4C41',
-    fontWeight: '700',
+    fontWeight: '600',
   },
   submitBtn: {
     backgroundColor: '#4E342E',
-    borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 9,
+    borderRadius: 8,
+    minWidth: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   submitBtnDisabled: {
     opacity: 0.6,
@@ -368,7 +415,9 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });
-

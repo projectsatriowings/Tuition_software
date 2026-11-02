@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { mobileApiFetch } from '../../../services/api';
+import { PressableScale } from '../../../theme/motion';
 
 interface SuperAdminInstitutesTabProps {
   institutes: any[];
@@ -136,15 +137,15 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
               {institutes.length} total registered multi-tenant entities
             </Text>
           </View>
-          <TouchableOpacity
+          <PressableScale
             style={styles.provisionBtn}
             onPress={onOpenCreateModal}
-            activeOpacity={0.8}
+            activeScale={0.96}
             accessibilityRole="button"
             accessibilityLabel="Provision new institute"
           >
             <Text style={styles.provisionBtnText}>+ Provision</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
 
         {/* Search Bar */}
@@ -405,22 +406,22 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
 
                   {/* Action Buttons */}
                   <View style={styles.actionsRow}>
-                    <TouchableOpacity
+                    <PressableScale
                       style={styles.detailsBtn}
                       onPress={() => onSelectInstitute(inst)}
-                      activeOpacity={0.8}
+                      activeScale={0.96}
                     >
                       <Text style={styles.detailsBtnText}>⚙️ Manage & Details</Text>
-                    </TouchableOpacity>
+                    </PressableScale>
 
-                    <TouchableOpacity
+                    <PressableScale
                       style={[
                         styles.statusToggleBtn,
                         isSuspended ? styles.activateBtn : styles.suspendBtn,
                       ]}
                       onPress={() => handleToggleStatus(inst)}
-                      activeOpacity={0.8}
                       disabled={isUpdatingThis}
+                      activeScale={0.96}
                     >
                       {isUpdatingThis ? (
                         <ActivityIndicator
@@ -439,7 +440,7 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
                           {isSuspended ? '▶ Activate' : '⏸ Suspend'}
                         </Text>
                       )}
-                    </TouchableOpacity>
+                    </PressableScale>
                   </View>
                 </View>
               );

@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { themeTokens } from '@tuition/shared';
+import { PressableScale } from '../../../theme/motion';
 
 export type StaffPrimaryTab = 'home' | 'students' | 'attendance' | 'materials' | 'more';
 export type StaffActiveTab = StaffPrimaryTab | 'homework' | 'exams' | 'messages';
@@ -42,14 +43,14 @@ export const StaffBottomNav: React.FC<StaffBottomNavProps> = ({
           const isActive = (item.matchTabs || [item.id]).includes(activeTab);
 
           return (
-            <TouchableOpacity
+            <PressableScale
               key={item.id}
               onPress={() => onSelectTab(item.id)}
+              activeScale={0.93}
+              activeOpacity={0.88}
               style={styles.navItem}
-              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={`${item.label} tab`}
-              accessibilityState={{ selected: isActive }}
             >
               <View style={[styles.pill, isActive && styles.activePill]}>
                 <View style={styles.iconWrapper}>
@@ -71,7 +72,7 @@ export const StaffBottomNav: React.FC<StaffBottomNavProps> = ({
                   {item.label}
                 </Text>
               </View>
-            </TouchableOpacity>
+            </PressableScale>
           );
         })}
       </View>
@@ -164,4 +165,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

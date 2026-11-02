@@ -1,12 +1,17 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { PressableScale } from '../theme/motion';
 
-interface CardProps {
+export interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   highlighted?: boolean;
+  disabled?: boolean;
+  accessibilityRole?: any;
+  accessibilityLabel?: string;
+  testID?: string;
 }
 
 export const Card: React.FC<CardProps> = ({
@@ -14,22 +19,32 @@ export const Card: React.FC<CardProps> = ({
   style,
   onPress,
   highlighted = false,
+  disabled = false,
+  accessibilityRole = 'button',
+  accessibilityLabel,
+  testID,
 }) => {
   const containerStyle = [
     styles.card,
     highlighted && styles.highlightedCard,
+    disabled && styles.disabledCard,
     style,
   ];
 
   if (onPress) {
     return (
-      <TouchableOpacity
-        activeOpacity={0.75}
+      <PressableScale
+        activeScale={0.985}
+        activeOpacity={0.92}
         onPress={onPress}
+        disabled={disabled}
+        accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
         style={containerStyle}
       >
         {children}
-      </TouchableOpacity>
+      </PressableScale>
     );
   }
 
@@ -53,5 +68,8 @@ const styles = StyleSheet.create({
   highlightedCard: {
     borderColor: themeTokens.colors.taupe,
     backgroundColor: themeTokens.colors.surfaceMuted,
+  },
+  disabledCard: {
+    opacity: 0.65,
   },
 });

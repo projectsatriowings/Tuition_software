@@ -1,16 +1,16 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   Modal,
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { PressableScale } from '../theme/motion';
 
-interface ConfirmationModalProps {
+export interface ConfirmationModalProps {
   isOpen: boolean;
   title: string;
   message: string;
@@ -33,6 +33,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  const lastPressTime = useRef<number>(0);
+
   if (!isOpen) return null;
 
   let btnColor = themeTokens.colors.espresso;
@@ -49,14 +51,27 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     iconSymbol = '⚠';
   }
 
+  const handleSafeConfirm = () => {
+    if (loading) return;
+    const now = Date.now();
+    if (now - lastPressTime.current < 450) return;
+    lastPressTime.current = now;
+    onConfirm();
+  };
+
+  const handleSafeCancel = () => {
+    if (loading) return;
+    onCancel();
+  };
+
   return (
     <Modal
       transparent
       animationType="fade"
       visible={isOpen}
-      onRequestClose={onCancel}
+      onRequestClose={handleSafeCancel}
     >
-      <TouchableWithoutFeedback onPress={onCancel}>
+      <TouchableWithoutFeedback onPress={handleSafeCancel}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
             <View style={styles.modalCard}>
@@ -68,25 +83,35 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               <Text style={styles.messageText}>{message}</Text>
 
               <View style={styles.buttonRow}>
-                <TouchableOpacity
-                  style={styles.cancelBtn}
-                  onPress={onCancel}
+                <PressableScale
+                  style={[styles.cancelBtn, loading && styles.btnDisabled]}
+                  onPress={handleSafeCancel}
                   disabled={loading}
+                  activeScale={0.97}
+                  accessibilityRole="button"
+                  accessibilityLabel={cancelLabel}
                 >
                   <Text style={styles.cancelBtnText}>{cancelLabel}</Text>
-                </TouchableOpacity>
+                </PressableScale>
 
-                <TouchableOpacity
-                  style={[styles.confirmBtn, { backgroundColor: btnColor }]}
-                  onPress={onConfirm}
+                <PressableScale
+                  style={[
+                    styles.confirmBtn,
+                    { backgroundColor: btnColor },
+                    loading && styles.btnDisabled,
+                  ]}
+                  onPress={handleSafeConfirm}
                   disabled={loading}
+                  activeScale={0.97}
+                  accessibilityRole="button"
+                  accessibilityLabel={confirmLabel}
                 >
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <Text style={styles.confirmBtnText}>{confirmLabel}</Text>
                   )}
-                </TouchableOpacity>
+                </PressableScale>
               </View>
             </View>
           </TouchableWithoutFeedback>
@@ -126,8 +151,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
-    backgroundColor: '#FAF7F2',
+    marginBottom: 16,
   },
   iconText: {
     fontSize: 24,
@@ -136,52 +160,50 @@ const styles = StyleSheet.create({
   titleText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2D1E18',
+    color: themeTokens.colors.espresso,
     textAlign: 'center',
     marginBottom: 8,
   },
   messageText: {
-    fontSize: 13,
-    color: '#6D4C41',
+    fontSize: 14,
+    color: themeTokens.colors.textMuted,
     textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 20,
+    lineHeight: 20,
+    marginBottom: 24,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 12,
     width: '100%',
+    gap: 12,
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#D7CCC8',
-    backgroundColor: '#FAF7F2',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FAF7F5',
   },
   cancelBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#5D4037',
+    color: themeTokens.colors.espresso,
   },
   confirmBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
   confirmBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });
