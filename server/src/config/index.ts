@@ -31,7 +31,7 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET || 'fallback-jwt-secret-dev-only-32-chars-long',
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    refreshSecret: process.env.REFRESH_TOKEN_SECRET || 'fallback-refresh-secret-dev-only-32',
+    refreshSecret: process.env.REFRESH_TOKEN_SECRET || (process.env.JWT_SECRET ? `${process.env.JWT_SECRET}_refresh` : 'fallback-refresh-secret-dev-only-32'),
     refreshExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '30d',
   },
   sms: {
@@ -60,8 +60,8 @@ export function validateProductionConfig() {
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'fallback-jwt-secret-dev-only-32-chars-long') {
       errors.push('JWT_SECRET must be explicitly set to a cryptographically secure key in production.');
     }
-    if (!process.env.REFRESH_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET === 'fallback-refresh-secret-dev-only-32') {
-      errors.push('REFRESH_TOKEN_SECRET must be explicitly set in production.');
+    if (!process.env.REFRESH_TOKEN_SECRET && !process.env.JWT_SECRET) {
+      errors.push('REFRESH_TOKEN_SECRET or JWT_SECRET must be explicitly set in production.');
     }
     if (errors.length > 0) {
       throw new Error(`[Production Security Validation Failed]:\n- ${errors.join('\n- ')}`);
