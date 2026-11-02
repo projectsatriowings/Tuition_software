@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { mobileApiFetch } from '../../../services/api';
-import { PressableScale, AnimatedDialog } from '../../../theme/motion';
+import { PressableScale } from '../../../theme/motion';
 
 interface CreateInstituteModalProps {
   visible: boolean;
@@ -144,7 +144,7 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
         style={styles.modalBackdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <AnimatedDialog style={styles.modalCard}>
+        <View style={styles.modalCard}>
           {/* Header */}
           <View style={styles.modalHeader}>
             <View>
@@ -297,7 +297,7 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
               )}
             </PressableScale>
           </View>
-        </AnimatedDialog>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );

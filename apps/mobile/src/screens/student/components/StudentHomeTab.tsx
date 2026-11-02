@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StudentActiveTab } from './StudentBottomNav';
+import { PressableScale } from '../../../theme/motion';
 
 interface StudentHomeTabProps {
   user: any;
@@ -291,74 +292,89 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
         </View>
       </View>
 
-      {/* 3. Prioritized Quick Action Pills */}
+      {/* 3. Prioritized Quick Actions (Compact 2x2 Grid) */}
       <View style={styles.quickActionSection}>
-        <Text style={styles.sectionHeading}>QUICK ACTIONS</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickActionScroll}
-        >
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('learning')}
-            activeOpacity={0.8}
+        <View style={styles.quickActionsHeaderRow}>
+          <Text style={styles.sectionHeading}>QUICK ACTIONS</Text>
+          <PressableScale
+            onPress={() => onNavigateTab('more')}
+            activeScale={0.95}
+            accessibilityRole="button"
+            accessibilityLabel="More student actions"
           >
-            <Text style={styles.quickActionEmoji}>📚</Text>
-            <Text style={styles.quickActionText}>Open Learning</Text>
-          </TouchableOpacity>
+            <Text style={styles.moreActionsLink}>All Actions →</Text>
+          </PressableScale>
+        </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('homework')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.quickActionEmoji}>📝</Text>
-            <Text style={styles.quickActionText}>Submit Homework</Text>
-          </TouchableOpacity>
+        <View style={styles.quickActionGrid}>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('progress')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="View Attendance"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#EDE7F6' }]}>
+                <Text style={styles.quickActionEmoji}>📋</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>View Attendance</Text>
+                <Text style={styles.quickActionSub}>Safety & log</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => {
-              if (nextAvailableQuiz) {
-                onStartQuiz(nextAvailableQuiz);
-              } else {
-                onNavigateTab('homework');
-              }
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.quickActionEmoji}>🎯</Text>
-            <Text style={styles.quickActionText}>Take Quiz</Text>
-          </TouchableOpacity>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('homework')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Homework and Tasks"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#FFF3E0' }]}>
+                <Text style={styles.quickActionEmoji}>📝</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Homework</Text>
+                <Text style={styles.quickActionSub}>{pendingHomeworkCount} pending</Text>
+              </View>
+            </PressableScale>
+          </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('results')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.quickActionEmoji}>🏆</Text>
-            <Text style={styles.quickActionText}>View Results</Text>
-          </TouchableOpacity>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('learning')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Learning Materials"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#E8F5E9' }]}>
+                <Text style={styles.quickActionEmoji}>📚</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Learning Files</Text>
+                <Text style={styles.quickActionSub}>{materials.length} study files</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('progress')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.quickActionEmoji}>📊</Text>
-            <Text style={styles.quickActionText}>Progress Report</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('timetable')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.quickActionEmoji}>📅</Text>
-            <Text style={styles.quickActionText}>Timetable</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('results')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Exam Results"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#FCE4EC' }]}>
+                <Text style={styles.quickActionEmoji}>🏆</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Exam Results</Text>
+                <Text style={styles.quickActionSub}>Marks & ranks</Text>
+              </View>
+            </PressableScale>
+          </View>
+        </View>
       </View>
 
       {/* 4. Actionable Pending Homework Alert Card */}
@@ -723,32 +739,63 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 8,
   },
-  quickActionScroll: {
+  quickActionsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  moreActionsLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  quickActionGrid: {
     gap: 8,
   },
-  quickActionPill: {
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickActionCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 13,
+    borderRadius: 12,
+    paddingHorizontal: 10,
     paddingVertical: 9,
-    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#EFEBE9',
+    gap: 8,
     shadowColor: '#2D1E18',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 2,
     elevation: 1,
   },
-  quickActionEmoji: {
-    fontSize: 14,
-    marginRight: 6,
+  quickActionIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  quickActionText: {
+  quickActionEmoji: {
+    fontSize: 15,
+  },
+  quickActionTextBox: {
+    flex: 1,
+  },
+  quickActionTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#4E342E',
+    color: '#2D1E18',
+  },
+  quickActionSub: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 1,
   },
   actionCard: {
     backgroundColor: '#FFFFFF',

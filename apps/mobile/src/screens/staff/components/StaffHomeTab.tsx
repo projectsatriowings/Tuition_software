@@ -12,6 +12,7 @@ import { Card } from '../../../components/Card';
 import { Badge } from '../../../components/Badge';
 import { themeTokens } from '@tuition/shared';
 import { StaffActiveTab } from './StaffBottomNav';
+import { PressableScale } from '../../../theme/motion';
 
 interface StaffHomeTabProps {
   user: any;
@@ -232,80 +233,89 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
         </View>
       </View>
 
-      {/* 3. PRIORITIZED QUICK ACTIONS */}
+      {/* 3. PRIORITIZED QUICK ACTIONS (Compact 2x2 Grid) */}
       <View style={styles.sectionContainer}>
-        <Text style={styles.sectionHeading}>Quick Actions</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickActionsScroll}
-        >
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('attendance')}
-            activeOpacity={0.7}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>Quick Actions</Text>
+          <PressableScale
+            onPress={() => onNavigateTab('more')}
+            activeScale={0.95}
+            accessibilityRole="button"
+            accessibilityLabel="More faculty actions"
           >
-            <View style={[styles.quickActionIconWrap, { backgroundColor: '#EDE7F6' }]}>
-              <Text style={styles.quickActionIcon}>📋</Text>
-            </View>
-            <Text style={styles.quickActionText}>Take Attendance</Text>
-          </TouchableOpacity>
+            <Text style={styles.sectionActionLink}>All Actions →</Text>
+          </PressableScale>
+        </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('students')}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.quickActionIconWrap, { backgroundColor: '#E0F2FE' }]}>
-              <Text style={styles.quickActionIcon}>👨‍🎓</Text>
-            </View>
-            <Text style={styles.quickActionText}>Find Student</Text>
-          </TouchableOpacity>
+        <View style={styles.quickActionGrid}>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('attendance')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Mark Attendance"
+            >
+              <View style={[styles.quickActionIconWrap, { backgroundColor: '#EDE7F6' }]}>
+                <Text style={styles.quickActionIcon}>📋</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Mark Attendance</Text>
+                <Text style={styles.quickActionSub}>Voice & roster</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={onOpenNewMaterial}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.quickActionIconWrap, { backgroundColor: '#E8F5E9' }]}>
-              <Text style={styles.quickActionIcon}>📚</Text>
-            </View>
-            <Text style={styles.quickActionText}>Share Material</Text>
-          </TouchableOpacity>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('students')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Find Student"
+            >
+              <View style={[styles.quickActionIconWrap, { backgroundColor: '#E0F2FE' }]}>
+                <Text style={styles.quickActionIcon}>👨‍🎓</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Find Student</Text>
+                <Text style={styles.quickActionSub}>Search directory</Text>
+              </View>
+            </PressableScale>
+          </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={onOpenNewHomework}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.quickActionIconWrap, { backgroundColor: '#FFF3E0' }]}>
-              <Text style={styles.quickActionIcon}>📝</Text>
-            </View>
-            <Text style={styles.quickActionText}>Assign HW</Text>
-          </TouchableOpacity>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenNewHomework}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Add Homework"
+            >
+              <View style={[styles.quickActionIconWrap, { backgroundColor: '#FFF3E0' }]}>
+                <Text style={styles.quickActionIcon}>📝</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Add Homework</Text>
+                <Text style={styles.quickActionSub}>Assign class task</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('exams')}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.quickActionIconWrap, { backgroundColor: '#FCE4EC' }]}>
-              <Text style={styles.quickActionIcon}>🏆</Text>
-            </View>
-            <Text style={styles.quickActionText}>Grade Exams</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('messages')}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.quickActionIconWrap, { backgroundColor: '#F1F5F9' }]}>
-              <Text style={styles.quickActionIcon}>💬</Text>
-            </View>
-            <Text style={styles.quickActionText}>Parent Chat</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenNewMaterial}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Share Material"
+            >
+              <View style={[styles.quickActionIconWrap, { backgroundColor: '#E8F5E9' }]}>
+                <Text style={styles.quickActionIcon}>📚</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Share Material</Text>
+                <Text style={styles.quickActionSub}>Upload study file</Text>
+              </View>
+            </PressableScale>
+          </View>
+        </View>
       </View>
 
       {/* 4. ACTIVE BATCH SELECTOR (Compact Focus) */}
@@ -731,39 +741,54 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingRight: 8,
   },
-  quickActionPill: {
+  quickActionGrid: {
+    gap: 8,
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickActionCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     borderWidth: 1,
     borderColor: '#EFEBE9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 84,
-    shadowColor: '#000',
+    gap: 8,
+    shadowColor: '#2D1E18',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.04,
     shadowRadius: 2,
     elevation: 1,
   },
   quickActionIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
   quickActionIcon: {
-    fontSize: 16,
+    fontSize: 15,
   },
-  quickActionText: {
-    fontSize: 10,
+  quickActionTextBox: {
+    flex: 1,
+  },
+  quickActionTitle: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#4E342E',
-    textAlign: 'center',
+    color: '#2D1E18',
   },
+  quickActionSub: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 1,
+  },
+
 
   // 4. Batch Selector
   batchChipsScroll: {

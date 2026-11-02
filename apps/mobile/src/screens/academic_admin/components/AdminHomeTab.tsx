@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { AdminActiveTab } from './AdminBottomNav';
+import { PressableScale } from '../../../theme/motion';
 
 interface AdminHomeTabProps {
   user: any;
@@ -218,78 +219,89 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
         </View>
       </View>
 
-      {/* 3. Quick Action Shortcuts */}
+      {/* 3. Quick Action Shortcuts (Compact 2x2 Grid) */}
       <View style={styles.quickActionsSection}>
-        <Text style={styles.sectionHeaderTitle}>EXECUTIVE ACTIONS</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickActionPillsRow}
-        >
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={onOpenAdmitModal}
+        <View style={styles.quickActionsHeaderRow}>
+          <Text style={styles.sectionHeaderTitle}>QUICK ACTIONS</Text>
+          <PressableScale
+            onPress={() => onNavigateTab('more')}
+            activeScale={0.95}
+            accessibilityRole="button"
+            accessibilityLabel="More administrative actions"
           >
-            <Text style={styles.quickActionIcon}>👨‍🎓</Text>
-            <Text style={styles.quickActionText}>+ Admit Student</Text>
-          </TouchableOpacity>
+            <Text style={styles.moreActionsLink}>All Actions →</Text>
+          </PressableScale>
+        </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={onOpenStaffModal}
-          >
-            <Text style={styles.quickActionIcon}>👨‍🏫</Text>
-            <Text style={styles.quickActionText}>+ Add Faculty</Text>
-          </TouchableOpacity>
+        <View style={styles.quickActionGrid}>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenAdmitModal}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Add Student"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#F0FDF4' }]}>
+                <Text style={styles.quickActionIcon}>👨‍🎓</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Add Student</Text>
+                <Text style={styles.quickActionSub}>Admit & enroll</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={onOpenNewBatchModal}
-          >
-            <Text style={styles.quickActionIcon}>🏫</Text>
-            <Text style={styles.quickActionText}>+ New Batch</Text>
-          </TouchableOpacity>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenStaffModal}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Manage Staff"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#EFF6FF' }]}>
+                <Text style={styles.quickActionIcon}>👨‍🏫</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Manage Staff</Text>
+                <Text style={styles.quickActionSub}>+ Add faculty</Text>
+              </View>
+            </PressableScale>
+          </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('fees')}
-          >
-            <Text style={styles.quickActionIcon}>💳</Text>
-            <Text style={styles.quickActionText}>Collect Fee</Text>
-          </TouchableOpacity>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenNewBatchModal}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Manage Batches"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#FEF3C7' }]}>
+                <Text style={styles.quickActionIcon}>🏫</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Manage Batches</Text>
+                <Text style={styles.quickActionSub}>+ Configure class</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('attendance')}
-          >
-            <Text style={styles.quickActionIcon}>📡</Text>
-            <Text style={styles.quickActionText}>Attendance</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('homework')}
-          >
-            <Text style={styles.quickActionIcon}>📝</Text>
-            <Text style={styles.quickActionText}>Homework</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('exams')}
-          >
-            <Text style={styles.quickActionIcon}>🏆</Text>
-            <Text style={styles.quickActionText}>Exams</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('reviews')}
-          >
-            <Text style={styles.quickActionIcon}>⭐</Text>
-            <Text style={styles.quickActionText}>Parent Reviews</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('fees')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Fee Collections"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#FDF2F8' }]}>
+                <Text style={styles.quickActionIcon}>💳</Text>
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Fee Collections</Text>
+                <Text style={styles.quickActionSub}>Collect & receipt</Text>
+              </View>
+            </PressableScale>
+          </View>
+        </View>
       </View>
 
       {/* 4. Action Card: Financial Health & Fee Collection */}
@@ -664,33 +676,63 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
   },
-  quickActionPillsRow: {
-    gap: 8,
-    paddingVertical: 2,
+  quickActionsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  quickActionPill: {
+  moreActionsLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  quickActionGrid: {
+    gap: 8,
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickActionCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     borderWidth: 1,
-    borderColor: '#D7CCC8',
-    gap: 6,
+    borderColor: '#EFEBE9',
+    gap: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 2,
     elevation: 2,
   },
-  quickActionIcon: {
-    fontSize: 14,
+  quickActionIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  quickActionText: {
+  quickActionIcon: {
+    fontSize: 15,
+  },
+  quickActionTextBox: {
+    flex: 1,
+  },
+  quickActionTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#4E342E',
+    color: '#2D1E18',
+  },
+  quickActionSub: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 1,
   },
 
   // 4. Actionable Cards
