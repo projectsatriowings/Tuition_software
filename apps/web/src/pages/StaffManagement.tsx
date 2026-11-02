@@ -5,6 +5,7 @@ import { StaffMember, Batch } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { StaffProfileView } from '../components/staff/StaffProfileView';
 import { AddStaffModal } from '../components/staff/AddStaffModal';
+import { StaffAvatar } from '../components/StaffAvatar';
 import {
   Users,
   Plus,
@@ -413,18 +414,28 @@ export const StaffManagement: React.FC = () => {
                     className="hover:bg-[#FAF8F5] cursor-pointer transition-colors group"
                   >
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#2D1E18] text-sm group-hover:underline group-hover:text-[#4E342E] text-left transition-colors">
-                        {item.user.fullName}
-                      </div>
-                      <div className="text-[11px] text-[#6D4C41] flex items-center gap-2 mt-0.5">
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-[#8D6E63]" /> {item.user.email}
-                        </span>
-                        {item.user.phone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-[#8D6E63]" /> {item.user.phone}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-3">
+                        <StaffAvatar
+                          staffId={item.id}
+                          avatarUrl={item.avatarUrl}
+                          name={item.user.fullName}
+                          size="sm"
+                        />
+                        <div>
+                          <div className="font-bold text-[#2D1E18] text-sm group-hover:underline group-hover:text-[#4E342E] text-left transition-colors">
+                            {item.user.fullName}
+                          </div>
+                          <div className="text-[11px] text-[#6D4C41] flex items-center gap-2 mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <Mail className="w-3 h-3 text-[#8D6E63]" /> {item.user.email}
+                            </span>
+                            {item.user.phone && (
+                              <span className="flex items-center gap-1">
+                                <Phone className="w-3 h-3 text-[#8D6E63]" /> {item.user.phone}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="py-3.5 px-4 font-mono font-semibold text-[#4E342E]">

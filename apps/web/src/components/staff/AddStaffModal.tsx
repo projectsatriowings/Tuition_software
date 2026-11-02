@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { apiFetch } from '../../services/api';
@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Building,
+  Camera,
+  Upload,
 } from 'lucide-react';
 
 interface AddStaffModalProps {
@@ -36,7 +38,6 @@ interface AddStaffModalProps {
   batches?: Batch[];
   activeInstituteCode?: string;
 }
-
 
 function formatUserFriendlyError(rawError?: string | null): string {
   if (!rawError || typeof rawError !== 'string') {
@@ -74,12 +75,15 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
   useBodyScrollLock(isOpen);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // Step 1: Basic Information
+  // Step 1: Basic Information & Photo
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [personalEmail, setPersonalEmail] = useState('');
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Step 2: Employment Details
   const [employeeCode, setEmployeeCode] = useState('');
@@ -137,6 +141,9 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
       setPersonalEmail('');
       setDob('');
       setGender('');
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setDesignation('');
       setDepartment('');
       setEmploymentType('FULL_TIME');
@@ -151,6 +158,30 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
       fetchNextCode();
     }
   }, [isOpen]);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Photograph file size must not exceed 5MB.');
+        return;
+      }
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        setError('Please upload a valid image file (JPG, PNG, or WebP).');
+        return;
+      }
+      setPhotoFile(file);
+      setPhotoPreview(URL.createObjectURL(file));
+      setError(null);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   // Sync login email from name/institute when step 1 progresses
   const handleProceedFromStep1 = () => {
@@ -194,6 +225,25 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
       setLoading(true);
       setError(null);
 
+      // 1. If photo selected, upload photograph first
+      let uploadedPhotoKey: string | null = null;
+      if (photoFile) {
+        try {
+          const photoFormData = new FormData();
+          photoFormData.append('photo', photoFile);
+          const upRes = await apiFetch('/staff/upload-photo', {
+            method: 'POST',
+            body: photoFormData,
+          });
+          if (upRes.success && (upRes.data?.photoStorageKey || upRes.data?.key)) {
+            uploadedPhotoKey = upRes.data.photoStorageKey || upRes.data.key;
+          }
+        } catch (photoErr: any) {
+          console.warn('Pre-creation staff photo upload failed, continuing creation:', photoErr);
+        }
+      }
+
+      // 2. Submit staff creation payload
       const payload = {
         fullName: fullName.trim(),
         email: loginEmail.trim().toLowerCase(),
@@ -201,6 +251,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         employeeCode: employeeCode.trim() || null,
         designation: designation.trim(),
         temporaryPassword: password,
+        avatarUrl: uploadedPhotoKey,
 
         // Personal Details
         personalEmail: personalEmail.trim() || null,
@@ -229,6 +280,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           employeeCode: res.data?.employeeCode || employeeCode,
           designation,
           qualification: qualificationDegree || null,
+          avatarUrl: uploadedPhotoKey,
           createdAt: new Date().toISOString(),
           user: res.data?.user || {
             id: res.data?.user?.id || '',
@@ -240,6 +292,10 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             mustChangePassword: false,
           },
         };
+
+        if (uploadedPhotoKey) {
+          createdStaff.avatarUrl = uploadedPhotoKey;
+        }
 
         // If qualification details provided, save them
         if (qualificationDegree.trim() && qualificationInstitution.trim()) {
@@ -310,7 +366,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               Step-by-step profile onboarding and portal account provisioning
             </p>
           </div>
-          <button onClick={onClose} className="text-[#8D6E63] hover:text-[#2D1E18] p-1">
+          <button onClick={onClose} className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg hover:bg-[#FAF8F5]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -327,26 +383,29 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               <React.Fragment key={s.num}>
                 <div className="flex flex-col items-center">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step === s.num
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                      step === s.num
                         ? 'bg-[#4E342E] text-white ring-4 ring-[#8D6E63]/20 shadow-md'
                         : step > s.num
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
-                      }`}
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-[#F7F2EF] text-[#8D6E63] border border-[#D7CCC8]'
+                    }`}
                   >
                     {step > s.num ? <Check className="w-4 h-4" /> : s.num}
                   </div>
                   <span
-                    className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${step === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
-                      }`}
+                    className={`text-[10px] font-semibold mt-1.5 hidden sm:block ${
+                      step === s.num ? 'text-[#4E342E]' : 'text-[#8D6E63]'
+                    }`}
                   >
                     {s.label}
                   </span>
                 </div>
                 {idx < 3 && (
                   <div
-                    className={`flex-1 h-0.5 mx-2 transition-colors ${step > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
-                      }`}
+                    className={`flex-1 h-0.5 mx-2 transition-colors ${
+                      step > s.num ? 'bg-emerald-600' : 'bg-[#EFEBE9]'
+                    }`}
                   />
                 )}
               </React.Fragment>
@@ -370,9 +429,75 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
           </div>
         )}
 
-        {/* Step 1: Basic Identity */}
+        {/* Step 1: Basic Identity & Photograph */}
         {step === 1 && (
           <div className="space-y-4">
+            {/* Staff Photograph Upload Card */}
+            <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#D7CCC8] flex flex-col sm:flex-row items-center gap-4">
+              <div className="relative shrink-0">
+                {photoPreview ? (
+                  <div className="relative group">
+                    <img
+                      src={photoPreview}
+                      alt="Staff Preview"
+                      className="w-18 h-18 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700 shadow-xs transition-colors"
+                      title="Remove photo"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-18 h-18 rounded-2xl bg-[#EFEBE9] text-[#8D6E63] border-2 border-dashed border-[#D7CCC8] flex flex-col items-center justify-center text-center p-2">
+                    <Camera className="w-6 h-6 mb-1 text-[#A1887F]" />
+                    <span className="text-[10px] font-bold text-[#6D4C41]">Photo</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 text-center sm:text-left space-y-1">
+                <div className="flex items-center justify-center sm:justify-between">
+                  <span className="text-xs font-bold text-[#2D1E18]">
+                    Staff Photograph <span className="text-[#8D6E63] font-normal">(Optional)</span>
+                  </span>
+                  {photoFile && (
+                    <span className="hidden sm:inline-flex text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                      Photo attached
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#8D6E63]">
+                  Upload JPG, PNG or WebP portrait for staff directory and portal profile (Max 5MB)
+                </p>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                  <label className="cursor-pointer px-3.5 py-1.5 rounded-xl bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold shadow-2xs hover:shadow-xs transition inline-flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>{photoPreview ? 'Change Photo' : 'Upload Photo'}</span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handlePhotoSelect}
+                    />
+                  </label>
+                  {photoPreview && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="text-xs text-rose-700 hover:text-rose-800 font-semibold px-2 py-1"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
                 Full Name *
@@ -460,7 +585,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                     onClick={fetchNextCode}
                     className="text-[11px] font-semibold text-[#8D6E63] hover:text-[#4E342E] flex items-center gap-1"
                   >
-                    <RefreshCw className="w-3 h-3" /> Auto
+                    <RefreshCw className="w-3 h-3" /> Regenerate
                   </button>
                 </div>
                 <input
@@ -468,13 +593,14 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                   required
                   value={employeeCode}
                   onChange={(e) => setEmployeeCode(e.target.value)}
-                  placeholder="e.g. APEX-EMP-005"
-                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  placeholder="e.g. APEX-EMP-001"
+                  className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs font-mono font-semibold text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                  Designation / Role *
+                  Designation / Primary Role *
                 </label>
                 <input
                   type="text"
@@ -490,13 +616,13 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                  Department
+                  Academic Department
                 </label>
                 <input
                   type="text"
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. Science / Mathematics / Humanities"
+                  placeholder="e.g. Science / Mathematics"
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
@@ -585,7 +711,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
                   type="text"
                   value={qualificationInstitution}
                   onChange={(e) => setQualificationInstitution(e.target.value)}
-                  placeholder="e.g. University of Delhi"
+                  placeholder="e.g. University of Madras"
                   className="w-full bg-[#FAF8F5] border border-[#D7CCC8] rounded-xl px-3.5 py-2.5 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
@@ -593,7 +719,7 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-[#2D1E18] mb-1">
-                Total Teaching Experience (Years)
+                Prior Teaching Experience (Total Years)
               </label>
               <input
                 type="number"
@@ -614,11 +740,19 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
         {/* Step 4: Account Provisioning & Permanent Password */}
         {step === 4 && (
           <div className="space-y-4">
-            <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl space-y-3">
-              <span className="text-xs font-bold text-[#4E342E] uppercase tracking-wider block">
-                Profile Summary
-              </span>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-4 bg-[#FAF8F5] border border-[#D7CCC8] rounded-2xl flex items-center gap-4">
+              {photoPreview ? (
+                <img
+                  src={photoPreview}
+                  alt="Staff Thumbnail"
+                  className="w-14 h-14 rounded-2xl object-cover border-2 border-[#8D6E63] shadow-xs shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-[#EFEBE9] text-[#4E342E] font-bold text-sm flex items-center justify-center border border-[#D7CCC8] shrink-0">
+                  {fullName.slice(0, 2).toUpperCase() || 'ST'}
+                </div>
+              )}
+              <div className="flex-1 grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-[#8D6E63]">Name:</span>{' '}
                   <span className="font-semibold text-[#2D1E18]">{fullName}</span>

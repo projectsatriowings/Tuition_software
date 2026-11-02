@@ -26,6 +26,8 @@ export const createStaffSchema = z.object({
   initialPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
   permissionsJson: z.record(z.any()).optional().nullable(),
   batchIds: z.array(z.string().uuid()).optional(),
+  avatarUrl: z.string().optional().nullable(),
+  photoUrl: z.string().optional().nullable(),
 
   // Personal Details
   dob: z.string().optional().nullable(),
@@ -68,6 +70,8 @@ export const updateStaffSchema = z.object({
   designation: z.string().min(2).optional(),
   qualification: z.string().optional().nullable(),
   permissionsJson: z.record(z.any()).optional().nullable(),
+  avatarUrl: z.string().optional().nullable(),
+  photoUrl: z.string().optional().nullable(),
 
   // Personal Details
   dob: z.string().optional().nullable(),
@@ -345,6 +349,7 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
           designation: data.designation.trim(),
           qualification: data.qualification?.trim() || null,
           permissionsJson: staffPermissions,
+          avatarUrl: data.avatarUrl?.trim() || data.photoUrl?.trim() || null,
 
           // Personal Details
           dob: safeParseDate(data.dob),
@@ -645,6 +650,7 @@ export async function updateStaff(req: AuthenticatedRequest, res: Response) {
           ...(data.designation && { designation: data.designation.trim() }),
           ...(data.qualification !== undefined && { qualification: data.qualification?.trim() || null }),
           ...(data.permissionsJson && { permissionsJson: data.permissionsJson }),
+          ...((data.avatarUrl !== undefined || data.photoUrl !== undefined) && { avatarUrl: data.avatarUrl?.trim() || data.photoUrl?.trim() || null }),
 
           // Personal Details
           ...(data.dob !== undefined && { dob: data.dob ? new Date(data.dob) : null }),
@@ -983,26 +989,39 @@ export async function uploadStaffPhoto(req: AuthenticatedRequest, res: Response)
       return res.status(400).json({ success: false, error: 'No image file uploaded' });
     }
 
-    const staff = await prisma.staffProfile.findFirst({
-      where: { id, instituteId },
-    });
+    const relativeKey = getRelativeStorageKey(instituteId, req.file.filename);
 
-    if (!staff) {
-      return res.status(404).json({ success: false, error: 'Staff member not found' });
+    if (id && id !== 'upload' && id !== 'upload-photo') {
+      const staff = await prisma.staffProfile.findFirst({
+        where: { id, instituteId },
+      });
+
+      if (!staff) {
+        return res.status(404).json({ success: false, error: 'Staff member not found' });
+      }
+
+      await prisma.staffProfile.update({
+        where: { id },
+        data: { avatarUrl: relativeKey },
+      });
+
+      const photoUrl = `/api/staff/${id}/photo?v=${Date.now()}`;
+      return res.json({
+        success: true,
+        message: 'Staff photograph uploaded successfully',
+        data: { photoUrl, photoStorageKey: relativeKey, key: relativeKey },
+      });
     }
 
-    const relativeKey = getRelativeStorageKey(instituteId, req.file.filename);
-    const photoUrl = `/api/staff/${id}/photo`;
-
-    await prisma.staffProfile.update({
-      where: { id },
-      data: { avatarUrl: relativeKey },
-    });
-
+    // Direct pre-creation upload (for staff onboarding modal)
     return res.json({
       success: true,
       message: 'Staff photograph uploaded successfully',
-      data: { photoUrl, key: relativeKey },
+      data: {
+        photoStorageKey: relativeKey,
+        key: relativeKey,
+        photoUrl: `/api/staff/photo-raw/${encodeURIComponent(relativeKey)}`,
+      },
     });
   } catch (err: any) {
     console.error('[uploadStaffPhoto Error]', err);
@@ -1013,6 +1032,34 @@ export async function uploadStaffPhoto(req: AuthenticatedRequest, res: Response)
 /**
  * Stream Staff Photograph
  */
+/**
+ * Stream Raw Staff Photograph by Storage Key (for pre-creation preview or direct streaming)
+ */
+export async function getRawStaffPhoto(req: Request, res: Response) {
+  try {
+    const rawKey = decodeURIComponent(req.params.key);
+    const absPath = resolveAbsolutePath(rawKey);
+    if (!absPath || !fs.existsSync(absPath)) {
+      return res.status(404).send('Photograph file not found');
+    }
+
+    const ext = path.extname(absPath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+    };
+
+    res.setHeader('Content-Type', mimeMap[ext] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return fs.createReadStream(absPath).pipe(res);
+  } catch (err: any) {
+    console.error('[getRawStaffPhoto Error]', err);
+    return res.status(500).send('Error streaming photograph');
+  }
+}
+
 export async function getStaffPhoto(req: Request, res: Response) {
   try {
     const { id } = req.params;

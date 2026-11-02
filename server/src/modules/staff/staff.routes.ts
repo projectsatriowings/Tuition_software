@@ -10,6 +10,7 @@ import {
   resetStaffPassword,
   uploadStaffPhoto,
   getStaffPhoto,
+  getRawStaffPhoto,
   addStaffQualification,
   updateStaffQualification,
   deleteStaffQualification,
@@ -26,6 +27,7 @@ import { photoUpload, fileUpload } from '../../utils/storage.js';
 const router = Router();
 
 // Staff photo streaming (accessible to browser <img> tags without header requirements)
+router.get('/photo-raw/:key', getRawStaffPhoto);
 router.get('/:id/photo', getStaffPhoto);
 
 // Authenticated endpoints
@@ -43,6 +45,12 @@ router.post('/:id/assignments', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), as
 router.post('/:id/reset-password', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), resetStaffPassword);
 
 // Staff Photo Upload
+router.post(
+  '/upload-photo',
+  requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
+  photoUpload.single('photo'),
+  uploadStaffPhoto
+);
 router.post(
   '/:id/photo',
   requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'),
