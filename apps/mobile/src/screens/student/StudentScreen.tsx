@@ -10,42 +10,48 @@ import {
   Alert,
   TextInput,
   Modal,
-  Linking,
 } from 'react-native';
 import { useMobileAuth } from '../../context/AuthContext';
-import { mobileApiFetch, buildApiUrl, getApiBaseUrl, buildAuthenticatedDownloadUrl } from '../../services/api';
+import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
-import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { NotificationModal } from '../../components/NotificationModal';
 import { MaterialViewerModal } from '../../components/MaterialViewerModal';
 import { QuizTakerModal } from '../../components/QuizTakerModal';
 import { PushNotificationService } from '../../services/pushNotification.service';
-import { themeTokens } from '@tuition/shared';
+import {
+  StudentBottomNav,
+  StudentActiveTab,
+  StudentPrimaryTab,
+} from './components/StudentBottomNav';
+import { StudentHomeTab } from './components/StudentHomeTab';
+import { StudentMoreTab } from './components/StudentMoreTab';
 
 export const StudentScreen: React.FC = () => {
-  const { user } = useMobileAuth();
+  const { user, institute, logout } = useMobileAuth();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance'>('overview');
+  const [activeTab, setActiveTab] = useState<StudentActiveTab>('home');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Data states
+  // Core Student Data
   const [studentProfile, setStudentProfile] = useState<any>(null);
   const [materials, setMaterials] = useState<any[]>([]);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
   const [progressFeedbacks, setProgressFeedbacks] = useState<any[]>([]);
-  const [attendanceEvents, setAttendanceEvents] = useState<any[]>([]);
   const [feeStatement, setFeeStatement] = useState<any>(null);
 
-  // Receipt Modal
+  // Filters & Sub-tab selectors
+  const [materialFilterSubject, setMaterialFilterSubject] = useState<string>('ALL');
+  const [homeworkSubTab, setHomeworkSubTab] = useState<'assignments' | 'quizzes'>('assignments');
+  const [homeworkFilterStatus, setHomeworkFilterStatus] = useState<string>('ALL');
+  const [examFilter, setExamFilter] = useState<'ALL' | 'RESULTS' | 'UPCOMING'>('ALL');
+
+  // Modals
   const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-
-  // Homework Submission Modal
   const [submittingHw, setSubmittingHw] = useState<any>(null);
   const [submissionContent, setSubmissionContent] = useState('');
   const [submissionLoading, setSubmissionLoading] = useState(false);
@@ -54,22 +60,25 @@ export const StudentScreen: React.FC = () => {
   const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
   const [activeTakingQuiz, setActiveTakingQuiz] = useState<any | null>(null);
 
-
+  // Deep Link & Push Notification Navigation Handler
   const handleNavigateToEntity = async (entityType: string, entityId: string, metadata?: any) => {
     const eType = String(entityType || '').toUpperCase();
 
-    // Normal navigation sync: mark matching notification as read
+    // Mark matching notification as read
     mobileApiFetch('/notifications/mark-read-by-entity', {
       method: 'POST',
       body: { entityType: eType, entityId },
-    }).then((res) => {
-      if (res.success && res.data?.unreadCount !== undefined) {
-        setUnreadNotifCount(res.data.unreadCount);
-      }
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (res.success && res.data?.unreadCount !== undefined) {
+          setUnreadNotifCount(res.data.unreadCount);
+        }
+      })
+      .catch(() => {});
 
     if (eType === 'HOMEWORK') {
-      setActiveTab('academics');
+      setActiveTab('homework');
+      setHomeworkSubTab('assignments');
       const hw = homeworkList.find((h: any) => h.id === entityId);
       if (hw) {
         setSubmittingHw(hw);
@@ -82,7 +91,7 @@ export const StudentScreen: React.FC = () => {
         }
       }
     } else if (eType === 'MATERIAL') {
-      setActiveTab('academics');
+      setActiveTab('learning');
       const mat = materials.find((m: any) => m.id === entityId);
       if (mat) {
         setPreviewMaterial(mat);
@@ -95,7 +104,8 @@ export const StudentScreen: React.FC = () => {
         }
       }
     } else if (eType === 'QUIZ') {
-      setActiveTab('academics');
+      setActiveTab('homework');
+      setHomeworkSubTab('quizzes');
       const quiz = quizzes.find((q: any) => q.id === entityId);
       if (quiz) {
         setActiveTakingQuiz(quiz);
@@ -108,20 +118,17 @@ export const StudentScreen: React.FC = () => {
         }
       }
     } else if (eType === 'EXAM') {
-      setActiveTab('academics');
-    } else if (eType === 'ATTENDANCE') {
-      setActiveTab('attendance');
+      setActiveTab('results');
+    } else if (eType === 'PROGRESS_REPORT') {
+      setActiveTab('progress');
     } else if (eType === 'FEE') {
-      setActiveTab('overview');
+      setActiveTab('fees');
       if (metadata?.paymentId && feeStatement?.recentPayments) {
         const p = feeStatement.recentPayments.find((pay: any) => pay.id === metadata.paymentId);
         if (p) {
-          setSelectedReceipt(p);
-          setShowReceiptModal(true);
+          handleOpenReceipt(p.id);
         }
       }
-    } else if (eType === 'PROGRESS_REPORT') {
-      setActiveTab('academics');
     }
   };
 
@@ -134,34 +141,15 @@ export const StudentScreen: React.FC = () => {
     return unsub;
   }, [homeworkList, materials, quizzes, feeStatement]);
 
-  const formatKolkataTime = (isoString?: string | null) => {
-    if (!isoString) return 'Not available';
-    try {
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return 'Not available';
-      return new Intl.DateTimeFormat('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      }).format(date);
-    } catch {
-      return 'Not available';
-    }
-  };
-
   const fetchStudentData = useCallback(async () => {
     try {
-      // 1. Fetch Student Profile
+      // 1. Student Profile
       const profRes = await mobileApiFetch('/students/my/profile');
       let currentStudent = profRes.data;
       if (profRes.success && currentStudent) {
         setStudentProfile(currentStudent);
 
-        // Fetch Fee Statement
+        // 2. Fees Statement
         if (currentStudent.id) {
           const feeRes = await mobileApiFetch(`/fees/students/${currentStudent.id}/statement`);
           if (feeRes.success) {
@@ -170,31 +158,31 @@ export const StudentScreen: React.FC = () => {
         }
       }
 
-      // 2. Fetch Learning Materials
+      // 3. Learning Materials
       const matRes = await mobileApiFetch('/materials');
       if (matRes.success && matRes.data) {
         setMaterials(Array.isArray(matRes.data) ? matRes.data : matRes.data.materials || []);
       }
 
-      // 3. Fetch Homework
+      // 4. Homework
       const hwRes = await mobileApiFetch('/homework');
       if (hwRes.success && hwRes.data) {
         setHomeworkList(Array.isArray(hwRes.data) ? hwRes.data : hwRes.data.homework || []);
       }
 
-      // 4. Fetch Quizzes
+      // 5. Quizzes
       const quizRes = await mobileApiFetch('/quizzes');
       if (quizRes.success && quizRes.data) {
         setQuizzes(Array.isArray(quizRes.data) ? quizRes.data : quizRes.data.quizzes || []);
       }
 
-      // 5. Fetch Exams
+      // 6. Exams
       const examRes = await mobileApiFetch('/exams');
       if (examRes.success && examRes.data) {
         setExams(Array.isArray(examRes.data) ? examRes.data : examRes.data.exams || []);
       }
 
-      // 6. Fetch Progress Reports
+      // 7. Academic Progress Reports
       const progRes = await mobileApiFetch('/progress');
       if (progRes.success && progRes.data) {
         setProgressFeedbacks(Array.isArray(progRes.data) ? progRes.data : progRes.data.feedbacks || []);
@@ -222,7 +210,6 @@ export const StudentScreen: React.FC = () => {
   const onRefresh = () => {
     setRefreshing(true);
     fetchStudentData();
-    PushNotificationService.registerPushToken().catch(() => {});
     mobileApiFetch('/notifications/unread-count')
       .then((res) => {
         if (res.success && res.data?.unreadCount !== undefined) {
@@ -258,10 +245,6 @@ export const StudentScreen: React.FC = () => {
     }
   };
 
-  const handleDownloadMaterial = (mat: any) => {
-    setPreviewMaterial(mat);
-  };
-
   const handleMarkCompleted = (hw: any) => {
     Alert.alert(
       'Mark as Completed',
@@ -279,14 +262,6 @@ export const StudentScreen: React.FC = () => {
               if (res.success) {
                 Alert.alert('Success', 'Assignment marked as completed!');
                 fetchStudentData();
-    PushNotificationService.registerPushToken().catch(() => {});
-    mobileApiFetch('/notifications/unread-count')
-      .then((res) => {
-        if (res.success && res.data?.unreadCount !== undefined) {
-          setUnreadNotifCount(res.data.unreadCount);
-        }
-      })
-      .catch(() => {});
               } else {
                 Alert.alert('Error', res.error || 'Could not complete assignment.');
               }
@@ -301,7 +276,7 @@ export const StudentScreen: React.FC = () => {
 
   const handleSubmitHomework = async () => {
     if (!submissionContent.trim() || !submittingHw) {
-      Alert.alert('Error', 'Please enter your submission text or link.');
+      Alert.alert('Error', 'Please enter your submission text or document link.');
       return;
     }
 
@@ -319,14 +294,6 @@ export const StudentScreen: React.FC = () => {
         setSubmittingHw(null);
         setSubmissionContent('');
         fetchStudentData();
-    PushNotificationService.registerPushToken().catch(() => {});
-    mobileApiFetch('/notifications/unread-count')
-      .then((res) => {
-        if (res.success && res.data?.unreadCount !== undefined) {
-          setUnreadNotifCount(res.data.unreadCount);
-        }
-      })
-      .catch(() => {});
       } else {
         Alert.alert('Submission Error', res.error || 'Could not submit homework.');
       }
@@ -337,413 +304,997 @@ export const StudentScreen: React.FC = () => {
     }
   };
 
-  const formatRupee = (amt: number) => {
-    return `₹${(amt || 0).toLocaleString('en-IN')}`;
+  const formatRupee = (amt: number) => `₹${(amt || 0).toLocaleString('en-IN')}`;
+
+  // Unique list of subjects for filtering materials
+  const materialSubjects = Array.from(
+    new Set(materials.map((m) => m.subject?.name).filter(Boolean))
+  ) as string[];
+
+  const filteredMaterials =
+    materialFilterSubject === 'ALL'
+      ? materials
+      : materials.filter((m) => m.subject?.name === materialFilterSubject);
+
+  // Homework status helper & filtered list
+  const getHomeworkStatusInfo = (hw: any) => {
+    if (hw.studentStatus === 'GRADED') {
+      return {
+        label: `GRADED${hw.grade ? `: ${hw.grade}` : ''}`,
+        bg: '#E8F5E9',
+        color: '#2E7D32',
+      };
+    }
+    if (hw.studentStatus === 'COMPLETED') {
+      return { label: 'COMPLETED', bg: '#E8F5E9', color: '#2E7D32' };
+    }
+    if (hw.studentStatus === 'AWAITING_REVIEW' || hw.studentStatus === 'SUBMITTED') {
+      return { label: 'AWAITING REVIEW', bg: '#E3F2FD', color: '#1565C0' };
+    }
+    if (hw.mySubmission) {
+      return {
+        label: hw.mySubmission.status || 'SUBMITTED',
+        bg: '#E3F2FD',
+        color: '#1565C0',
+      };
+    }
+    if (hw.isOverdue) {
+      return { label: 'OVERDUE', bg: '#FFEBEE', color: '#C62828' };
+    }
+    return { label: 'NOT STARTED', bg: '#FFF3E0', color: '#E65100' };
   };
+
+  const filteredHomeworkList = homeworkList.filter((hw) => {
+    if (homeworkFilterStatus === 'ALL') return true;
+    const isDone =
+      hw.studentStatus === 'COMPLETED' ||
+      hw.studentStatus === 'GRADED' ||
+      !!hw.mySubmission;
+    if (homeworkFilterStatus === 'PENDING') return !isDone;
+    if (homeworkFilterStatus === 'SUBMITTED') return !!hw.mySubmission;
+    if (homeworkFilterStatus === 'GRADED') return hw.studentStatus === 'GRADED';
+    return true;
+  });
+
+  const filteredExams = exams.filter((exam) => {
+    if (examFilter === 'ALL') return true;
+    if (examFilter === 'RESULTS') return exam.isResultsPublished;
+    if (examFilter === 'UPCOMING') return !exam.isResultsPublished;
+    return true;
+  });
+
+  // Is this a secondary screen that should show the breadcrumb back button?
+  const isSecondaryScreen = ['progress', 'timetable', 'fees', 'profile'].includes(activeTab);
 
   return (
     <View style={styles.container}>
+      {/* Top Header */}
       <Header
-        title="Student Portal"
-        subtitle={studentProfile?.batch?.name ? `Class: ${studentProfile.batch.name}` : 'Welcome back'}
+        title={
+          activeTab === 'home'
+            ? 'TuitionOS Student'
+            : activeTab === 'learning'
+            ? 'Learning Materials'
+            : activeTab === 'homework'
+            ? 'Homework & Quizzes'
+            : activeTab === 'results'
+            ? 'Exam Results'
+            : activeTab === 'progress'
+            ? 'Progress Reports'
+            : activeTab === 'timetable'
+            ? 'Class Timetable'
+            : activeTab === 'fees'
+            ? 'Fee Statement'
+            : activeTab === 'profile'
+            ? 'Student Profile'
+            : 'Student Portal'
+        }
+        subtitle={
+          studentProfile?.batch?.name
+            ? `Batch: ${studentProfile.batch.name}`
+            : user?.fullName || 'Academic Portal'
+        }
         onRefresh={onRefresh}
         onOpenNotifications={() => setShowNotificationModal(true)}
         unreadNotificationsCount={unreadNotifCount}
       />
 
-      {/* Tabs */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          onPress={() => setActiveTab('overview')}
-          style={[styles.tabItem, activeTab === 'overview' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
-            Overview & Pass
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('academics')}
-          style={[styles.tabItem, activeTab === 'academics' && styles.activeTabItem]}
-        >
-          <Text style={[styles.tabText, activeTab === 'academics' && styles.activeTabText]}>
-            Academics
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.loadingText}>Loading your student dashboard...</Text>
+      {/* Secondary Sub-View Navigation Breadcrumb */}
+      {isSecondaryScreen && (
+        <View style={styles.breadcrumbBar}>
+          <TouchableOpacity
+            style={styles.breadcrumbButton}
+            onPress={() => setActiveTab('more')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.breadcrumbText}>&larr; Back to More Menu</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
-        >
-          {/* TAB 1: OVERVIEW & PASS */}
-          {activeTab === 'overview' && (
-            <View>
-              {/* Profile Card */}
-              <Card highlighted>
-                <View style={styles.profileRow}>
-                  <View style={styles.avatarLarge}>
-                    <Text style={styles.avatarLargeText}>
-                      {user?.fullName?.[0] || 'S'}
-                    </Text>
-                  </View>
-                  <View style={styles.profileDetails}>
-                    <Text style={styles.studentName}>{user?.fullName || 'Student'}</Text>
-                    <Text style={styles.studentRoll}>
-                      Admission: {studentProfile?.admissionNumber || '—'} &bull; Batch: {studentProfile?.batch?.name || 'Assigned'}
-                    </Text>
-                    {studentProfile?.createdAt && (
-                      <Text style={[styles.studentRoll, { marginTop: 2, fontSize: 11 }]}>
-                        Created: {formatKolkataTime(studentProfile.createdAt)}
+      )}
+
+      {/* Main Content Area */}
+      <View style={styles.body}>
+        {/* TAB 1: HOME */}
+        {activeTab === 'home' && (
+          <StudentHomeTab
+            user={user}
+            studentProfile={studentProfile}
+            materials={materials}
+            homeworkList={homeworkList}
+            quizzes={quizzes}
+            exams={exams}
+            progressFeedbacks={progressFeedbacks}
+            feeStatement={feeStatement}
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenHomeworkSubmission={(hw) => setSubmittingHw(hw)}
+            onPreviewMaterial={(mat) => setPreviewMaterial(mat)}
+            onStartQuiz={(quiz) => setActiveTakingQuiz(quiz)}
+            onOpenReceipt={(paymentId) => handleOpenReceipt(paymentId)}
+          />
+        )}
+
+        {/* TAB 2: LEARNING MATERIALS */}
+        {activeTab === 'learning' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#4E342E"
+              />
+            }
+          >
+            {/* Subject Filters */}
+            {materialSubjects.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipRow}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    materialFilterSubject === 'ALL' && styles.filterChipActive,
+                  ]}
+                  onPress={() => setMaterialFilterSubject('ALL')}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      materialFilterSubject === 'ALL' && styles.filterChipTextActive,
+                    ]}
+                  >
+                    All Subjects ({materials.length})
+                  </Text>
+                </TouchableOpacity>
+
+                {materialSubjects.map((subj) => {
+                  const count = materials.filter((m) => m.subject?.name === subj).length;
+                  return (
+                    <TouchableOpacity
+                      key={subj}
+                      style={[
+                        styles.filterChip,
+                        materialFilterSubject === subj && styles.filterChipActive,
+                      ]}
+                      onPress={() => setMaterialFilterSubject(subj)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          materialFilterSubject === subj && styles.filterChipTextActive,
+                        ]}
+                      >
+                        {subj} ({count})
                       </Text>
-                    )}
-                    <View style={styles.badgeRow}>
-                      <Badge label="ACTIVE ENROLLED" variant="success" size="sm" />
-                      {studentProfile?.batch?.grade && (
-                        <Badge label={`Grade ${studentProfile.batch.grade}`} variant="indigo" size="sm" />
-                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {filteredMaterials.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>📚</Text>
+                <Text style={styles.emptyTitle}>No Study Materials Available</Text>
+                <Text style={styles.emptySubtitle}>
+                  Notes, presentations and reference files uploaded by your faculty will appear here.
+                </Text>
+              </View>
+            ) : (
+              filteredMaterials.map((mat) => (
+                <View key={mat.id} style={styles.itemCard}>
+                  <View style={styles.itemTopRow}>
+                    <View style={styles.itemIconBox}>
+                      <Text style={styles.itemIconText}>
+                        {mat.type === 'PDF' ? '📄' : mat.type === 'AUDIO' ? '🎧' : '📁'}
+                      </Text>
                     </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{mat.title}</Text>
+                      <Text style={styles.itemMeta}>
+                        {mat.subject?.name || 'Curriculum'} &bull; {mat.type || 'DOCUMENT'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.actionPillButton}
+                      onPress={() => setPreviewMaterial(mat)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.actionPillButtonText}>View File</Text>
+                    </TouchableOpacity>
                   </View>
+                  {mat.description ? (
+                    <Text style={styles.itemDescription} numberOfLines={3}>
+                      {mat.description}
+                    </Text>
+                  ) : null}
                 </View>
-              </Card>
+              ))
+            )}
+          </ScrollView>
+        )}
 
-              {/* Key Highlights */}
-              <View style={styles.statsRow}>
-                <View style={[styles.statBox, { backgroundColor: '#1e1b4b' }]}>
-                  <Text style={styles.statLabel}>OUTSTANDING FEES</Text>
-                  <Text style={[styles.statValue, { color: '#f87171' }]}>
-                    {formatRupee(feeStatement?.summary?.outstandingBalance || 0)}
-                  </Text>
-                  <Text style={styles.statNote}>Total Due</Text>
-                </View>
-
-                <View style={[styles.statBox, { backgroundColor: '#064e3b' }]}>
-                  <Text style={styles.statLabel}>FEES PAID</Text>
-                  <Text style={[styles.statValue, { color: '#34d399' }]}>
-                    {formatRupee(feeStatement?.summary?.totalPaid || 0)}
-                  </Text>
-                  <Text style={styles.statNote}>Cleared to Date</Text>
-                </View>
-              </View>
+        {/* TAB 3: HOMEWORK & QUIZZES */}
+        {activeTab === 'homework' && (
+          <View style={{ flex: 1 }}>
+            {/* Sub-tab pills */}
+            <View style={styles.subTabBar}>
+              <TouchableOpacity
+                style={[
+                  styles.subTabButton,
+                  homeworkSubTab === 'assignments' && styles.subTabButtonActive,
+                ]}
+                onPress={() => setHomeworkSubTab('assignments')}
+              >
+                <Text
+                  style={[
+                    styles.subTabText,
+                    homeworkSubTab === 'assignments' && styles.subTabTextActive,
+                  ]}
+                >
+                  📝 Assignments ({homeworkList.length})
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.subTabButton,
+                  homeworkSubTab === 'quizzes' && styles.subTabButtonActive,
+                ]}
+                onPress={() => setHomeworkSubTab('quizzes')}
+              >
+                <Text
+                  style={[
+                    styles.subTabText,
+                    homeworkSubTab === 'quizzes' && styles.subTabTextActive,
+                  ]}
+                >
+                  🎯 Quizzes ({quizzes.length})
+                </Text>
+              </TouchableOpacity>
             </View>
-          )}
 
-          {/* TAB 2: ACADEMICS (Materials, Homework, Exams) */}
-          {activeTab === 'academics' && (
-            <View>
-              {/* Materials Section */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>📚 Learning Materials & Notes</Text>
-                <Text style={styles.sectionCount}>{materials.length} available</Text>
-              </View>
-
-              {materials.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No materials assigned to your batch yet.</Text>
-                </Card>
-              ) : (
-                materials.map((mat) => (
-                  <Card key={mat.id} onPress={() => handleDownloadMaterial(mat)}>
-                    <View style={styles.matRow}>
-                      <View style={styles.matIconCircle}>
-                        <Text style={styles.matIcon}>{mat.type === 'PDF' ? '📄' : '🎧'}</Text>
-                      </View>
-                      <View style={styles.matInfo}>
-                        <Text style={styles.matTitle}>{mat.title}</Text>
-                        <Text style={styles.matSubject}>
-                          {mat.subject?.name || 'General'} &bull; {mat.type}
+            <ScrollView
+              style={styles.tabContent}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor="#4E342E"
+                />
+              }
+            >
+              {homeworkSubTab === 'assignments' ? (
+                <>
+                  {/* Status Filter Chips */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chipRow}
+                  >
+                    {['ALL', 'PENDING', 'SUBMITTED', 'GRADED'].map((st) => (
+                      <TouchableOpacity
+                        key={st}
+                        style={[
+                          styles.filterChip,
+                          homeworkFilterStatus === st && styles.filterChipActive,
+                        ]}
+                        onPress={() => setHomeworkFilterStatus(st)}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            homeworkFilterStatus === st && styles.filterChipTextActive,
+                          ]}
+                        >
+                          {st === 'ALL'
+                            ? `All (${homeworkList.length})`
+                            : st === 'PENDING'
+                            ? 'Pending'
+                            : st === 'SUBMITTED'
+                            ? 'Submitted'
+                            : 'Graded'}
                         </Text>
-                        {mat.description ? (
-                          <Text style={styles.matDesc} numberOfLines={2}>
-                            {mat.description}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  {filteredHomeworkList.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyEmoji}>📝</Text>
+                      <Text style={styles.emptyTitle}>No Homework Found</Text>
+                      <Text style={styles.emptySubtitle}>
+                        You have no homework matching the selected filter.
+                      </Text>
+                    </View>
+                  ) : (
+                    filteredHomeworkList.map((hw) => {
+                      const statusInfo = getHomeworkStatusInfo(hw);
+                      const isCompleted =
+                        hw.studentStatus === 'COMPLETED' ||
+                        hw.studentStatus === 'GRADED' ||
+                        !!hw.mySubmission;
+
+                      return (
+                        <View key={hw.id} style={styles.itemCard}>
+                          <View style={styles.hwTopRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.itemTitle}>{hw.title}</Text>
+                              <Text style={styles.itemMeta}>
+                                {hw.subject?.name || 'Subject'}
+                              </Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.statusBadge,
+                                { backgroundColor: statusInfo.bg },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.statusBadgeText,
+                                  { color: statusInfo.color },
+                                ]}
+                              >
+                                {statusInfo.label}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text style={styles.itemDescription}>
+                            {hw.description}
+                          </Text>
+
+                          {/* Submission Feedback Info if available */}
+                          {hw.mySubmission && (
+                            <View style={styles.submissionDetailsBox}>
+                              <Text style={styles.submissionDateText}>
+                                Submitted on:{' '}
+                                {new Date(
+                                  hw.mySubmission.submittedAt
+                                ).toLocaleDateString('en-IN')}
+                              </Text>
+                              {hw.mySubmission.grade && (
+                                <Text style={styles.gradeResultText}>
+                                  Grade: {hw.mySubmission.grade}{' '}
+                                  {hw.mySubmission.feedback
+                                    ? `• "${hw.mySubmission.feedback}"`
+                                    : ''}
+                                </Text>
+                              )}
+                            </View>
+                          )}
+
+                          <View style={styles.hwCardFooter}>
+                            <Text style={styles.dueDateText}>
+                              📅 Due:{' '}
+                              {hw.dueDate
+                                ? new Date(hw.dueDate).toLocaleDateString('en-IN')
+                                : 'Open'}
+                            </Text>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              {!isCompleted && (
+                                <TouchableOpacity
+                                  style={styles.completeBtn}
+                                  onPress={() => handleMarkCompleted(hw)}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={styles.completeBtnText}>
+                                    ✓ Complete
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                              <TouchableOpacity
+                                style={styles.submitBtn}
+                                onPress={() => setSubmittingHw(hw)}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.submitBtnText}>
+                                  {hw.mySubmission ? 'Update Work' : 'Submit Work'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </>
+              ) : (
+                /* Quizzes Sub-tab */
+                <>
+                  {quizzes.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyEmoji}>🎯</Text>
+                      <Text style={styles.emptyTitle}>No Quizzes Scheduled</Text>
+                      <Text style={styles.emptySubtitle}>
+                        Interactive tests and assessments assigned by your teacher will appear here.
+                      </Text>
+                    </View>
+                  ) : (
+                    quizzes.map((quiz) => (
+                      <View key={quiz.id} style={styles.itemCard}>
+                        <View style={styles.hwTopRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.itemTitle}>{quiz.title}</Text>
+                            <Text style={styles.itemMeta}>
+                              {quiz.subject?.name || 'Curriculum'} &bull;{' '}
+                              {quiz.durationMinutes
+                                ? `${quiz.durationMinutes} mins`
+                                : 'Untimed'}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              quiz.myAttempt
+                                ? { backgroundColor: '#E8F5E9' }
+                                : { backgroundColor: '#EDE7F6' },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                quiz.myAttempt
+                                  ? { color: '#2E7D32' }
+                                  : { color: '#512DA8' },
+                              ]}
+                            >
+                              {quiz.myAttempt
+                                ? `${quiz.myAttempt.score}/${quiz.myAttempt.totalMarks} (${quiz.myAttempt.percentage}%)`
+                                : 'AVAILABLE'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {quiz.instructions ? (
+                          <Text style={styles.itemDescription} numberOfLines={2}>
+                            {quiz.instructions}
+                          </Text>
+                        ) : null}
+
+                        <View style={styles.hwCardFooter}>
+                          <Text style={styles.dueDateText}>
+                            Questions: {quiz._count?.questions || 0}
+                          </Text>
+                          <TouchableOpacity
+                            style={[
+                              styles.submitBtn,
+                              quiz.myAttempt && { backgroundColor: '#2E7D32' },
+                            ]}
+                            onPress={() => {
+                              if (quiz.myAttempt) {
+                                Alert.alert(
+                                  quiz.title,
+                                  `Your Score: ${quiz.myAttempt.score}/${quiz.myAttempt.totalMarks} (${quiz.myAttempt.percentage}%)\n\nSubmitted at: ${new Date(quiz.myAttempt.submittedAt).toLocaleDateString('en-IN')}`
+                                );
+                              } else {
+                                setActiveTakingQuiz(quiz);
+                              }
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.submitBtnText}>
+                              {quiz.myAttempt ? 'View Score' : 'Start Quiz'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </>
+              )}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* TAB 4: EXAM RESULTS */}
+        {activeTab === 'results' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#4E342E"
+              />
+            }
+          >
+            {/* Filter chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {[
+                { id: 'ALL', label: `All Exams (${exams.length})` },
+                { id: 'RESULTS', label: 'Published Results' },
+                { id: 'UPCOMING', label: 'Scheduled' },
+              ].map((f) => (
+                <TouchableOpacity
+                  key={f.id}
+                  style={[
+                    styles.filterChip,
+                    examFilter === f.id && styles.filterChipActive,
+                  ]}
+                  onPress={() => setExamFilter(f.id as any)}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      examFilter === f.id && styles.filterChipTextActive,
+                    ]}
+                  >
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {filteredExams.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>🏆</Text>
+                <Text style={styles.emptyTitle}>No Examinations Found</Text>
+                <Text style={styles.emptySubtitle}>
+                  Exam schedules and evaluated results will be listed here.
+                </Text>
+              </View>
+            ) : (
+              filteredExams.map((exam) => {
+                const mark = exam.studentMark;
+                const isResultsPub = exam.isResultsPublished;
+
+                return (
+                  <View key={exam.id} style={styles.itemCard}>
+                    <View style={styles.hwTopRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemTitle}>
+                          {exam.title || exam.name}
+                        </Text>
+                        <Text style={styles.itemMeta}>
+                          {exam.subject?.name || 'General'} &bull; Max Marks:{' '}
+                          {exam.totalMarks || 100}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          isResultsPub
+                            ? mark?.isPassed
+                              ? { backgroundColor: '#E8F5E9' }
+                              : { backgroundColor: '#FFEBEE' }
+                            : { backgroundColor: '#EDE7F6' },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            isResultsPub
+                              ? mark?.isPassed
+                                ? { color: '#2E7D32' }
+                                : { color: '#C62828' }
+                              : { color: '#512DA8' },
+                          ]}
+                        >
+                          {isResultsPub
+                            ? mark?.status || 'EVALUATED'
+                            : 'SCHEDULED'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.examDateLine}>
+                      📅 Exam Date:{' '}
+                      {exam.examDate
+                        ? new Date(exam.examDate).toLocaleDateString('en-IN')
+                        : 'Scheduled'}{' '}
+                      {exam.startTime ? `(${exam.startTime})` : ''}
+                    </Text>
+
+                    {isResultsPub && mark ? (
+                      <View
+                        style={[
+                          styles.markResultBox,
+                          mark.isPassed
+                            ? styles.markResultBoxPass
+                            : styles.markResultBoxFail,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.markScoreText,
+                            mark.isPassed
+                              ? styles.markScoreTextPass
+                              : styles.markScoreTextFail,
+                          ]}
+                        >
+                          Score: {mark.marksObtained} / {exam.totalMarks} (
+                          {mark.percentage}%) &bull;{' '}
+                          {mark.isPassed ? 'PASSED' : 'RETEST'}
+                        </Text>
+                        {mark.remarks ? (
+                          <Text style={styles.markRemarksText}>
+                            "{mark.remarks}"
                           </Text>
                         ) : null}
                       </View>
-                      <TouchableOpacity
-                        onPress={() => handleDownloadMaterial(mat)}
-                        style={styles.downloadBtn}
-                      >
-                        <Text style={styles.downloadBtnText}>View</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </Card>
-                ))
-              )}
-
-              {/* Homework Section */}
-              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
-                <Text style={styles.sectionTitle}>📝 Homework & Assignments</Text>
-                <Text style={styles.sectionCount}>{homeworkList.length} total</Text>
-              </View>
-
-              {homeworkList.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No active homework assignments.</Text>
-                </Card>
-              ) : (
-                homeworkList.map((hw) => (
-                  <Card key={hw.id}>
-                    <View style={styles.hwHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.hwTitle}>{hw.title}</Text>
-                        <Text style={styles.hwSubject}>{hw.subject?.name || 'Subject'}</Text>
-                      </View>
-                      <Badge
-                        label={
-                          hw.studentStatus === 'GRADED'
-                            ? `GRADED${hw.grade ? `: ${hw.grade}` : ''}`
-                            : hw.studentStatus === 'COMPLETED'
-                            ? 'COMPLETED'
-                            : hw.studentStatus === 'AWAITING_REVIEW'
-                            ? 'AWAITING REVIEW'
-                            : hw.mySubmission
-                            ? hw.mySubmission.status
-                            : hw.isOverdue
-                            ? 'OVERDUE'
-                            : 'NOT STARTED'
-                        }
-                        variant={
-                          hw.studentStatus === 'GRADED' || hw.studentStatus === 'COMPLETED'
-                            ? 'success'
-                            : hw.studentStatus === 'AWAITING_REVIEW' || hw.studentStatus === 'SUBMITTED'
-                            ? 'info'
-                            : hw.isOverdue
-                            ? 'danger'
-                            : 'warning'
-                        }
-                      />
-                    </View>
-                    <Text style={styles.hwDescription}>{hw.description}</Text>
-
-                    {hw.mySubmission && (
-                      <View style={{ marginTop: 8, padding: 8, backgroundColor: themeTokens.colors.surfaceMuted, borderRadius: 8 }}>
-                        <Text style={{ fontSize: 11, color: themeTokens.colors.textSecondary }}>
-                          Submitted: {new Date(hw.mySubmission.submittedAt).toLocaleDateString('en-IN')}
+                    ) : (
+                      <View style={styles.pendingEvalBox}>
+                        <Text style={styles.pendingEvalText}>
+                          ⏳ Official results pending evaluation by faculty.
                         </Text>
-                        {hw.mySubmission.grade && (
-                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: themeTokens.colors.primary, marginTop: 2 }}>
-                            Grade: {hw.mySubmission.grade} {hw.mySubmission.feedback ? `(${hw.mySubmission.feedback})` : ''}
-                          </Text>
-                        )}
                       </View>
                     )}
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
 
-                    <View style={styles.hwFooter}>
-                      <Text style={styles.hwDueDate}>
-                        📅 Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString('en-IN') : 'Open'}
-                      </Text>
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
-                        {!hw.mySubmission && (
-                          <TouchableOpacity
-                            onPress={() => handleMarkCompleted(hw)}
-                            style={[styles.submitHwBtn, { backgroundColor: themeTokens.colors.success }]}
-                          >
-                            <Text style={styles.submitHwBtnText}>✓ Complete</Text>
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity
-                          onPress={() => setSubmittingHw(hw)}
-                          style={styles.submitHwBtn}
-                        >
-                          <Text style={styles.submitHwBtnText}>
-                            {hw.mySubmission ? 'Update Work' : 'Submit Work'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </Card>
-                ))
-              )}
+        {/* TAB 5: MORE MENU */}
+        {activeTab === 'more' && (
+          <StudentMoreTab
+            user={user}
+            institute={institute}
+            studentProfile={studentProfile}
+            progressFeedbacks={progressFeedbacks}
+            feeStatement={feeStatement}
+            unreadCount={unreadNotifCount}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onOpenNotifications={() => setShowNotificationModal(true)}
+            onSignOut={logout}
+          />
+        )}
 
-              {/* Quizzes & Assessments Section (Phase 6 & 9) */}
-              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
-                <Text style={styles.sectionTitle}>🎯 Quizzes & Assessments</Text>
-                <Text style={styles.sectionCount}>{quizzes.length} available</Text>
+        {/* SUB-VIEW: ACADEMIC PROGRESS REPORTS (REPORTS ONLY) */}
+        {activeTab === 'progress' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#4E342E"
+              />
+            }
+          >
+            <View style={styles.moduleNoticeHeader}>
+              <Text style={styles.moduleNoticeTitle}>
+                Academic Performance Reports
+              </Text>
+              <Text style={styles.moduleNoticeSubtitle}>
+                Published term evaluations from your faculty.
+              </Text>
+            </View>
+
+            {progressFeedbacks.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>📊</Text>
+                <Text style={styles.emptyTitle}>No Progress Reports Yet</Text>
+                <Text style={styles.emptySubtitle}>
+                  Formal progress evaluations and remarks from your teachers will appear here.
+                </Text>
               </View>
+            ) : (
+              progressFeedbacks.map((fb) => (
+                <View key={fb.id} style={styles.itemCard}>
+                  <View style={styles.hwTopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{fb.termName}</Text>
+                      <Text style={styles.itemMeta}>
+                        Evaluated by {fb.staff?.fullName || 'Faculty'} &bull;{' '}
+                        {fb.periodType || 'TERM'}
+                      </Text>
+                    </View>
+                    <View style={styles.ratingBadge}>
+                      <Text style={styles.ratingBadgeText}>
+                        {fb.rating || 5}/5 ★
+                      </Text>
+                    </View>
+                  </View>
 
-              {quizzes.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No quizzes available at the moment.</Text>
-                </Card>
-              ) : (
-                quizzes.map((quiz) => (
-                  <Card key={quiz.id}>
-                    <View style={styles.hwHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.hwTitle}>{quiz.title}</Text>
-                        <Text style={styles.hwSubject}>
-                          {quiz.subject?.name || 'Curriculum'} • {quiz.durationMinutes ? `${quiz.durationMinutes} mins` : 'Untimed'}
+                  {/* Metrics Row */}
+                  {(fb.attendanceRate !== null ||
+                    fb.homeworkRate !== null ||
+                    fb.examAverage !== null) && (
+                    <View style={styles.progressMetricsGrid}>
+                      <View style={styles.progressMetricCell}>
+                        <Text style={styles.progressMetricLabel}>
+                          ATTENDANCE
+                        </Text>
+                        <Text style={styles.progressMetricValue}>
+                          {fb.attendanceRate !== null
+                            ? `${Number(fb.attendanceRate)}%`
+                            : 'N/A'}
                         </Text>
                       </View>
-                      <Badge
-                        label={quiz.myAttempt ? `${quiz.myAttempt.score}/${quiz.myAttempt.totalMarks}` : 'AVAILABLE'}
-                        variant={quiz.myAttempt ? 'success' : 'info'}
-                      />
-                    </View>
-                    {quiz.instructions ? (
-                      <Text style={[styles.hwDescription, { marginTop: 6 }]} numberOfLines={2}>
-                        {quiz.instructions}
-                      </Text>
-                    ) : null}
-                    <View style={[styles.hwFooter, { marginTop: 8 }]}>
-                      <Text style={styles.hwDueDate}>
-                        Questions: {quiz._count?.questions || 0}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          if (quiz.myAttempt) {
-                            Alert.alert(
-                              quiz.title,
-                              `Your Score: ${quiz.myAttempt.score}/${quiz.myAttempt.totalMarks} (${quiz.myAttempt.percentage}%)\n\nSubmitted at: ${formatKolkataTime(quiz.myAttempt.submittedAt)}`
-                            );
-                          } else {
-                            setActiveTakingQuiz(quiz);
-                          }
-                        }}
-                        style={[styles.submitHwBtn, { backgroundColor: quiz.myAttempt ? themeTokens.colors.success : themeTokens.colors.primary }]}
-                      >
-                        <Text style={styles.submitHwBtnText}>
-                          {quiz.myAttempt ? 'View Score' : 'Take Quiz'}
+                      <View style={styles.progressMetricCell}>
+                        <Text style={styles.progressMetricLabel}>HOMEWORK</Text>
+                        <Text style={styles.progressMetricValue}>
+                          {fb.homeworkRate !== null
+                            ? `${Number(fb.homeworkRate)}%`
+                            : 'N/A'}
                         </Text>
-                      </TouchableOpacity>
+                      </View>
+                      <View style={styles.progressMetricCell}>
+                        <Text style={styles.progressMetricLabel}>TEST AVG</Text>
+                        <Text style={styles.progressMetricValue}>
+                          {fb.examAverage !== null
+                            ? `${Number(fb.examAverage)}%`
+                            : 'N/A'}
+                        </Text>
+                      </View>
                     </View>
-                  </Card>
-                ))
-              )}
+                  )}
 
-              {/* Exams Section */}
-              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
-                <Text style={styles.sectionTitle}>🏆 Examinations & Results</Text>
-                <Text style={styles.sectionCount}>{exams.length} exams</Text>
-              </View>
+                  {/* Teacher Remarks */}
+                  {fb.remarks ? (
+                    <View style={styles.remarksCard}>
+                      <Text style={styles.remarksQuote}>"{fb.remarks}"</Text>
+                    </View>
+                  ) : null}
 
-              {exams.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No published examinations yet.</Text>
-                </Card>
-              ) : (
-                exams.map((exam) => {
-                  const mark = exam.studentMark;
-                  const isResultsPub = exam.isResultsPublished;
+                  {/* Actionable Feedback Highlights */}
+                  {fb.strengths ? (
+                    <View style={styles.strengthBox}>
+                      <Text style={styles.strengthText}>
+                        💪 STRENGTHS: {fb.strengths}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {fb.improvements ? (
+                    <View style={styles.growthBox}>
+                      <Text style={styles.growthText}>
+                        📈 GROWTH AREAS: {fb.improvements}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {fb.recommendations ? (
+                    <View style={styles.actionBox}>
+                      <Text style={styles.actionText}>
+                        🎯 ACTIONS: {fb.recommendations}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ))
+            )}
+          </ScrollView>
+        )}
 
-                  return (
-                    <Card key={exam.id}>
-                      <View style={styles.examRow}>
+        {/* SUB-VIEW: TIMETABLE & BATCH SCHEDULE */}
+        {activeTab === 'timetable' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.moduleNoticeHeader}>
+              <Text style={styles.moduleNoticeTitle}>Enrolled Batch Schedule</Text>
+              <Text style={styles.moduleNoticeSubtitle}>
+                {studentProfile?.batch?.name || 'Academic Class'} &bull; Grade{' '}
+                {studentProfile?.batch?.grade || '—'}
+              </Text>
+            </View>
+
+            {studentProfile?.enrollments && studentProfile.enrollments.length > 0 ? (
+              studentProfile.enrollments.map((enr: any) => (
+                <View key={enr.id} style={styles.itemCard}>
+                  <Text style={styles.itemTitle}>{enr.batch?.name}</Text>
+                  <Text style={styles.itemMeta}>
+                    Classroom: {enr.batch?.roomNumber || 'Assigned Hall'}
+                  </Text>
+
+                  {enr.batch?.schedule ? (
+                    <View style={styles.scheduleBadge}>
+                      <Text style={styles.scheduleBadgeText}>
+                        ⏰ Schedule: {enr.batch.schedule}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={[styles.sectionHeading, { marginTop: 12 }]}>
+                    CURRICULUM & FACULTY
+                  </Text>
+                  {enr.batch?.batchSubjects && enr.batch.batchSubjects.length > 0 ? (
+                    enr.batch.batchSubjects.map((bs: any) => (
+                      <View key={bs.id} style={styles.subjectTeacherRow}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.examTitle}>{exam.title || exam.name}</Text>
-                          <Text style={styles.examSubject}>
-                            {exam.subject?.name || 'General'} &bull; Max Marks: {exam.totalMarks || 100}
+                          <Text style={styles.subjectTeacherName}>
+                            📖 {bs.subject?.name || 'Subject'}
+                          </Text>
+                          <Text style={styles.subjectTeacherFaculty}>
+                            Faculty: {bs.staffProfile?.user?.fullName || 'Assigned Teacher'}
                           </Text>
                         </View>
-                        <Badge
-                          label={isResultsPub ? (mark?.status || 'RESULTS') : 'SCHEDULED'}
-                          variant={isResultsPub ? (mark?.isPassed ? 'success' : 'danger') : 'info'}
-                          size="sm"
-                        />
-                      </View>
-
-                      <View style={styles.examDateRow}>
-                        <Text style={styles.examDateText}>
-                          Date: {exam.examDate ? new Date(exam.examDate).toLocaleDateString('en-IN') : 'Scheduled'}
-                          {exam.startTime ? ` (${exam.startTime}${exam.endTime ? ' - ' + exam.endTime : ''})` : ''}
-                        </Text>
-                      </View>
-
-                      {isResultsPub && mark ? (
-                        <View style={{ marginTop: 8, padding: 8, backgroundColor: mark.isPassed ? '#E8F5E9' : '#FFEBEE', borderRadius: 8 }}>
-                          <Text style={{ fontSize: 13, fontWeight: 'bold', color: mark.isPassed ? '#2E7D32' : '#C62828' }}>
-                            Score: {mark.marksObtained} / {exam.totalMarks} ({mark.percentage}%) &bull; {mark.status}
-                          </Text>
-                          {mark.remarks ? (
-                            <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#4E342E', marginTop: 2 }}>
-                              "{mark.remarks}"
+                        {bs.weeklyHours ? (
+                          <View style={styles.hoursBadge}>
+                            <Text style={styles.hoursBadgeText}>
+                              {bs.weeklyHours}h/wk
                             </Text>
-                          ) : null}
-                        </View>
-                      ) : (
-                        <View style={{ marginTop: 6 }}>
-                          <Text style={{ fontSize: 11, color: '#8D6E63', fontStyle: 'italic' }}>
-                            Official results pending evaluation.
-                          </Text>
-                        </View>
-                      )}
-                    </Card>
-                  );
-                })
-              )}
-
-              {/* Progress Reports Section */}
-              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
-                <Text style={styles.sectionTitle}>✨ Faculty Progress Reports</Text>
-                <Text style={styles.sectionCount}>{progressFeedbacks.length} reports</Text>
-              </View>
-
-              {progressFeedbacks.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No academic progress reports published yet.</Text>
-                </Card>
-              ) : (
-                progressFeedbacks.map((fb) => (
-                  <Card key={fb.id}>
-                    <View style={styles.examRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.examTitle}>{fb.termName}</Text>
-                        <Text style={styles.examSubject}>
-                          Evaluated by {fb.staff?.fullName || 'Faculty'} &bull; {fb.periodType || 'TERM'}
-                        </Text>
+                          </View>
+                        ) : null}
                       </View>
-                      <Badge label={`${fb.rating || 5}/5 ★`} variant="info" size="sm" />
-                    </View>
-
-                    {(fb.attendanceRate !== null || fb.homeworkRate !== null || fb.examAverage !== null) && (
-                      <View style={{ flexDirection: 'row', backgroundColor: '#F7F2EF', padding: 8, borderRadius: 8, marginTop: 8, justifyContent: 'space-around' }}>
-                        <View style={{ alignItems: 'center' }}>
-                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>ATTENDANCE</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{fb.attendanceRate !== null ? `${Number(fb.attendanceRate)}%` : 'N/A'}</Text>
-                        </View>
-                        <View style={{ alignItems: 'center' }}>
-                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>HOMEWORK</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{fb.homeworkRate !== null ? `${Number(fb.homeworkRate)}%` : 'N/A'}</Text>
-                        </View>
-                        <View style={{ alignItems: 'center' }}>
-                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#8D6E63' }}>TEST AVG</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#2D1E18' }}>{fb.examAverage !== null ? `${Number(fb.examAverage)}%` : 'N/A'}</Text>
-                        </View>
-                      </View>
-                    )}
-
-                    <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#2D1E18', marginTop: 8, backgroundColor: '#F7F2EF', padding: 8, borderRadius: 8 }}>
-                      "{fb.remarks}"
+                    ))
+                  ) : (
+                    <Text style={styles.emptySubtitle}>
+                      No subjects allocated to this batch yet.
                     </Text>
+                  )}
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>📅</Text>
+                <Text style={styles.emptyTitle}>No Class Schedule Available</Text>
+                <Text style={styles.emptySubtitle}>
+                  You are currently not enrolled in an active batch.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        )}
 
-                    {fb.strengths ? (
-                      <View style={{ marginTop: 6, padding: 6, backgroundColor: '#E8F5E9', borderRadius: 6 }}>
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#2E7D32' }}>STRENGTHS: {fb.strengths}</Text>
-                      </View>
-                    ) : null}
-                    {fb.improvements ? (
-                      <View style={{ marginTop: 4, padding: 6, backgroundColor: '#FFF3E0', borderRadius: 6 }}>
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#E65100' }}>GROWTH AREAS: {fb.improvements}</Text>
-                      </View>
-                    ) : null}
-                    {fb.recommendations ? (
-                      <View style={{ marginTop: 4, padding: 6, backgroundColor: '#E1F5FE', borderRadius: 6 }}>
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#0277BD' }}>ACTIONS: {fb.recommendations}</Text>
-                      </View>
-                    ) : null}
-                  </Card>
-                ))
+        {/* SUB-VIEW: FEES & RECEIPTS */}
+        {activeTab === 'fees' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Balance Overview Card */}
+            <View style={styles.feeSummaryCard}>
+              <Text style={styles.feeSummaryLabel}>FEE BALANCE STATUS</Text>
+              <Text style={styles.feeSummaryAmount}>
+                {formatRupee(feeStatement?.summary?.outstandingBalance || 0)}
+              </Text>
+              <Text style={styles.feeSummarySub}>
+                Total Cleared: {formatRupee(feeStatement?.summary?.totalPaid || 0)} &bull; Total Fees:{' '}
+                {formatRupee(feeStatement?.summary?.totalFees || 0)}
+              </Text>
+            </View>
+
+            {/* Payment History & Receipts */}
+            <Text style={styles.sectionHeading}>OFFICIAL RECEIPTS</Text>
+            {feeStatement?.recentPayments && feeStatement.recentPayments.length > 0 ? (
+              feeStatement.recentPayments.map((pay: any) => (
+                <View key={pay.id} style={styles.itemCard}>
+                  <View style={styles.hwTopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{formatRupee(pay.amount)}</Text>
+                      <Text style={styles.itemMeta}>
+                        Paid via {pay.paymentMethod || 'UPI'} &bull;{' '}
+                        {new Date(pay.paidAt).toLocaleDateString('en-IN')}
+                      </Text>
+                      {pay.receiptNumber && (
+                        <Text style={styles.receiptNumText}>
+                          Receipt: {pay.receiptNumber}
+                        </Text>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.actionPillButton}
+                      onPress={() => handleOpenReceipt(pay.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.actionPillButtonText}>View Receipt</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>💳</Text>
+                <Text style={styles.emptyTitle}>No Payment Receipts</Text>
+                <Text style={styles.emptySubtitle}>
+                  Payment transactions and receipts issued by the administration will appear here.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        )}
+
+        {/* SUB-VIEW: STUDENT PROFILE DETAILS */}
+        {activeTab === 'profile' && (
+          <ScrollView
+            style={styles.tabContent}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.itemCard}>
+              <Text style={styles.sectionHeading}>STUDENT INFORMATION</Text>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Full Name:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.user?.fullName || user?.fullName}
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Admission No:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.admissionNumber || studentProfile?.rollNumber || '—'}
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Enrolled Batch:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.batch?.name || 'Assigned'} (Grade{' '}
+                  {studentProfile?.batch?.grade || '—'})
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Contact Phone:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.user?.phone || user?.phone || 'On file'}
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Email:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.user?.email || user?.email || '—'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.itemCard}>
+              <Text style={styles.sectionHeading}>INSTITUTE CONTEXT</Text>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Institute Name:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.institute?.name || institute?.name || 'TuitionOS Institute'}
+                </Text>
+              </View>
+              <View style={styles.profileRow}>
+                <Text style={styles.profileFieldLabel}>Institute Code:</Text>
+                <Text style={styles.profileFieldValue}>
+                  {studentProfile?.institute?.code || institute?.code || 'INST'}
+                </Text>
+              </View>
+              {studentProfile?.institute?.address && (
+                <View style={styles.profileRow}>
+                  <Text style={styles.profileFieldLabel}>Campus:</Text>
+                  <Text style={styles.profileFieldValue}>
+                    {studentProfile.institute.address}
+                  </Text>
+                </View>
               )}
             </View>
-          )}
-        </ScrollView>
-      )}
+          </ScrollView>
+        )}
+      </View>
 
       {/* Homework Submission Modal */}
       <Modal visible={!!submittingHw} transparent animationType="slide">
@@ -756,13 +1307,16 @@ export const StudentScreen: React.FC = () => {
               multiline
               numberOfLines={4}
               placeholder="Paste answers, cloud document link, or write your response..."
-              placeholderTextColor="#64748b"
+              placeholderTextColor="#8D6E63"
               value={submissionContent}
               onChangeText={setSubmissionContent}
             />
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
-                onPress={() => setSubmittingHw(null)}
+                onPress={() => {
+                  setSubmittingHw(null);
+                  setSubmissionContent('');
+                }}
                 style={styles.modalCancelBtn}
               >
                 <Text style={styles.modalCancelBtnText}>Cancel</Text>
@@ -773,9 +1327,9 @@ export const StudentScreen: React.FC = () => {
                 disabled={submissionLoading}
               >
                 {submissionLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.modalSubmitBtnText}>Submit</Text>
+                  <Text style={styles.modalSubmitBtnText}>Submit Work</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -790,17 +1344,22 @@ export const StudentScreen: React.FC = () => {
         receipt={selectedReceipt}
       />
 
+      {/* Notifications Modal */}
       <NotificationModal
         visible={showNotificationModal}
         onClose={() => setShowNotificationModal(false)}
         onUnreadCountChange={setUnreadNotifCount}
         onNavigateToEntity={handleNavigateToEntity}
       />
+
+      {/* Material File Viewer Modal */}
       <MaterialViewerModal
         visible={!!previewMaterial}
         material={previewMaterial}
         onClose={() => setPreviewMaterial(null)}
       />
+
+      {/* Quiz Taker Modal */}
       {activeTakingQuiz && (
         <QuizTakerModal
           isOpen={!!activeTakingQuiz}
@@ -811,6 +1370,13 @@ export const StudentScreen: React.FC = () => {
           }}
         />
       )}
+
+      {/* Pinned Bottom Navigation Bar */}
+      <StudentBottomNav
+        activeTab={activeTab}
+        onSelectTab={(tab: StudentPrimaryTab) => setActiveTab(tab)}
+        unreadCount={unreadNotifCount}
+      />
     </View>
   );
 };
@@ -818,339 +1384,461 @@ export const StudentScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: themeTokens.colors.background,
+    backgroundColor: '#FAF7F5',
   },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: themeTokens.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: themeTokens.colors.border,
-  },
-  tabItem: {
+  body: {
     flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
   },
-  activeTabItem: {
-    borderBottomColor: themeTokens.colors.espresso,
-  },
-  tabText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: themeTokens.colors.espresso,
-    fontWeight: '700',
-  },
-  content: {
+  tabContent: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 110,
   },
-  centerBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    color: themeTokens.colors.textMuted,
-    marginTop: 12,
-    fontSize: 13,
-  },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  avatarLarge: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarLargeText: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: themeTokens.colors.espresso,
-  },
-  profileDetails: {
-    flex: 1,
-  },
-  studentName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: themeTokens.colors.textPrimary,
-  },
-  studentRoll: {
-    fontSize: 12,
-    color: themeTokens.colors.textMuted,
-    marginTop: 2,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 6,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 4,
-  },
-  statBox: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: themeTokens.colors.surface,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: themeTokens.colors.textMuted,
-    letterSpacing: 0.5,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: themeTokens.colors.textPrimary,
-    marginVertical: 4,
-  },
-  statNote: {
-    fontSize: 11,
-    color: themeTokens.colors.taupe,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: themeTokens.colors.textPrimary,
-  },
-  sectionCount: {
-    fontSize: 12,
-    color: themeTokens.colors.primary,
-    fontWeight: '600',
-  },
-  emptyText: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
+  breadcrumbBar: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEBE9',
+    paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  matRow: {
+  breadcrumbButton: {
+    alignSelf: 'flex-start',
+  },
+  breadcrumbText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4E342E',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  filterChip: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+  },
+  filterChipActive: {
+    backgroundColor: '#4E342E',
+    borderColor: '#4E342E',
+  },
+  filterChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  subTabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEBE9',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  subTabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#FAF7F5',
+  },
+  subTabButtonActive: {
+    backgroundColor: '#4E342E',
+  },
+  subTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  subTabTextActive: {
+    color: '#FFFFFF',
+  },
+  itemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    marginBottom: 12,
+    shadowColor: '#2D1E18',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  itemTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  matIconCircle: {
+  itemIconBox: {
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
+    backgroundColor: '#F5ECE8',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  matIcon: {
+  itemIconText: {
     fontSize: 20,
   },
-  matInfo: {
-    flex: 1,
-  },
-  matTitle: {
-    color: themeTokens.colors.textPrimary,
+  itemTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#2D1E18',
   },
-  matSubject: {
-    color: themeTokens.colors.primary,
+  itemMeta: {
     fontSize: 11,
+    color: '#8D6E63',
     marginTop: 2,
   },
-  matDesc: {
-    color: themeTokens.colors.textMuted,
+  itemDescription: {
     fontSize: 12,
-    marginTop: 4,
+    color: '#5D4037',
+    marginTop: 8,
+    lineHeight: 17,
   },
-  downloadBtn: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
+  actionPillButton: {
+    backgroundColor: '#F5ECE8',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-  },
-  downloadBtnText: {
-    color: themeTokens.colors.primary,
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  hwHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  hwTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  hwSubject: {
-    color: themeTokens.colors.primary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  hwDescription: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  hwFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: themeTokens.colors.borderSubtle,
-    paddingTop: 10,
-  },
-  hwDueDate: {
-    color: themeTokens.colors.textSubtle,
-    fontSize: 11,
-  },
-  submitHwBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  submitHwBtnText: {
-    color: themeTokens.colors.textLight,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  examRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  examTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  examSubject: {
-    color: themeTokens.colors.primary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  examDateRow: {
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: themeTokens.colors.borderSubtle,
-    paddingTop: 8,
-  },
-  examDateText: {
-    color: themeTokens.colors.textSubtle,
-    fontSize: 11,
-  },
-  feeCardTitle: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  feeGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  feeGridItem: {
-    alignItems: 'center',
-  },
-  feeGridLabel: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  feeGridVal: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  feeItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  feeItemTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  feeItemFreq: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  feeItemBalanceRow: {
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: themeTokens.colors.borderSubtle,
-    paddingTop: 8,
-  },
-  feeItemBalanceText: {
-    color: themeTokens.colors.textSecondary,
-    fontSize: 12,
-  },
-  paymentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  paymentAmt: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  paymentMeta: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  receiptNumberText: {
-    color: themeTokens.colors.primary,
-    fontSize: 11,
-    fontFamily: 'monospace',
-    marginTop: 2,
-  },
-  viewReceiptBtn: {
-    backgroundColor: themeTokens.colors.espresso,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
     borderRadius: 8,
   },
-  viewReceiptBtnText: {
-    color: themeTokens.colors.textLight,
+  actionPillButtonText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4E342E',
+  },
+  hwTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  submissionDetailsBox: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#FAF7F5',
+    borderRadius: 8,
+  },
+  submissionDateText: {
+    fontSize: 11,
+    color: '#8D6E63',
+  },
+  gradeResultText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#2E7D32',
+    marginTop: 2,
+  },
+  hwCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F5ECE8',
+  },
+  dueDateText: {
+    fontSize: 11,
+    color: '#8D6E63',
+    fontWeight: '600',
+  },
+  completeBtn: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  completeBtnText: {
+    color: '#2E7D32',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  submitBtn: {
+    backgroundColor: '#4E342E',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  examDateLine: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 6,
+  },
+  markResultBox: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+  },
+  markResultBoxPass: {
+    backgroundColor: '#E8F5E9',
+  },
+  markResultBoxFail: {
+    backgroundColor: '#FFEBEE',
+  },
+  markScoreText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  markScoreTextPass: {
+    color: '#2E7D32',
+  },
+  markScoreTextFail: {
+    color: '#C62828',
+  },
+  markRemarksText: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: '#4E342E',
+    marginTop: 4,
+  },
+  pendingEvalBox: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#FAF7F5',
+    borderRadius: 8,
+  },
+  pendingEvalText: {
+    fontSize: 11,
+    color: '#8D6E63',
+    fontStyle: 'italic',
+  },
+  moduleNoticeHeader: {
+    marginBottom: 14,
+  },
+  moduleNoticeTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#2D1E18',
+  },
+  moduleNoticeSubtitle: {
     fontSize: 12,
-    fontWeight: 'bold',
+    color: '#8D6E63',
+    marginTop: 2,
+  },
+  ratingBadge: {
+    backgroundColor: '#EDE7F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  ratingBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#512DA8',
+  },
+  progressMetricsGrid: {
+    flexDirection: 'row',
+    backgroundColor: '#FAF7F5',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    justifyContent: 'space-around',
+  },
+  progressMetricCell: {
+    alignItems: 'center',
+  },
+  progressMetricLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#8D6E63',
+  },
+  progressMetricValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#2D1E18',
+    marginTop: 2,
+  },
+  remarksCard: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#FAF7F5',
+    borderRadius: 8,
+  },
+  remarksQuote: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: '#3E2723',
+    lineHeight: 18,
+  },
+  strengthBox: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 6,
+  },
+  strengthText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#2E7D32',
+  },
+  growthBox: {
+    marginTop: 4,
+    padding: 8,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
+  },
+  growthText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#E65100',
+  },
+  actionBox: {
+    marginTop: 4,
+    padding: 8,
+    backgroundColor: '#E1F5FE',
+    borderRadius: 6,
+  },
+  actionText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0277BD',
+  },
+  scheduleBadge: {
+    backgroundColor: '#EFEBE9',
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  scheduleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4E342E',
+  },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#8D6E63',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  subjectTeacherRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5ECE8',
+  },
+  subjectTeacherName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  subjectTeacherFaculty: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 1,
+  },
+  hoursBadge: {
+    backgroundColor: '#FAF7F5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+  },
+  hoursBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#4E342E',
+  },
+  feeSummaryCard: {
+    backgroundColor: '#4E342E',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  feeSummaryLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D7CCC8',
+    letterSpacing: 0.6,
+  },
+  feeSummaryAmount: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginVertical: 4,
+  },
+  feeSummarySub: {
+    fontSize: 11,
+    color: '#BCAAA4',
+    fontWeight: '600',
+  },
+  receiptNumText: {
+    fontSize: 11,
+    color: '#6D4C41',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5ECE8',
+  },
+  profileFieldLabel: {
+    fontSize: 12,
+    color: '#8D6E63',
+    fontWeight: '600',
+  },
+  profileFieldValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#2D1E18',
+  },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    marginTop: 10,
+  },
+  emptyEmoji: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#4E342E',
+  },
+  emptySubtitle: {
+    fontSize: 11,
+    color: '#8D6E63',
+    marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 16,
   },
   modalBackdrop: {
     flex: 1,
@@ -1159,31 +1847,31 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalCard: {
-    backgroundColor: themeTokens.colors.surface,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: themeTokens.colors.border,
+    borderColor: '#EFEBE9',
     padding: 20,
   },
   modalTitle: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#2D1E18',
+    fontSize: 17,
+    fontWeight: '900',
   },
   modalSub: {
-    color: themeTokens.colors.textMuted,
-    fontSize: 13,
+    color: '#8D6E63',
+    fontSize: 12,
     marginBottom: 12,
   },
   modalInput: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
+    backgroundColor: '#FAF7F5',
     borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-    borderRadius: 8,
+    borderColor: '#EFEBE9',
+    borderRadius: 10,
     padding: 12,
-    color: themeTokens.colors.textPrimary,
+    color: '#2D1E18',
     textAlignVertical: 'top',
-    height: 100,
+    height: 110,
   },
   modalBtnRow: {
     flexDirection: 'row',
@@ -1192,26 +1880,26 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     flex: 1,
-    backgroundColor: themeTokens.colors.surfaceMuted,
+    backgroundColor: '#FAF7F5',
     borderWidth: 1,
-    borderColor: themeTokens.colors.border,
+    borderColor: '#EFEBE9',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
   modalCancelBtnText: {
-    color: themeTokens.colors.textSecondary,
-    fontWeight: '600',
+    color: '#5D4037',
+    fontWeight: '700',
   },
   modalSubmitBtn: {
     flex: 1,
-    backgroundColor: themeTokens.colors.espresso,
+    backgroundColor: '#4E342E',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
   modalSubmitBtnText: {
-    color: themeTokens.colors.textLight,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
 });
