@@ -14,7 +14,7 @@ import {
 import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
-import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { PressableScale, AnimatedDialog, FadeInView } from '../../theme/motion';
 import { TouchableWithoutFeedback } from 'react-native';
 import { ReceiptModal } from '../../components/ReceiptModal';
 import { NotificationModal } from '../../components/NotificationModal';
@@ -416,6 +416,7 @@ export const StudentScreen: React.FC = () => {
 
       {/* Main Content Area */}
       <View style={styles.body}>
+        <FadeInView key={activeTab} duration={160} style={{ flex: 1 }}>
         {/* TAB 1: HOME */}
         {activeTab === 'home' && (
           <StudentHomeTab
@@ -1296,6 +1297,7 @@ export const StudentScreen: React.FC = () => {
             </View>
           </ScrollView>
         )}
+        </FadeInView>
       </View>
 
       {/* Homework Submission Modal */}

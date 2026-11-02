@@ -20,7 +20,7 @@ import { NotificationModal } from '../../components/NotificationModal';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffAdminModal } from '../../components/StaffAdminModal';
-import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { PressableScale, AnimatedDialog, FadeInView } from '../../theme/motion';
 import { TouchableWithoutFeedback } from 'react-native';
 import {
   AdminBottomNav,
@@ -375,6 +375,7 @@ export const AdminScreen: React.FC = () => {
 
       {/* Main Tab Content */}
       <View style={styles.content}>
+        <FadeInView key={activeTab} duration={160} style={{ flex: 1 }}>
         {/* TAB 1: EXECUTIVE HOME */}
         {activeTab === 'home' && (
           <AdminHomeTab
@@ -1069,6 +1070,7 @@ export const AdminScreen: React.FC = () => {
             </View>
           </ScrollView>
         )}
+        </FadeInView>
       </View>
 
       {/* New Batch Modal */}

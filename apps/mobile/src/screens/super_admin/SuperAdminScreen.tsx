@@ -13,6 +13,7 @@ import {
 import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
+import { FadeInView } from '../../theme/motion';
 import {
   SuperAdminBottomNav,
   SuperAdminActiveTab,
@@ -132,6 +133,7 @@ export const SuperAdminScreen: React.FC = () => {
 
       {/* Main Content Area */}
       <View style={styles.content}>
+        <FadeInView key={activeTab} duration={160} style={{ flex: 1 }}>
         {/* TAB 1: EXECUTIVE HOME */}
         {activeTab === 'home' && (
           <SuperAdminHomeTab
@@ -300,6 +302,7 @@ export const SuperAdminScreen: React.FC = () => {
             </View>
           </ScrollView>
         )}
+        </FadeInView>
       </View>
 
       {/* Fixed Bottom Navigation */}

@@ -23,7 +23,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { NotificationModal } from '../../components/NotificationModal';
 import { PushNotificationService } from '../../services/pushNotification.service';
 import { StudentAvatar } from '../../components/StudentAvatar';
-import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { PressableScale, AnimatedDialog, FadeInView } from '../../theme/motion';
 import { TouchableWithoutFeedback } from 'react-native';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
@@ -676,6 +676,7 @@ export const StaffScreen: React.FC = () => {
 
       {/* MAIN CONTENT AREA */}
       <View style={styles.mainContent}>
+        <FadeInView key={activeTab} duration={160} style={{ flex: 1 }}>
         {/* TAB 1: HOME DASHBOARD (Clean mobile-first entry) */}
         {activeTab === 'home' && (
           <StaffHomeTab
@@ -1463,6 +1464,7 @@ export const StaffScreen: React.FC = () => {
             )}
           </KeyboardAvoidingView>
         )}
+        </FadeInView>
       </View>
 
       {/* FIXED BOTTOM NAVIGATION BAR */}

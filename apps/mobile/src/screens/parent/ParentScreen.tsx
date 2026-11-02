@@ -15,7 +15,7 @@ import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
 import { ReceiptModal } from '../../components/ReceiptModal';
-import { PressableScale, AnimatedDialog } from '../../theme/motion';
+import { PressableScale, AnimatedDialog, FadeInView } from '../../theme/motion';
 import { TouchableWithoutFeedback } from 'react-native';
 import { NotificationModal } from '../../components/NotificationModal';
 import { MaterialViewerModal } from '../../components/MaterialViewerModal';
@@ -496,6 +496,7 @@ export const ParentScreen: React.FC = () => {
 
       {/* Primary Tab Views */}
       <View style={styles.content}>
+        <FadeInView key={activeTab} duration={160} style={{ flex: 1 }}>
         {/* TAB 1: HOME DASHBOARD */}
         {activeTab === 'home' && (
           <ParentHomeTab
@@ -1593,6 +1594,7 @@ export const ParentScreen: React.FC = () => {
             ))}
           </ScrollView>
         )}
+        </FadeInView>
       </View>
 
       {/* Review / Private Inquiry Modal */}

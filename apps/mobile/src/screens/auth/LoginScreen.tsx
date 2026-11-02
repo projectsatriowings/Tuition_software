@@ -14,6 +14,7 @@ import { useMobileAuth, MobileInstitute } from '../../context/AuthContext';
 import { AppConfig, normalizeApiUrl } from '../../config/index';
 import { checkServerConnection, HealthCheckResult } from '../../services/api';
 import { themeTokens } from '@tuition/shared';
+import { FadeInView, SlideInView, PressableScale } from '../../theme/motion';
 
 interface LoginScreenProps {
   onSuccess?: () => void;
