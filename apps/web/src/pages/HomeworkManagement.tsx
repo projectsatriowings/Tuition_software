@@ -1,7 +1,7 @@
 import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useEffect, useState } from 'react';
 import { apiFetch, getMaterialDownloadUrl, getSubmissionDownloadUrl, downloadFileToDevice } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { useToast } from '../context/ToastContext';
 import { QuizManager } from '../components/QuizManager';
 import {

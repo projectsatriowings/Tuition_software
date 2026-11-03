@@ -41,6 +41,15 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err: any) => {
+            // Expected socket drops on browser refresh / SSE disconnect
+            if (err?.code === 'ECONNRESET' || err?.code === 'EPIPE' || err?.code === 'ECONNABORTED') {
+              return;
+            }
+            console.error('[vite proxy error]', err);
+          });
+        },
       },
     },
   },

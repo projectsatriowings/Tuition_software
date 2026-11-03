@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole, Institute } from '../types';
+import React, { createContext, useState, useEffect } from 'react';
+import { User } from '../types';
 import { apiFetch } from '../services/api';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   token: string | null;
   activeInstitute: { id: string; name: string; code: string } | null;
@@ -12,7 +12,7 @@ interface AuthContextType {
   setActiveInstitute: (institute: { id: string; name: string; code: string } | null) => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -67,6 +67,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('tuition_token');
     localStorage.removeItem('tuition_active_institute');
     localStorage.removeItem('tuition_active_institute_id');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/');
+    }
   };
 
   const setActiveInstitute = (institute: { id: string; name: string; code: string } | null) => {
@@ -85,10 +88,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
-  return context;
 };

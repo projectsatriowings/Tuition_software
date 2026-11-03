@@ -615,9 +615,13 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
       setResetLoading(true);
       setResetMsg(null);
 
+      const passToSend = resetPasswordInput.trim();
       const res = await apiFetch(`/staff/${staffId}/reset-password`, {
         method: 'POST',
-        body: JSON.stringify({ newPassword: resetPasswordInput }),
+        body: JSON.stringify({
+          password: passToSend,
+          newPassword: passToSend,
+        }),
       });
 
       if (res.success) {

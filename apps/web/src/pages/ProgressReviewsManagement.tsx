@@ -1,7 +1,7 @@
 import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { useToast } from '../context/ToastContext';
 import {
   TrendingUp,

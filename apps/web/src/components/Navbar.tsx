@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { LogOut, Building, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 

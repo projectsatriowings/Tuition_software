@@ -114,6 +114,7 @@ export const updateStaffStatusSchema = z.object({
 
 export const resetStaffPasswordSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
 });
 
 export const qualificationSchema = z.object({
@@ -670,7 +671,12 @@ export async function updateStaff(req: AuthenticatedRequest, res: Response) {
           ...(data.employeeCode !== undefined && { employeeCode: data.employeeCode?.trim() || null }),
           ...(data.designation && { designation: data.designation.trim() }),
           ...(data.qualification !== undefined && { qualification: data.qualification?.trim() || null }),
-          ...(data.permissionsJson && { permissionsJson: data.permissionsJson }),
+          ...(data.permissionsJson && {
+            permissionsJson: {
+              ...((existing.permissionsJson as Record<string, any>) || {}),
+              ...data.permissionsJson,
+            },
+          }),
           ...((data.avatarUrl !== undefined || data.photoUrl !== undefined) && { avatarUrl: data.avatarUrl?.trim() || data.photoUrl?.trim() || null }),
 
           // Personal Details
@@ -939,7 +945,9 @@ export async function resetStaffPassword(req: AuthenticatedRequest, res: Respons
       });
     }
 
-    const newPassword = parse.data.password?.trim() || `Staff@${generateSecureRandomToken(4)}2026`;
+    const newPassword =
+      (parse.data.newPassword || parse.data.password)?.trim() ||
+      `Staff@${generateSecureRandomToken(4)}2026`;
     const passwordHash = await hashPassword(newPassword);
 
     const existingPerms = (staff.permissionsJson as Record<string, any>) || {};

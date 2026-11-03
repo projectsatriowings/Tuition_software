@@ -68,6 +68,42 @@ const DEMO_ACCOUNTS_MAP: Record<string, any> = {
     password: 'Password#123',
     isActive: true,
   },
+  'admin@apex.example.com': {
+    id: '33333333-3333-3333-3333-333333333333',
+    fullName: 'Dr. Rajesh Sharma',
+    email: 'admin@apexacademy.com',
+    phone: '9876543211',
+    role: 'ACADEMIC_ADMIN',
+    password: 'Password#123',
+    isActive: true,
+  },
+  'teacher@apex.example.com': {
+    id: '22222222-2222-2222-2222-222222222222',
+    fullName: 'Prof. Anita Verma',
+    email: 'teacher@apexacademy.com',
+    phone: '9876543210',
+    role: 'STAFF',
+    password: 'Password#123',
+    isActive: true,
+  },
+  'parent@apex.example.com': {
+    id: '55555555-5555-5555-5555-555555555555',
+    fullName: 'Vikram Mehta',
+    email: 'parent@apexacademy.com',
+    phone: '9826444306',
+    role: 'PARENT',
+    password: 'Password#123',
+    isActive: true,
+  },
+  'student@apex.example.com': {
+    id: '66666666-6666-6666-6666-666666666666',
+    fullName: 'Aarav Mehta',
+    email: 'student@apexacademy.com',
+    phone: '9826444307',
+    role: 'STUDENT',
+    password: 'Password#123',
+    isActive: true,
+  },
 };
 
 const demoStudent = {
@@ -172,9 +208,21 @@ export function demoModeMiddleware(req: Request, res: Response, next: NextFuncti
 
   // 1. Auth: Login
   if (method === 'POST' && p === '/api/auth/login') {
-    const { identifier, password } = req.body || {};
+    const { identifier, password, role } = req.body || {};
     const key = (identifier || '').trim().toLowerCase();
-    const demoUser = DEMO_ACCOUNTS_MAP[key] || DEMO_ACCOUNTS_MAP['teacher@apexacademy.com'];
+    let demoUser = DEMO_ACCOUNTS_MAP[key];
+
+    // If not found by email/key, match by requested role instead of blindly falling back to staff
+    if (!demoUser && role) {
+      demoUser = Object.values(DEMO_ACCOUNTS_MAP).find((u) => u.role === role);
+    }
+
+    if (!demoUser) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials or user not found in demo mode',
+      });
+    }
 
     const tokenPayload = {
       userId: demoUser.id,

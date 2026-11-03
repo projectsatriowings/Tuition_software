@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '../services/api';
 import { StaffMember, Batch } from '../types';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { StaffProfileView } from '../components/staff/StaffProfileView';
 import { AddStaffModal } from '../components/staff/AddStaffModal';
 import { StaffAvatar } from '../components/StaffAvatar';
@@ -279,7 +279,8 @@ export const StaffManagement: React.FC = () => {
   };
 
   const handleOpenCredentialsModal = (item: StaffMember) => {
-    setViewingStaffCreds(item);
+    const currentItem = staff.find((s) => s.id === item.id) || item;
+    setViewingStaffCreds(currentItem);
     setShowExistingPassword(true);
     setResetPasswordInput('');
     setShowResetInputPassword(true);
@@ -291,8 +292,14 @@ export const StaffManagement: React.FC = () => {
     e.preventDefault();
     if (!viewingStaffCreds) return;
 
-    if (!resetPasswordInput.trim()) {
+    const passToSend = resetPasswordInput.trim();
+    if (!passToSend) {
       setResetError('Please enter a password or click Auto-generate');
+      return;
+    }
+
+    if (passToSend.length < 6) {
+      setResetError('Password must be at least 6 characters');
       return;
     }
 
@@ -304,23 +311,26 @@ export const StaffManagement: React.FC = () => {
       const res = await apiFetch(`/staff/${viewingStaffCreds.id}/reset-password`, {
         method: 'POST',
         body: JSON.stringify({
-          newPassword: resetPasswordInput.trim(),
+          password: passToSend,
+          newPassword: passToSend,
         }),
       });
 
-      if (res.success) {
-        setResetSuccess(`Permanent password updated successfully to: "${res.data.permanentPassword}"`);
-        const updatedStaff = {
+      if (res.success && res.data) {
+        const permanentPassword = res.data.permanentPassword || passToSend;
+        setResetSuccess(`Permanent password updated successfully to: "${permanentPassword}"`);
+        const updatedStaff: StaffMember = {
           ...viewingStaffCreds,
           permissionsJson: {
             ...(viewingStaffCreds.permissionsJson || {}),
-            permanentPassword: res.data.permanentPassword,
+            permanentPassword,
           },
         };
         setViewingStaffCreds(updatedStaff);
         setShowExistingPassword(true);
         setResetPasswordInput('');
         setStaff((prev) => prev.map((s) => (s.id === updatedStaff.id ? updatedStaff : s)));
+        fetchData();
       }
     } catch (err: any) {
       setResetError(err.message || 'Failed to update permanent password');

@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { AudioWavePlayer } from '../components/AudioWavePlayer';
 import { fixWebmDuration } from '@fix-webm-duration/fix';
 import { apiFetch } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import {
   MessageSquare,
   Send,

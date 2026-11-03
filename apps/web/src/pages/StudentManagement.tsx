@@ -4,7 +4,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { apiFetch } from '../services/api';
 import { Student, Batch, StudentStatus } from '../types';
 import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { StudentAvatar } from '../components/StudentAvatar';
 import { StudentDetailsModal } from '../components/StudentDetailsModal';

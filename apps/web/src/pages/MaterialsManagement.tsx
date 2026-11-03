@@ -5,7 +5,7 @@ import { LiveAudioVisualizer } from '../components/LiveAudioVisualizer';
 import { fixWebmDuration } from '@fix-webm-duration/fix';
 import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch, getMaterialDownloadUrl, downloadFileToDevice } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import {
   BookOpen,
   FileText,

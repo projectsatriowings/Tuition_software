@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { apiFetch } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { StudentAvatar } from '../components/StudentAvatar';
 import { Batch } from '../types';
 import { matchStudentVoice, EnrolledStudentCandidate, AttendanceMethod } from '@tuition/shared';
