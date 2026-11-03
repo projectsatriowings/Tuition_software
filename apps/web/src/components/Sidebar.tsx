@@ -16,6 +16,7 @@ import {
   Bell,
   User,
   Compass,
+  Banknote,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -56,6 +57,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               className={navItemClass('staff_attendance')}
             >
               <Calendar className="w-4 h-4" /> Staff Attendance
+            </button>
+            <button
+              onClick={() => onSelectTab('payroll')}
+              className={navItemClass('payroll')}
+            >
+              <Banknote className="w-4 h-4" /> Staff Payroll
             </button>
           </>
         )}
@@ -132,6 +139,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
             >
               <CreditCard className="w-4 h-4" /> Fees & Finances
             </button>
+
+            <button
+              onClick={() => onSelectTab('payroll')}
+              className={navItemClass('payroll')}
+            >
+              <Banknote className="w-4 h-4" /> Staff Payroll
+            </button>
           </>
         )}
 
@@ -143,6 +157,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               className={navItemClass('my_attendance')}
             >
               <Compass className="w-4 h-4" /> My Attendance (GPS)
+            </button>
+
+            <button
+              onClick={() => onSelectTab('my_payslips')}
+              className={navItemClass('my_payslips')}
+            >
+              <Banknote className="w-4 h-4" /> My Payslips
             </button>
 
             <button

@@ -28,6 +28,8 @@ const QuestionGenerator = lazy(() => import('./pages/QuestionGenerator/QuestionG
 const ProgressReviewsManagement = lazy(() => import('./pages/ProgressReviewsManagement').then((m) => ({ default: m.ProgressReviewsManagement })));
 const MessagingInbox = lazy(() => import('./pages/MessagingInbox').then((m) => ({ default: m.MessagingInbox })));
 const FeesManagement = lazy(() => import('./pages/FeesManagement').then((m) => ({ default: m.FeesManagement })));
+const PayrollManagement = lazy(() => import('./pages/PayrollManagement').then((m) => ({ default: m.PayrollManagement })));
+const StaffMyPayslips = lazy(() => import('./pages/StaffMyPayslips').then((m) => ({ default: m.StaffMyPayslips })));
 
 const getDefaultTabForRole = (role?: string): string => {
   switch (role) {
@@ -50,11 +52,11 @@ const isTabAllowedForRole = (tab: string, role?: string): boolean => {
   if (!role) return false;
   switch (role) {
     case 'SUPER_ADMIN':
-      return ['super_admin_dashboard', 'staff_attendance', 'staff', 'students', 'academics', 'exams', 'fees'].includes(tab);
+      return ['super_admin_dashboard', 'staff_attendance', 'staff', 'students', 'academics', 'exams', 'fees', 'payroll'].includes(tab);
     case 'ACADEMIC_ADMIN':
-      return ['academic_dashboard', 'staff', 'staff_attendance', 'students', 'academics', 'exams', 'question_generator', 'progress_reviews', 'messaging', 'fees'].includes(tab);
+      return ['academic_dashboard', 'staff', 'staff_attendance', 'students', 'academics', 'exams', 'question_generator', 'progress_reviews', 'messaging', 'fees', 'payroll'].includes(tab);
     case 'STAFF':
-      return ['my_attendance', 'attendance', 'academic_dashboard', 'students', 'materials', 'homework', 'exams', 'progress_reviews', 'messaging'].includes(tab);
+      return ['my_attendance', 'my_payslips', 'attendance', 'academic_dashboard', 'students', 'materials', 'homework', 'exams', 'progress_reviews', 'messaging'].includes(tab);
     case 'PARENT':
       return tab === 'parent_portal' || tab.startsWith('parent_') || tab === 'progress_reviews';
     case 'STUDENT':
@@ -209,6 +211,8 @@ const AppContent: React.FC = () => {
 
                   {currentTab === 'messaging' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF') && <MessagingInbox />}
                   {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
+                  {currentTab === 'payroll' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <PayrollManagement />}
+                  {currentTab === 'my_payslips' && user.role === 'STAFF' && <StaffMyPayslips />}
                 </motion.div>
               </AnimatePresence>
             </Suspense>
