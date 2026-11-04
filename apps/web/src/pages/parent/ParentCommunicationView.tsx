@@ -1,7 +1,7 @@
 import { markNotificationEntityAsRead } from '../../services/notificationService';
 import React, { useEffect, useState, useRef } from 'react';
 import { AudioWavePlayer } from '../../components/AudioWavePlayer';
-import { fixWebmDuration } from '@fix-webm-duration/fix';
+import { fixWebmDuration } from '../../utils/fixWebmDuration';
 import { apiFetch } from '../../services/api';
 import {
   MessageSquare,

@@ -8,7 +8,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@fix-webm-duration/fix': path.resolve(__dirname, '../../node_modules/@fix-webm-duration/fix/src/index.js'),
     },
+  },
+  optimizeDeps: {
+    include: ['@fix-webm-duration/fix'],
   },
   build: {
     chunkSizeWarningLimit: 600,
@@ -44,7 +48,13 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on('error', (err: any) => {
             // Expected socket drops on browser refresh / SSE disconnect
-            if (err?.code === 'ECONNRESET' || err?.code === 'EPIPE' || err?.code === 'ECONNABORTED') {
+            if (
+              err?.code === 'ECONNRESET' ||
+              err?.code === 'EPIPE' ||
+              err?.code === 'ECONNABORTED' ||
+              err?.message?.includes('ECONNRESET') ||
+              err?.message?.includes('socket hang up')
+            ) {
               return;
             }
             console.error('[vite proxy error]', err);

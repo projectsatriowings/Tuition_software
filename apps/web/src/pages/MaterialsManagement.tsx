@@ -2,7 +2,7 @@ import { markNotificationEntityAsRead } from '../services/notificationService';
 import { MaterialViewerModal } from '../components/MaterialViewerModal';
 import { AudioWavePlayer } from '../components/AudioWavePlayer';
 import { LiveAudioVisualizer } from '../components/LiveAudioVisualizer';
-import { fixWebmDuration } from '@fix-webm-duration/fix';
+import { fixWebmDuration } from '../utils/fixWebmDuration';
 import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch, getMaterialDownloadUrl, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/useAuth';
