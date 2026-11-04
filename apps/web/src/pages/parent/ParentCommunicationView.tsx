@@ -83,6 +83,7 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
       if (!student?.id) return;
       try {
         setLoadingTeachers(true);
+        setError(null);
         const res = await apiFetch(`/parents/students/${student.id}/teachers`);
         if (res.success && res.data?.teachers) {
           setTeachers(res.data.teachers);

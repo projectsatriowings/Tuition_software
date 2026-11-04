@@ -9,8 +9,8 @@ const DEFAULT_DEV_API_URL = Platform.select({
   default: 'http://localhost:5000/api',
 });
 
-const DEFAULT_STAGING_OR_PROD_URL = process.env.EXPO_PUBLIC_API_URL || 'https://staging.tuitionos.com/api';
-const DEFAULT_PROD_API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.tuitionos.com/api';
+const DEFAULT_STAGING_OR_PROD_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tuition-software.onrender.com/api';
+const DEFAULT_PROD_API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tuition-software.onrender.com/api';
 
 export const AppConfig = {
   appName: 'TuitionOS Mobile',

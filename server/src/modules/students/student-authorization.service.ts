@@ -367,7 +367,6 @@ export async function getAuthorizedStudentScope(
             parent: { userId },
           },
         },
-        ...(instituteId ? { instituteId } : {}),
       },
     };
   }
@@ -458,7 +457,19 @@ export async function isStudentAuthorized(
     return !!scopedStudent;
   }
 
-  // 3. PARENT / STUDENT / OTHER
+  // 3. PARENT: direct check on linked children (not constrained by instituteId header when parent has children across institutes)
+  if (req.user.role === 'PARENT') {
+    const parentRelation = await prismaClient.studentParentRelation.findFirst({
+      where: {
+        studentId,
+        parent: { userId: req.user.userId },
+      },
+      select: { id: true },
+    });
+    return !!parentRelation;
+  }
+
+  // 4. STUDENT / OTHER
   const scope = await getAuthorizedStudentScope(req, prismaClient, options);
   const student = await prismaClient.student.findFirst({
     where: {

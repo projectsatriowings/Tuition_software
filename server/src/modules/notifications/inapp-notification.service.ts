@@ -63,6 +63,36 @@ export class InAppNotificationService {
   }
 
   /**
+   * Format date in Asia/Kolkata timezone (e.g. "04 Nov 2026")
+   */
+  static formatKolkataDate(date: Date): string {
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(date);
+  }
+
+  /**
+   * Format date & time in Asia/Kolkata timezone (e.g. "04 Nov 2026, 02:06 PM")
+   */
+  static formatKolkataDateTime(date: Date): string {
+    const formatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })
+      .format(date)
+      .replace(/[\u202F\u00A0\s]+/g, ' ');
+    return formatted;
+  }
+
+  /**
    * Dispatch push notification to device tokens via Expo Push API
    */
   static async sendPushNotification(token: string, title: string, body: string, dataPayload: any) {
@@ -148,13 +178,14 @@ export class InAppNotificationService {
     }
 
     const timeStr = this.formatKolkataTime(eventTime);
+    const dateStr = this.formatKolkataDate(eventTime);
     const title = eventType === 'CHECK_IN' ? 'Student Check-in Alert' : 'Student Check-out Alert';
     const studentFullName = `${student.firstName} ${student.lastName}`.trim();
 
     // Collect eligible recipient accounts with role-specific message formatting
     const recipients: { userId: string; role: UserRole; message: string }[] = [];
 
-    // Linked parents: "Your child [Student Name] checked in at [Time]."
+    // Linked parents: "Your child [Student Name] checked in on [Date] at [Time]."
     if (student.parentRelations && student.parentRelations.length > 0) {
       for (const rel of student.parentRelations) {
         if (rel.canReceiveSms !== false && rel.parent?.user?.isActive) {
@@ -162,8 +193,8 @@ export class InAppNotificationService {
             userId: rel.parent.user.id,
             role: 'PARENT',
             message: eventType === 'CHECK_IN'
-              ? `Your child ${studentFullName} checked in at ${timeStr}.`
-              : `Your child ${studentFullName} checked out at ${timeStr}.`,
+              ? `Your child ${studentFullName} checked in on ${dateStr} at ${timeStr}.`
+              : `Your child ${studentFullName} checked out on ${dateStr} at ${timeStr}.`,
           });
         }
       }
@@ -175,8 +206,8 @@ export class InAppNotificationService {
         userId: student.user.id,
         role: 'STUDENT',
         message: eventType === 'CHECK_IN'
-          ? `You checked in at ${timeStr}.`
-          : `You checked out at ${timeStr}.`,
+          ? `You checked in on ${dateStr} at ${timeStr}.`
+          : `You checked out on ${dateStr} at ${timeStr}.`,
       });
     }
 

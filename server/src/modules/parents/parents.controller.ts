@@ -1069,8 +1069,18 @@ export async function getParentStudentAttendance(req: AuthenticatedRequest, res:
       return res.status(400).json({ success: false, error: 'Invalid month or year parameter' });
     }
 
-    const startDate = new Date(year, month - 1, 1, 0, 0, 0);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toKolkataDateKey = (d: Date) =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startDate = new Date(`${year}-${pad(month)}-01T00:00:00.000Z`);
+    const endDate = new Date(`${year}-${pad(month)}-${pad(daysInMonth)}T23:59:59.999Z`);
 
     const student = await prisma.student.findUnique({
       where: { id: studentId },
@@ -1108,13 +1118,13 @@ export async function getParentStudentAttendance(req: AuthenticatedRequest, res:
         distinct: ['eventDate'],
         select: { eventDate: true },
       });
-      distinctWorkingDates = batchEvents.map((e) => e.eventDate.toISOString().split('T')[0]);
+      distinctWorkingDates = batchEvents.map((e) => toKolkataDateKey(e.eventDate));
     }
 
     // Map student events by date string YYYY-MM-DD
     const dailyRecords: Record<string, any> = {};
     for (const ev of studentEvents) {
-      const dateKey = ev.eventDate.toISOString().split('T')[0];
+      const dateKey = toKolkataDateKey(ev.eventDate);
       if (!dailyRecords[dateKey]) {
         dailyRecords[dateKey] = {
           date: dateKey,
@@ -1141,14 +1151,11 @@ export async function getParentStudentAttendance(req: AuthenticatedRequest, res:
     let lateDaysCount = 0;
     let absentDaysCount = 0;
 
-    const daysInMonth = new Date(year, month, 0).getDate();
     const calendarDays = [];
-
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = toKolkataDateKey(now);
 
     for (let day = 1; day <= daysInMonth; day++) {
-      const dayDate = new Date(year, month - 1, day);
-      const dateKey = dayDate.toISOString().split('T')[0];
+      const dateKey = `${year}-${pad(month)}-${pad(day)}`;
       const isPastOrToday = dateKey <= todayStr;
       const isBatchWorkingDay = distinctWorkingDates.includes(dateKey);
 

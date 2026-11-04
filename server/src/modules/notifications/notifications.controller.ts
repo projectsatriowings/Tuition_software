@@ -50,11 +50,11 @@ export async function listNotifications(req: AuthenticatedRequest, res: Response
       }),
     ]);
 
-    // Format timestamps for display in Asia/Kolkata
+    // Format timestamps for display in Asia/Kolkata with full date & time
     const formatted = notifications.map((n) => {
       const timeFormatted = n.eventTime
-        ? InAppNotificationService.formatKolkataTime(n.eventTime)
-        : InAppNotificationService.formatKolkataTime(n.createdAt);
+        ? InAppNotificationService.formatKolkataDateTime(n.eventTime)
+        : InAppNotificationService.formatKolkataDateTime(n.createdAt);
       return {
         ...n,
         timeFormatted,
