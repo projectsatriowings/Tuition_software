@@ -12,22 +12,54 @@ import { InAppNotificationService } from '../notifications/inapp-notification.se
 // ============================================================================
 
 export const createFeeStructureSchema = z.object({
-  batchId: z.string().uuid(),
+  batchId: z.string().uuid().optional().nullable(),
+  classGrade: z.string().max(50).optional().nullable(),
+  courseName: z.string().max(100).optional().nullable(),
   name: z.string().min(2).max(100),
-  description: z.string().optional(),
-  academicYear: z.string().min(4).max(20).optional(),
+  description: z.string().optional().nullable(),
+  academicYear: z.string().min(4).max(20).optional().nullable(),
   frequency: z.nativeEnum(FeeFrequency),
   amount: z.number().positive('Fee amount must be greater than zero'),
-  dueDay: z.number().int().min(1).max(31).optional(),
+  dueDay: z.number().int().min(1).max(31).optional().nullable(),
+  components: z.array(z.object({
+    name: z.string().min(1),
+    amount: z.number().min(0),
+    isOptional: z.boolean().optional(),
+    category: z.string().optional(),
+  })).optional().nullable(),
+  installments: z.array(z.object({
+    installmentNo: z.number().int().min(1),
+    label: z.string().min(1),
+    percentage: z.number().min(0).max(100).optional(),
+    amount: z.number().min(0),
+    dueOffsetDays: z.number().int().optional(),
+  })).optional().nullable(),
   isActive: z.boolean().default(true),
 });
 
 export const updateFeeStructureSchema = z.object({
+  batchId: z.string().uuid().optional().nullable(),
+  classGrade: z.string().max(50).optional().nullable(),
+  courseName: z.string().max(100).optional().nullable(),
   name: z.string().min(2).max(100).optional(),
-  description: z.string().optional(),
-  academicYear: z.string().min(4).max(20).optional(),
+  description: z.string().optional().nullable(),
+  academicYear: z.string().min(4).max(20).optional().nullable(),
+  frequency: z.nativeEnum(FeeFrequency).optional(),
   amount: z.number().positive().optional(),
-  dueDay: z.number().int().min(1).max(31).optional(),
+  dueDay: z.number().int().min(1).max(31).optional().nullable(),
+  components: z.array(z.object({
+    name: z.string().min(1),
+    amount: z.number().min(0),
+    isOptional: z.boolean().optional(),
+    category: z.string().optional(),
+  })).optional().nullable(),
+  installments: z.array(z.object({
+    installmentNo: z.number().int().min(1),
+    label: z.string().min(1),
+    percentage: z.number().min(0).max(100).optional(),
+    amount: z.number().min(0),
+    dueOffsetDays: z.number().int().optional(),
+  })).optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -38,7 +70,13 @@ export const assignFeeSchema = z.object({
   academicYear: z.string().min(4).max(20).optional(),
   baseAmount: z.number().positive('Base amount must be greater than zero').optional(),
   discountAmount: z.number().min(0, 'Discount cannot be negative').default(0),
+  discountReason: z.string().max(255).optional().nullable(),
   dueDate: z.string().min(1, 'Due date is required'),
+  components: z.array(z.object({
+    name: z.string(),
+    amount: z.number(),
+  })).optional().nullable(),
+  installmentNo: z.number().int().min(1).optional().nullable(),
 });
 
 export const batchAssignFeeSchema = z.object({
@@ -48,6 +86,7 @@ export const batchAssignFeeSchema = z.object({
   academicYear: z.string().min(4).max(20).optional(),
   dueDate: z.string().min(1, 'Due date is required'),
   defaultDiscount: z.number().min(0).default(0),
+  discountReason: z.string().max(255).optional().nullable(),
 });
 
 export const recordPaymentSchema = z.object({
@@ -151,24 +190,31 @@ export async function createFeeStructure(req: AuthenticatedRequest, res: Respons
 
     const data = parse.data;
 
-    // Verify batch belongs to this institute
-    const batch = await prisma.batch.findFirst({
-      where: { id: data.batchId, instituteId },
-    });
-    if (!batch) {
-      return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+    // Verify batch belongs to this institute if batchId provided
+    let batch: any = null;
+    if (data.batchId) {
+      batch = await prisma.batch.findFirst({
+        where: { id: data.batchId, instituteId },
+      });
+      if (!batch) {
+        return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+      }
     }
 
     const feeStructure = await prisma.feeStructure.create({
       data: {
         instituteId,
-        batchId: data.batchId,
+        batchId: data.batchId || null,
+        classGrade: data.classGrade?.trim() || null,
+        courseName: data.courseName?.trim() || null,
         name: data.name.trim(),
         description: data.description?.trim() || null,
-        academicYear: data.academicYear || batch.academicYear,
+        academicYear: data.academicYear || batch?.academicYear || null,
         frequency: data.frequency,
         amount: new Prisma.Decimal(data.amount.toFixed(2)),
         dueDay: data.dueDay || null,
+        componentsJson: data.components && data.components.length > 0 ? (data.components as any) : Prisma.JsonNull,
+        installmentsJson: data.installments && data.installments.length > 0 ? (data.installments as any) : Prisma.JsonNull,
         isActive: data.isActive,
       },
       include: {
@@ -193,6 +239,7 @@ export async function createFeeStructure(req: AuthenticatedRequest, res: Respons
       data: { feeStructure },
     });
   } catch (err: any) {
+    console.error('Error in createFeeStructure:', err);
     return res.status(500).json({ success: false, error: 'Failed to create fee structure' });
   }
 }
@@ -202,16 +249,37 @@ export async function listFeeStructures(req: AuthenticatedRequest, res: Response
     const instituteId = req.instituteId;
     if (!instituteId) return res.status(400).json({ success: false, error: 'Institute context required' });
 
-    const { batchId, academicYear, isActive } = req.query;
+    const { batchId, academicYear, isActive, studentId, classGrade } = req.query;
 
     const where: any = { instituteId };
-    if (batchId) where.batchId = String(batchId);
     if (academicYear) where.academicYear = String(academicYear);
+    if (classGrade) where.classGrade = String(classGrade);
     if (isActive !== undefined) where.isActive = isActive === 'true';
+
+    if (studentId) {
+      // Find batches student is enrolled in
+      const enrollments = await prisma.studentEnrollment.findMany({
+        where: { studentId: String(studentId), isActive: true },
+        select: { batchId: true },
+      });
+      const enrolledBatchIds = enrollments.map((e) => e.batchId).filter(Boolean);
+
+      // Student can be assigned fee structures that are institute-wide (batchId is null) OR match enrolled batches
+      where.OR = [
+        { batchId: null },
+        { batchId: { in: enrolledBatchIds } },
+      ];
+    } else if (batchId) {
+      if (batchId === 'none' || batchId === 'null') {
+        where.batchId = null;
+      } else {
+        where.batchId = String(batchId);
+      }
+    }
 
     const feeStructures = await prisma.feeStructure.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
       include: {
         batch: { select: { id: true, name: true, academicYear: true } },
         _count: { select: { assignments: true } },
@@ -223,6 +291,7 @@ export async function listFeeStructures(req: AuthenticatedRequest, res: Response
       data: { feeStructures },
     });
   } catch (err: any) {
+    console.error('Error in listFeeStructures:', err);
     return res.status(500).json({ success: false, error: 'Failed to list fee structures' });
   }
 }
@@ -271,15 +340,33 @@ export async function updateFeeStructure(req: AuthenticatedRequest, res: Respons
     }
 
     const data = parse.data;
+    if (data.batchId) {
+      const batch = await prisma.batch.findFirst({
+        where: { id: data.batchId, instituteId },
+      });
+      if (!batch) {
+        return res.status(404).json({ success: false, error: 'Batch not found in this institute' });
+      }
+    }
+
     const updated = await prisma.feeStructure.update({
       where: { id },
       data: {
         ...(data.name ? { name: data.name.trim() } : {}),
         ...(data.description !== undefined ? { description: data.description?.trim() || null } : {}),
         ...(data.academicYear ? { academicYear: data.academicYear } : {}),
+        ...(data.frequency ? { frequency: data.frequency } : {}),
         ...(data.amount ? { amount: new Prisma.Decimal(data.amount.toFixed(2)) } : {}),
         ...(data.dueDay !== undefined ? { dueDay: data.dueDay } : {}),
+        ...(data.classGrade !== undefined ? { classGrade: data.classGrade?.trim() || null } : {}),
+        ...(data.courseName !== undefined ? { courseName: data.courseName?.trim() || null } : {}),
+        ...(data.batchId !== undefined ? { batchId: data.batchId || null } : {}),
+        ...(data.components !== undefined ? { componentsJson: data.components ? (data.components as any) : Prisma.JsonNull } : {}),
+        ...(data.installments !== undefined ? { installmentsJson: data.installments ? (data.installments as any) : Prisma.JsonNull } : {}),
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+      include: {
+        batch: { select: { id: true, name: true, academicYear: true } },
       },
     });
 
@@ -301,6 +388,7 @@ export async function updateFeeStructure(req: AuthenticatedRequest, res: Respons
       data: { feeStructure: updated },
     });
   } catch (err: any) {
+    console.error('Error in updateFeeStructure:', err);
     return res.status(500).json({ success: false, error: 'Failed to update fee structure' });
   }
 }
@@ -350,7 +438,7 @@ export async function assignFeeToStudent(req: AuthenticatedRequest, res: Respons
     if (existing) {
       return res.status(409).json({
         success: false,
-        error: `Fee already assigned to this student for '${data.termLabel.trim()}'`,
+        error: `Fee already assigned to this student for '${data.termLabel.trim()}'. Duplicate billing prevented.`,
       });
     }
 
@@ -360,7 +448,15 @@ export async function assignFeeToStudent(req: AuthenticatedRequest, res: Respons
 
     const discountDecimal = new Prisma.Decimal(data.discountAmount.toFixed(2));
     if (discountDecimal.greaterThan(baseAmountDecimal)) {
-      return res.status(400).json({ success: false, error: 'Discount amount cannot exceed base fee amount' });
+      return res.status(400).json({ success: false, error: 'Concession / discount amount cannot exceed base fee amount' });
+    }
+
+    // Enforce audit requirement: Reason is mandatory if discount > 0
+    if (discountDecimal.greaterThan(0) && (!data.discountReason || !data.discountReason.trim())) {
+      return res.status(400).json({
+        success: false,
+        error: 'A reason or justification is required when granting a student concession or scholarship discount.',
+      });
     }
 
     const finalAmountDecimal = baseAmountDecimal.minus(discountDecimal);
@@ -377,13 +473,16 @@ export async function assignFeeToStudent(req: AuthenticatedRequest, res: Respons
         academicYear: data.academicYear || feeStructure.academicYear,
         baseAmount: baseAmountDecimal,
         discountAmount: discountDecimal,
+        discountReason: data.discountReason?.trim() || null,
         finalAmount: finalAmountDecimal,
         dueDate,
         status: PaymentStatus.PENDING,
+        componentsJson: data.components && data.components.length > 0 ? (data.components as any) : (feeStructure.componentsJson as any) || Prisma.JsonNull,
+        installmentNo: data.installmentNo || null,
       },
       include: {
         student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
-        feeStructure: { select: { id: true, name: true, frequency: true } },
+        feeStructure: { select: { id: true, name: true, frequency: true, classGrade: true, courseName: true } },
       },
     });
 
@@ -394,7 +493,10 @@ export async function assignFeeToStudent(req: AuthenticatedRequest, res: Respons
         action: 'FEE_ASSIGNED',
         entityType: 'StudentFeeAssignment',
         entityId: assignment.id,
-        newValues: assignment as any,
+        newValues: {
+          ...assignment,
+          discountReason: data.discountReason || null,
+        } as any,
       },
     });
 
@@ -404,6 +506,7 @@ export async function assignFeeToStudent(req: AuthenticatedRequest, res: Respons
       data: { assignment },
     });
   } catch (err: any) {
+    console.error('Error in assignFeeToStudent:', err);
     return res.status(500).json({ success: false, error: 'Failed to assign fee to student' });
   }
 }
