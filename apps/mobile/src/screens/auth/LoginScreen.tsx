@@ -165,10 +165,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
 
           {/* Email / Phone / Identifier Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Email or Phone Number</Text>
+            <Text style={styles.inputLabel}>Login ID (Admission No, Phone, or Email)</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. name@example.com or 9876543210"
+              placeholder="e.g. Admission No, Email, or Phone"
               placeholderTextColor={themeTokens.colors.textSubtle}
               value={username}
               onChangeText={(text) => {

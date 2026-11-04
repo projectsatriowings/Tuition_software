@@ -665,26 +665,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               });
             }
 
-            // Store initial generated credentials into student.notes so they display permanently on the staff Login & Password page
-            const initialCredNotes: Record<string, any> = {};
-            if (data.notes?.trim()) {
-              initialCredNotes.userNotes = data.notes.trim();
-            }
-            if (tempPassword) {
-              initialCredNotes.studentPassword = tempPassword;
-            }
-            if (parentTempPassword) {
-              initialCredNotes.parentPassword = parentTempPassword;
-            }
-
-            if (Object.keys(initialCredNotes).length > 0) {
-              const notesJson = JSON.stringify(initialCredNotes);
-              await tx.student.update({
-                where: { id: student.id },
-                data: { notes: notesJson },
-              });
-              student.notes = notesJson;
-            }
+            // Passwords are securely hashed at rest and never stored in student.notes
 
             // Record Audit Log
             await tx.auditLog.create({
@@ -1358,21 +1339,7 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
       where: { userId: targetUserId },
     });
 
-    // Update credentialNotes in student.notes
-    let credentialNotes: any = {};
-    if (student.notes && student.notes.startsWith('{')) {
-      try {
-        credentialNotes = JSON.parse(student.notes);
-      } catch {}
-    } else if (student.notes) {
-      credentialNotes.userNotes = student.notes;
-    }
-    credentialNotes.studentPassword = temporaryPassword;
-
-    await prisma.student.update({
-      where: { id: student.id },
-      data: { notes: JSON.stringify(credentialNotes) },
-    });
+    // Passwords are securely hashed at rest and never stored in student.notes
 
     // Record audit log
     await prisma.auditLog.create({

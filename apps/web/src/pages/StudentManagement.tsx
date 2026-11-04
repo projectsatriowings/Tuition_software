@@ -111,6 +111,9 @@ export const StudentManagement: React.FC = () => {
     }
   }, [openActionMenuId]);
 
+  // Session Credentials Cache to store cleartext passwords securely in-memory for the current staff session
+  const sessionCredentialsCache = useRef<Record<string, { studentPassword?: string; parentPassword?: string }>>({});
+
   // View & Reset Student & Parent Credentials Modal State
   const [viewingStudentCreds, setViewingStudentCreds] = useState<any | null>(null);
   const [credsActiveTab, setCredsActiveTab] = useState<'student' | 'parent'>('student');
@@ -302,7 +305,15 @@ Please keep this login and password safe. Use your registered mobile number and 
   };
 
   const handleOpenLoginCredentialsModal = (student: any) => {
-    setViewingStudentCreds(student);
+    const cached = sessionCredentialsCache.current[student.id];
+    const mergedStudent = {
+      ...student,
+      credentialsOnRecord: {
+        studentPassword: cached?.studentPassword || student.credentialsOnRecord?.studentPassword || null,
+        parentPassword: cached?.parentPassword || student.credentialsOnRecord?.parentPassword || null,
+      },
+    };
+    setViewingStudentCreds(mergedStudent);
     setCredsActiveTab('student');
     setShowStudentExistingPassword(true);
     setShowParentExistingPassword(true);
@@ -328,6 +339,13 @@ Please keep this login and password safe. Use your registered mobile number and 
       });
 
       const newPass = res.data?.permanentPassword || res.data?.temporaryPassword || resetStudentPasswordInput;
+
+      if (viewingStudentCreds?.id && newPass) {
+        sessionCredentialsCache.current[viewingStudentCreds.id] = {
+          ...(sessionCredentialsCache.current[viewingStudentCreds.id] || {}),
+          studentPassword: newPass,
+        };
+      }
 
       setViewingStudentCreds((prev: any) => {
         if (!prev) return null;
@@ -368,6 +386,13 @@ Please keep this login and password safe. Use your registered mobile number and 
       });
 
       const newPass = res.data?.permanentPassword || res.data?.temporaryPassword || resetParentPasswordInput;
+
+      if (viewingStudentCreds?.id && newPass) {
+        sessionCredentialsCache.current[viewingStudentCreds.id] = {
+          ...(sessionCredentialsCache.current[viewingStudentCreds.id] || {}),
+          parentPassword: newPass,
+        };
+      }
 
       setViewingStudentCreds((prev: any) => {
         if (!prev) return null;
@@ -1011,6 +1036,13 @@ Please keep this login and password safe. Use your registered mobile number and 
         const generatedNum = res.data?.admissionNumber || newStudent?.admissionNumber || 'Assigned';
         const studentCreds = res.data?.studentCredentials;
         const parentCreds = res.data?.parentCredentials;
+
+        if (newStudent?.id) {
+          sessionCredentialsCache.current[newStudent.id] = {
+            studentPassword: studentCreds?.temporaryPassword || formData.studentInitialPassword || undefined,
+            parentPassword: parentCreds?.temporaryPassword || formData.parentInitialPassword || undefined,
+          };
+        }
 
         setAdmittedSuccess({
           admissionNumber: generatedNum,
@@ -2537,7 +2569,7 @@ Please keep this login and password safe. Use your registered mobile number and 
 
                 <div className="pt-2 border-t border-[#EFEBE9] flex items-center justify-between">
                   <span className="text-[10px] text-[#8D6E63] italic">
-                    Student must change temporary password upon initial login.
+                    Student can log in immediately with these credentials.
                   </span>
                   <button
                     type="button"
@@ -2642,7 +2674,7 @@ Please keep this login and password safe. Use your registered mobile number and 
                   <span className="text-[10px] text-amber-900/70 italic">
                     {admittedSuccess.parentCredentials.isExistingAccount
                       ? 'Parent can log in immediately with their existing credentials.'
-                      : 'Parent must change temporary password upon first login.'}
+                      : 'Parent can log in immediately with these credentials.'}
                   </span>
                   {!admittedSuccess.parentCredentials.isExistingAccount && (
                     <button
@@ -2877,6 +2909,26 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
                         </span>
                       </div>
                     )}
+                    {viewingStudentCreds.phone && (
+                      <div className="flex justify-between items-center py-0.5 border-b border-[#EFEBE9]">
+                        <span className="text-[#6D4C41]">Student Phone:</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[#2D1E18] select-all">{viewingStudentCreds.phone}</span>
+                          <button
+                            type="button"
+                            onClick={() => copyCredsToClipboard(viewingStudentCreds.phone, 'view_stud_phone')}
+                            className="text-[#8D6E63] hover:text-[#2D1E18]"
+                            title="Copy phone"
+                          >
+                            {copiedCredsKey === 'view_stud_phone' ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {viewingStudentCreds.user?.email && (
                       <div className="flex justify-between items-center py-0.5 border-b border-[#EFEBE9]">
                         <span className="text-[#6D4C41]">Login Email:</span>
@@ -2941,9 +2993,14 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[#8D6E63] italic text-[11px]">
-                          Encrypted (Set new password below)
-                        </span>
+                        <div className="text-right">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            <Check className="w-3 h-3 text-emerald-600" /> Password Configured & Secured
+                          </span>
+                          <p className="text-[10px] text-[#8D6E63] mt-0.5">
+                            Stored securely hashed at rest. Use &quot;Set / Change Permanent Password&quot; below to issue or reveal credentials.
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -3133,9 +3190,14 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
                                   </button>
                                 </div>
                               ) : (
-                                <span className="text-[#8D6E63] italic text-[11px]">
-                                  Encrypted (Set new password below)
-                                </span>
+                                <div className="text-right">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            <Check className="w-3 h-3 text-emerald-600" /> Password Configured & Secured
+                          </span>
+                          <p className="text-[10px] text-[#8D6E63] mt-0.5">
+                            Stored securely hashed at rest. Use &quot;Set / Change Permanent Password&quot; below to issue or reveal credentials.
+                          </p>
+                        </div>
                               )}
                             </div>
                           </div>

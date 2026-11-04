@@ -13,7 +13,7 @@ import { SuperAdminScreen } from './src/screens/super_admin/SuperAdminScreen';
 import { themeTokens } from '@tuition/shared';
 
 const RootNavigator: React.FC = () => {
-  const { user, isAuthenticated, isLoading, needsPasswordChange } = useMobileAuth();
+  const { user, isAuthenticated, isLoading } = useMobileAuth();
 
   if (isLoading) {
     return (
@@ -32,14 +32,7 @@ const RootNavigator: React.FC = () => {
     return <LoginScreen />;
   }
 
-  // Student and Parent credentials are staff-managed permanent credentials.
-  // They navigate directly to their respective dashboards and never see forced password changes.
-  const isStudentOrParent = user?.role === 'STUDENT' || user?.role === 'PARENT';
-  if (needsPasswordChange && !isStudentOrParent) {
-    return <ChangePasswordScreen />;
-  }
-
-  // Role-based routing
+  // All roles proceed directly to their authorized dashboards without a forced password-update block
   switch (user?.role) {
     case 'STUDENT':
       return <StudentScreen />;
