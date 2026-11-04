@@ -1,9 +1,26 @@
-import { defineConfig } from 'vite';
+import { defineConfig, createLogger } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const customLogger = createLogger();
+const originalLoggerError = customLogger.error.bind(customLogger);
+
+// Suppress normal browser disconnects / SSE teardowns from polluting the dev terminal
+customLogger.error = (msg, options) => {
+  const text = typeof msg === 'string' ? msg : options?.error?.message || '';
+  if (
+    text.includes('ECONNRESET') ||
+    text.includes('socket hang up') ||
+    (text.includes('http proxy error') && text.includes('/notifications/stream'))
+  ) {
+    return;
+  }
+  originalLoggerError(msg, options);
+};
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  customLogger,
   plugins: [react()],
   resolve: {
     alias: {
