@@ -558,25 +558,7 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       where: { userId: parentProfile.userId },
     });
 
-    // Update parent password in linked students' notes
-    for (const rel of parentProfile.studentRelations) {
-      try {
-        const st = await prisma.student.findUnique({ where: { id: rel.studentId }, select: { id: true, notes: true } });
-        if (st) {
-          let cNotes: any = {};
-          if (st.notes && st.notes.startsWith('{')) {
-            try { cNotes = JSON.parse(st.notes); } catch {}
-          } else if (st.notes) {
-            cNotes.userNotes = st.notes;
-          }
-          cNotes.parentPassword = temporaryPassword;
-          await prisma.student.update({
-            where: { id: st.id },
-            data: { notes: JSON.stringify(cNotes) },
-          });
-        }
-      } catch {}
-    }
+    // Passwords are securely hashed at rest and never stored in student.notes
 
     // Record audit log
     await prisma.auditLog.create({

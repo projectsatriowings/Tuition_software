@@ -209,7 +209,7 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
           passwordHash,
           role: 'ACADEMIC_ADMIN',
           isActive: true,
-          mustChangePassword: true, // Forces password change on initial login
+          mustChangePassword: false,
         },
       });
 
@@ -689,7 +689,7 @@ export async function resetAdminPassword(req: AuthenticatedRequest, res: Respons
       where: { id: membership.userId },
       data: {
         passwordHash,
-        mustChangePassword: true,
+        mustChangePassword: false,
       },
     });
 
@@ -707,7 +707,7 @@ export async function resetAdminPassword(req: AuthenticatedRequest, res: Respons
         entityType: 'User',
         entityId: membership.userId,
         newValues: {
-          mustChangePassword: true,
+          mustChangePassword: false,
           resetBy: req.user?.userId || 'SUPER_ADMIN',
           resetAt: new Date().toISOString(),
         },
@@ -719,7 +719,7 @@ export async function resetAdminPassword(req: AuthenticatedRequest, res: Respons
       message: 'Admin password reset successfully',
       data: {
         temporaryPassword,
-        mustChangePassword: true,
+        mustChangePassword: false,
       },
     });
   } catch (err: any) {

@@ -253,7 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setApiBaseUrlState(newUrl);
   };
 
-  const effectiveNeedsPasswordChange = !isStaffManagedRole(user?.role) && mustChangePassword;
+  const effectiveNeedsPasswordChange = false;
 
   return (
     <AuthContext.Provider
@@ -263,8 +263,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isLoading: loading,
         isAuthenticated: !!user,
-        mustChangePassword: effectiveNeedsPasswordChange,
-        needsPasswordChange: effectiveNeedsPasswordChange,
+        mustChangePassword: false,
+        needsPasswordChange: false,
         apiBaseUrl,
         customHost: apiBaseUrl,
         pendingAuthSession,

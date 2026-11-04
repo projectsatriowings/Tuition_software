@@ -147,8 +147,8 @@ export async function login(req: Request, res: Response) {
 
     // For STUDENT and PARENT roles, credentials are staff-managed permanent credentials.
     // They are never forced to change passwords on login.
-    const isStaffManagedRole = effectiveRole === 'STUDENT' || effectiveRole === 'PARENT';
-    const effectiveMustChangePassword = isStaffManagedRole ? false : !!user.mustChangePassword;
+    // No role is forced to change password upon initial login
+    const effectiveMustChangePassword = false;
 
     return res.json({
       success: true,
@@ -222,10 +222,9 @@ export async function getCurrentUser(req: AuthenticatedRequest, res: Response) {
       return res.status(404).json({ success: false, error: 'User profile not found' });
     }
 
-    const isStaffManagedRole = user.role === 'STUDENT' || user.role === 'PARENT';
     const sanitizedUser = {
       ...user,
-      mustChangePassword: isStaffManagedRole ? false : !!user.mustChangePassword,
+      mustChangePassword: false,
     };
 
     return res.json({
