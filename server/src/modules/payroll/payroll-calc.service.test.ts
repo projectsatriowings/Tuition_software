@@ -1,10 +1,12 @@
 import { calculateStaffMonthlyPayroll, CalculationInput } from './payroll-calc.service.js';
-import {
+import prismaPkg from '@prisma/client';
+
+const {
   PayrollCalculationBasis,
   LateDeductionPolicy,
   SalaryComponentType,
   SalaryComponentCalcType,
-} from '@prisma/client';
+} = (prismaPkg as any).default || prismaPkg;
 
 export function runPayrollEngineTests() {
   console.log('--- Running Payroll Engine Unit Tests ---');
@@ -98,7 +100,7 @@ export function runPayrollEngineTests() {
     ...input1,
     attendanceSessions: [
       ...Array.from({ length: 15 }, (_, i) => ({
-        id: `on-site-${i}`,
+        id: `s3a-${i}`,
         attendanceDate: new Date(2026, 10, i + 1),
         status: 'CHECKED_IN',
         checkInTime: new Date(),
@@ -108,7 +110,7 @@ export function runPayrollEngineTests() {
         attendanceMode: 'ON_SITE',
       })),
       ...Array.from({ length: 11 }, (_, i) => ({
-        id: `wfh-${i}`,
+        id: `s3b-${i}`,
         attendanceDate: new Date(2026, 10, 16 + i),
         status: 'CHECKED_IN',
         checkInTime: new Date(),
@@ -121,15 +123,15 @@ export function runPayrollEngineTests() {
   };
 
   const res3 = calculateStaffMonthlyPayroll(input3);
-  assert('Test 3: WFH days correctly counted as 11', res3.wfhDays === 11);
-  assert('Test 3: Total worked days = 15 + 11 = 26', res3.workedDays === 26);
-  assert('Test 3: Zero deduction for valid WFH', res3.totalDeductions === 0);
+  assert('Test 3: WFH days counted correctly (11 days)', res3.wfhDays === 11);
+  assert('Test 3: On-site days counted correctly (15 days)', res3.onSiteDays === 15);
+  assert('Test 3: Full pay with no deductions for authorized WFH', res3.grossPay === 30000 && res3.totalDeductions === 0);
 
-  // Test 4: Late grace period penalty
+  // Test 4: Late arrival deductions after 3 grace occurrences (5 late occurrences -> 2 penalized @ ₹200 = ₹400)
   const input4: CalculationInput = {
     ...input1,
     attendanceSessions: Array.from({ length: 26 }, (_, i) => ({
-      id: `late-${i}`,
+      id: `s4-${i}`,
       attendanceDate: new Date(2026, 10, i + 1),
       status: 'CHECKED_IN',
       checkInTime: new Date(),
@@ -141,27 +143,27 @@ export function runPayrollEngineTests() {
   };
 
   const res4 = calculateStaffMonthlyPayroll(input4);
-  assert('Test 4: Late count is 5', res4.lateDays === 5);
-  // Grace is 3, penalty on 2 days @ 200 = 400
-  const lateDeduction = res4.deductions.find((d) => d.type === 'LATE_PENALTY');
-  assert('Test 4: Late deduction is applied for 2 days beyond grace (₹400)', lateDeduction?.amount === 400);
+  assert('Test 4: Total late arrivals recorded as 5', res4.lateDays === 5);
+  const lateDeduction = res4.deductions.find((d) => d.name.includes('Late') || (d as any).type === 'LATE_PENALTY')?.amount || 0;
+  assert('Test 4: 2 penalized late arrivals @ ₹200 = ₹400 deduction', lateDeduction === 400);
+  assert('Test 4: Net payable is ₹29,600', res4.netPayable === 29600);
 
-  // Test 5: Structure with Basic (50%), HRA (20%), Special Allowance (30%), PF deduction (12% of basic)
+  // Test 5: Salary Structure with breakdown (Basic 50%, HRA 40% of Basic, Special Allowance 30% of Gross, PF 12% of Basic)
   const input5: CalculationInput = {
     ...input1,
     salaryAssignment: {
-      id: 'assign-structured',
+      id: 'assign-5',
       baseMonthlySalary: 40000,
       structure: {
         id: 'struct-1',
-        name: 'Standard Faculty CTC',
+        name: 'Standard Tuition Teaching Faculty Structure',
         components: [
           {
             id: 'c1',
             name: 'Basic Pay',
             type: SalaryComponentType.EARNING,
             calculationType: SalaryComponentCalcType.PERCENTAGE_OF_GROSS,
-            amountOrPercent: 50,
+            amountOrPercent: 50, // 50% of 40,000 = 20,000
             isTaxable: true,
             isStatutory: false,
             displayOrder: 1,
@@ -171,7 +173,7 @@ export function runPayrollEngineTests() {
             name: 'HRA',
             type: SalaryComponentType.EARNING,
             calculationType: SalaryComponentCalcType.PERCENTAGE_OF_BASIC,
-            amountOrPercent: 40, // 40% of Basic = 8,000
+            amountOrPercent: 40, // 40% of 20,000 = 8,000
             isTaxable: true,
             isStatutory: false,
             displayOrder: 2,
@@ -181,7 +183,7 @@ export function runPayrollEngineTests() {
             name: 'Special Allowance',
             type: SalaryComponentType.EARNING,
             calculationType: SalaryComponentCalcType.PERCENTAGE_OF_GROSS,
-            amountOrPercent: 30, // 30% of Gross = 12,000
+            amountOrPercent: 30, // 30% of 40,000 = 12,000 (20k + 8k + 12k = 40k)
             isTaxable: true,
             isStatutory: false,
             displayOrder: 3,
@@ -221,4 +223,3 @@ export function runPayrollEngineTests() {
 if (process.argv[1] && process.argv[1].includes('payroll-calc.service.test')) {
   runPayrollEngineTests();
 }
-
