@@ -2144,21 +2144,37 @@ export const FeesManagement: React.FC = () => {
                     )}
                   </div>
                 ) : (
-                  <select
-                    required
-                    value={newAssignment.feeStructureId}
-                    onChange={(e) => onSelectStructureForAssign(e.target.value)}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-semibold focus:ring-2 focus:ring-[#8D6E63]"
-                  >
-                    <option value="">Select Fee Structure...</option>
-                    {feeStructures
-                      .filter((fs) => fs.isActive)
-                      .map((fs) => (
-                        <option key={fs.id} value={fs.id}>
-                          {fs.name} — ₹{fs.amount} ({fs.frequency?.replace('_', ' ')}) {fs.batch ? '• ' + fs.batch.name : '• Institute-wide'}
-                        </option>
-                      ))}
-                  </select>
+                  <>
+                    <select
+                      required
+                      value={newAssignment.feeStructureId}
+                      onChange={(e) => onSelectStructureForAssign(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-semibold focus:ring-2 focus:ring-[#8D6E63]"
+                    >
+                      <option value="">Select Fee Structure...</option>
+                      {feeStructures
+                        .filter((fs) => fs.isActive)
+                        .map((fs) => (
+                          <option key={fs.id} value={fs.id}>
+                            {fs.classGrade ? `[${fs.classGrade}] ` : ''}{fs.name} — ₹{fs.amount} ({fs.frequency?.replace('_', ' ')}) {fs.batch ? '• ' + fs.batch.name : '• Institute-wide'}
+                          </option>
+                        ))}
+                    </select>
+
+                    <div className="flex items-center justify-between mt-1.5 text-[11px] text-[#8D6E63]">
+                      <span>Fee for a different class (e.g. Class 6, 7, 8)?</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAssignModal(false);
+                          openCreateStructureModal();
+                        }}
+                        className="text-[#4E342E] font-bold hover:underline inline-flex items-center gap-0.5"
+                      >
+                        + Create Structure for Class ↗
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -2408,7 +2424,7 @@ export const FeesManagement: React.FC = () => {
                       .filter((fs) => fs.isActive)
                       .map((fs) => (
                         <option key={fs.id} value={fs.id}>
-                          {fs.name} — ₹{fs.amount} ({fs.frequency?.replace('_', ' ')}) {fs.batch ? '• ' + fs.batch.name : '• Institute-wide'}
+                          {fs.classGrade ? `[${fs.classGrade}] ` : ''}{fs.name} — ₹{fs.amount} ({fs.frequency?.replace('_', ' ')}) {fs.batch ? '• ' + fs.batch.name : '• Institute-wide'}
                         </option>
                       ))}
                   </select>
