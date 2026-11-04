@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { themeTokens } from '@tuition/shared';
 import { PressableScale } from '../../../theme/motion';
+import { Home, GraduationCap, ClipboardCheck, BookOpen, MoreHorizontal } from 'lucide-react-native';
 
 export type StaffPrimaryTab = 'home' | 'students' | 'attendance' | 'materials' | 'more';
 export type StaffActiveTab = StaffPrimaryTab | 'homework' | 'exams' | 'messages';
@@ -16,16 +17,16 @@ interface StaffBottomNavProps {
 interface NavItem {
   id: StaffPrimaryTab;
   label: string;
-  icon: string;
+  icon: (color: string) => React.ReactNode;
   matchTabs?: StaffActiveTab[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: '🏠', matchTabs: ['home'] },
-  { id: 'students', label: 'Students', icon: '👨‍🎓', matchTabs: ['students'] },
-  { id: 'attendance', label: 'Attendance', icon: '📋', matchTabs: ['attendance'] },
-  { id: 'materials', label: 'Materials', icon: '📚', matchTabs: ['materials'] },
-  { id: 'more', label: 'More', icon: '•••', matchTabs: ['more', 'homework', 'exams', 'messages'] },
+  { id: 'home', label: 'Home', icon: (color) => <Home size={20} color={color} strokeWidth={2.2} />, matchTabs: ['home'] },
+  { id: 'students', label: 'Students', icon: (color) => <GraduationCap size={20} color={color} strokeWidth={2.2} />, matchTabs: ['students'] },
+  { id: 'attendance', label: 'Attendance', icon: (color) => <ClipboardCheck size={20} color={color} strokeWidth={2.2} />, matchTabs: ['attendance'] },
+  { id: 'materials', label: 'Materials', icon: (color) => <BookOpen size={20} color={color} strokeWidth={2.2} />, matchTabs: ['materials'] },
+  { id: 'more', label: 'More', icon: (color) => <MoreHorizontal size={20} color={color} strokeWidth={2.2} />, matchTabs: ['more', 'homework', 'exams', 'messages'] },
 ];
 
 export const StaffBottomNav: React.FC<StaffBottomNavProps> = ({
@@ -54,9 +55,7 @@ export const StaffBottomNav: React.FC<StaffBottomNavProps> = ({
             >
               <View style={[styles.pill, isActive && styles.activePill]}>
                 <View style={styles.iconWrapper}>
-                  <Text style={[styles.iconText, isActive && styles.activeIconText]}>
-                    {item.icon}
-                  </Text>
+                  item.icon(isActive ? '#4E342E' : '#8D6E63')
                   {item.id === 'more' && unreadMoreCount > 0 && (
                     <View style={styles.badgeDot}>
                       <Text style={styles.badgeDotText}>

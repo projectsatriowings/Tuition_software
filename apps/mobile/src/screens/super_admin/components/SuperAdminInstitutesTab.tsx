@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { Search, X, Building2, Mail, Phone, Calendar, Settings, Play, Pause } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
   View,
@@ -150,7 +152,7 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
 
         {/* Search Bar */}
         <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Search size={16} color="#8D6E63" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by name, code, or email..."
@@ -165,7 +167,7 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
               onPress={() => setSearchQuery('')}
               style={styles.clearSearchBtn}
             >
-              <Text style={styles.clearSearchText}>✕</Text>
+              <X size={14} color="#8D6E63" />
             </TouchableOpacity>
           )}
         </View>
@@ -278,7 +280,7 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
         >
           {filteredInstitutes.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>🏛️</Text>
+              <Building2 size={42} color={themeTokens.colors.primary} />
               <Text style={styles.emptyTitle}>No Institutes Found</Text>
               <Text style={styles.emptySub}>
                 {searchQuery || statusFilter !== 'ALL'
@@ -358,22 +360,13 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
                   <View style={styles.metaSection}>
                     {inst.email ? (
                       <View style={styles.metaRow}>
-                        <Text style={styles.metaIcon}>✉️</Text>
-                        <Text style={styles.metaText} numberOfLines={1}>
-                          {inst.email}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {inst.phone ? (
-                      <View style={styles.metaRow}>
-                        <Text style={styles.metaIcon}>📞</Text>
+                        <Phone size={13} color="#8D6E63" />
                         <Text style={styles.metaText}>{inst.phone}</Text>
                       </View>
                     ) : null}
 
                     <View style={styles.metaRow}>
-                      <Text style={styles.metaIcon}>🗓️</Text>
+                      <Calendar size={13} color="#8D6E63" />
                       <Text style={styles.metaText}>
                         Provisioned {formatDate(inst.createdAt)}
                       </Text>
@@ -411,7 +404,8 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
                       onPress={() => onSelectInstitute(inst)}
                       activeScale={0.96}
                     >
-                      <Text style={styles.detailsBtnText}>⚙️ Manage & Details</Text>
+                      <Settings size={13} color={themeTokens.colors.primary} />
+                      <Text style={styles.detailsBtnText}>Manage & Details</Text>
                     </PressableScale>
 
                     <PressableScale
@@ -437,7 +431,7 @@ export const SuperAdminInstitutesTab: React.FC<SuperAdminInstitutesTabProps> = (
                               : styles.suspendBtnText,
                           ]}
                         >
-                          {isSuspended ? '▶ Activate' : '⏸ Suspend'}
+                          {isSuspended ? 'Activate' : 'Suspend'}
                         </Text>
                       )}
                     </PressableScale>

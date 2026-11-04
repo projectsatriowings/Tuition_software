@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
 import { PressableScale, AnimatedDialog } from '../theme/motion';
+import { AlertTriangle, HelpCircle } from 'lucide-react-native';
 
 export interface ConfirmationModalProps {
   isOpen: boolean;
@@ -76,7 +77,11 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           <TouchableWithoutFeedback>
             <AnimatedDialog style={styles.modalCard}>
               <View style={[styles.iconCircle, { borderColor: iconColor }]}>
-                <Text style={[styles.iconText, { color: iconColor }]}>{iconSymbol}</Text>
+                {variant === 'danger' || variant === 'warning' ? (
+                  <AlertTriangle size={24} color={iconColor} />
+                ) : (
+                  <HelpCircle size={24} color={iconColor} />
+                )}
               </View>
 
               <Text style={styles.titleText}>{title}</Text>

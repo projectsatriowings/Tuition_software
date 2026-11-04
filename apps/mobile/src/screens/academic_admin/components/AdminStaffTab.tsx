@@ -1,4 +1,6 @@
+import { themeTokens } from '@tuition/shared';
 import React, { useState } from 'react';
+import { Search, X, Users, Mail, Phone } from 'lucide-react-native';
 import {
   View,
   Text,
@@ -58,7 +60,7 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
 
         {/* Search Input */}
         <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Search size={14} color="#8D6E63" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search faculty by name, employee code..."
@@ -69,7 +71,7 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Text style={styles.clearSearchText}>✕</Text>
+              <X size={14} color="#8D6E63" />
             </TouchableOpacity>
           )}
         </View>
@@ -90,7 +92,7 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
       >
         {filteredStaff.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>👨‍🏫</Text>
+            <Users size={42} color={themeTokens.colors.primary} />
             <Text style={styles.emptyTitle}>No Faculty Members Found</Text>
             <Text style={styles.emptySub}>
               {searchQuery
@@ -125,8 +127,8 @@ export const AdminStaffTab: React.FC<AdminStaffTabProps> = ({
                     </View>
 
                     <Text style={styles.staffContact}>
-                      📧 {staffUser.email || 'N/A'}{' '}
-                      {staffUser.phone ? `• 📞 ${staffUser.phone}` : ''}
+                      {staffUser.email || 'N/A'}{' '}
+                      {staffUser.phone ? `• ${staffUser.phone}` : ''}
                     </Text>
 
                     {assignedBatches.length > 0 && (

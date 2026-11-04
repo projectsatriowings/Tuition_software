@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableScale } from '../../../theme/motion';
+import { Home, GraduationCap, Users, Building2, MoreHorizontal } from 'lucide-react-native';
 
 export type AdminPrimaryTab = 'home' | 'students' | 'staff' | 'academics' | 'more';
 export type AdminActiveTab =
@@ -24,19 +25,19 @@ interface AdminBottomNavProps {
 interface NavItem {
   id: AdminPrimaryTab;
   label: string;
-  icon: string;
+  icon: (color: string) => React.ReactNode;
   matchTabs?: AdminActiveTab[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: '🏠', matchTabs: ['home'] },
-  { id: 'students', label: 'Students', icon: '👨‍🎓', matchTabs: ['students'] },
-  { id: 'staff', label: 'Faculty', icon: '👨‍🏫', matchTabs: ['staff'] },
-  { id: 'academics', label: 'Academics', icon: '🏫', matchTabs: ['academics'] },
+  { id: 'home', label: 'Home', icon: (color) => <Home size={20} color={color} strokeWidth={2.2} />, matchTabs: ['home'] },
+  { id: 'students', label: 'Students', icon: (color) => <GraduationCap size={20} color={color} strokeWidth={2.2} />, matchTabs: ['students'] },
+  { id: 'staff', label: 'Faculty', icon: (color) => <Users size={20} color={color} strokeWidth={2.2} />, matchTabs: ['staff'] },
+  { id: 'academics', label: 'Academics', icon: (color) => <Building2 size={20} color={color} strokeWidth={2.2} />, matchTabs: ['academics'] },
   {
     id: 'more',
     label: 'More',
-    icon: '•••',
+    icon: (color) => <MoreHorizontal size={20} color={color} strokeWidth={2.2} />,
     matchTabs: [
       'more',
       'attendance',
@@ -77,9 +78,7 @@ export const AdminBottomNav: React.FC<AdminBottomNavProps> = ({
             >
               <View style={[styles.pill, isActive && styles.activePill]}>
                 <View style={styles.iconWrapper}>
-                  <Text style={[styles.iconText, isActive && styles.activeIconText]}>
-                    {item.icon}
-                  </Text>
+                  item.icon(isActive ? '#4E342E' : '#8D6E63')
                   {item.id === 'more' && unreadCount > 0 && (
                     <View style={styles.badgeDot}>
                       <Text style={styles.badgeDotText}>

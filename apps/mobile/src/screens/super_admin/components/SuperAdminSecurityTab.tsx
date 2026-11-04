@@ -1,4 +1,6 @@
+import { themeTokens } from '@tuition/shared';
 import React from 'react';
+import { ShieldCheck, Shield, Key, Database, Crown, Building2, Users, GraduationCap, UserCheck, CheckCircle2, Lock as LockIcon } from 'lucide-react-native';
 import {
   View,
   Text,
@@ -26,35 +28,35 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       title: 'Tenant Row Isolation',
       desc: 'All queries strictly bound by instituteId context',
       status: 'VERIFIED',
-      icon: '🛡️',
+      icon: 'shield-check',
       color: '#2E7D32',
     },
     {
       title: 'X-Institute-Id Enforcement',
       desc: 'Middleware blocks header spoofing across tenants',
       status: 'ACTIVE',
-      icon: '🏢',
+      icon: 'building',
       color: '#2E7D32',
     },
     {
       title: 'JWT Bearer Authentication',
       desc: 'Cryptographically signed tokens with role claims',
       status: 'HEALTHY',
-      icon: '🔑',
+      icon: 'key',
       color: '#2E7D32',
     },
     {
       title: 'Neon Cloud Database Pool',
       desc: 'Serverless PostgreSQL with TLS 1.3 wire encryption',
       status: 'CONNECTED',
-      icon: '🗄️',
+      icon: 'database',
       color: '#2E7D32',
     },
     {
       title: 'Role-Based Access Control',
       desc: '5-tier discrete RBAC with zero cross-role bleed',
       status: 'ENFORCED',
-      icon: '👑',
+      icon: 'crown',
       color: '#2E7D32',
     },
   ];
@@ -66,7 +68,7 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       scope: 'Global Multi-Tenant Platform',
       permissions:
         'Provision institutes, suspend/activate tenants, reset admin passwords, view cloud telemetry.',
-      icon: '👑',
+      icon: 'crown',
       badgeBg: '#F5ECE8',
       badgeColor: '#4E342E',
     },
@@ -76,7 +78,7 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       scope: 'Single Institute (Root)',
       permissions:
         'Admit students, recruit staff, create batches, schedule exams, set fee structures, institute reports.',
-      icon: '🏛️',
+      icon: 'institution',
       badgeBg: '#E8F5E9',
       badgeColor: '#2E7D32',
     },
@@ -86,7 +88,7 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       scope: 'Assigned Batches & Subjects',
       permissions:
         'Mark student attendance, assign homework, record test marks, conduct live classes.',
-      icon: '👨‍🏫',
+      icon: 'faculty',
       badgeBg: '#E3F2FD',
       badgeColor: '#1565C0',
     },
@@ -96,7 +98,7 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       scope: 'Self Profile & Enrolled Batches',
       permissions:
         'View homework, submit assignments, check exam results, review personal attendance history.',
-      icon: '🎓',
+      icon: 'student',
       badgeBg: '#FFF3E0',
       badgeColor: '#E65100',
     },
@@ -106,7 +108,7 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       scope: 'Authorized Child Wards Only',
       permissions:
         'Monitor child attendance, receive alerts, review marks, communicate with institute director.',
-      icon: '👨‍👩‍👧',
+      icon: 'parent',
       badgeBg: '#EDE7F6',
       badgeColor: '#512DA8',
     },
@@ -132,7 +134,7 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       <View style={styles.healthBanner}>
         <View style={styles.bannerHeader}>
           <View style={styles.bannerIconCircle}>
-            <Text style={styles.bannerIcon}>🔒</Text>
+            <LockIcon size={20} color="#FFFFFF" />
           </View>
           <View style={styles.bannerTitleGroup}>
             <Text style={styles.bannerTitle}>Enterprise Platform Security</Text>
@@ -155,7 +157,8 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       {/* 2. Zero-Leak Isolation Checklist */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>🛡️ Real-Time Security Health</Text>
+          <ShieldCheck size={16} color={themeTokens.colors.primary} />
+          <Text style={styles.sectionTitle}>Real-Time Security Health</Text>
           <Text style={styles.sectionBadge}>5 / 5 Passed</Text>
         </View>
 
@@ -167,7 +170,13 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
               idx === securityChecks.length - 1 && styles.noBorder,
             ]}
           >
-            <Text style={styles.checkIcon}>{item.icon}</Text>
+            <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                  {item.icon === 'shield-check' ? <ShieldCheck size={18} color={item.color} /> :
+                   item.icon === 'building' ? <Building2 size={18} color={item.color} /> :
+                   item.icon === 'key' ? <Key size={18} color={item.color} /> :
+                   item.icon === 'database' ? <Database size={18} color={item.color} /> :
+                   <Crown size={18} color={item.color} />}
+                </View>
             <View style={styles.checkContent}>
               <View style={styles.checkHeader}>
                 <Text style={styles.checkTitle}>{item.title}</Text>
@@ -196,7 +205,8 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
       {/* 3. Role-Based Access Control (RBAC) Matrix */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>👑 5-Role Access Control Matrix</Text>
+          <Crown size={16} color={themeTokens.colors.primary} />
+          <Text style={styles.sectionTitle}>5-Role Access Control Matrix</Text>
           <Text style={styles.sectionBadge}>Strict Boundary</Text>
         </View>
         <Text style={styles.matrixExplainer}>
@@ -208,7 +218,13 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
           <View key={r.role} style={styles.roleCard}>
             <View style={styles.roleHeader}>
               <View style={styles.roleLeft}>
-                <Text style={styles.roleIcon}>{r.icon}</Text>
+                <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                  {r.icon === 'crown' ? <Crown size={16} color={themeTokens.colors.primary} /> :
+                   r.icon === 'institution' ? <Building2 size={16} color="#15803D" /> :
+                   r.icon === 'faculty' ? <Users size={16} color="#1D4ED8" /> :
+                   r.icon === 'student' ? <GraduationCap size={16} color="#B45309" /> :
+                   <UserCheck size={16} color="#6B21A8" />}
+                </View>
                 <Text style={styles.roleTitle}>{r.title}</Text>
               </View>
               <View
@@ -234,7 +250,8 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
 
       {/* 4. Platform Engine Specifications */}
       <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>⚙️ Infrastructure & Compliance</Text>
+        <Shield size={16} color={themeTokens.colors.primary} />
+        <Text style={styles.sectionTitle}>Infrastructure & Compliance</Text>
         <View style={styles.specGrid}>
           <View style={styles.specItem}>
             <Text style={styles.specLabel}>Database Engine</Text>
@@ -257,7 +274,8 @@ export const SuperAdminSecurityTab: React.FC<SuperAdminSecurityTabProps> = ({
 
       {/* 5. Security Contact / Super Admin Notice */}
       <View style={styles.complianceNotice}>
-        <Text style={styles.noticeTitle}>🔒 Data Protection Directive</Text>
+        <LockIcon size={14} color={themeTokens.colors.primary} />
+        <Text style={styles.noticeTitle}>Data Protection Directive</Text>
         <Text style={styles.noticeBody}>
           Super Admin accounts operate with system governance capabilities only and cannot
           decrypt or tamper with students' confidential academic grades or parent payment

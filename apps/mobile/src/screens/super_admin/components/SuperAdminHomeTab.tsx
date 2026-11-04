@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { Building2, ClipboardList, ShieldCheck, Key, Lock as LockIcon, ChevronRight } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -88,12 +90,12 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={styles.greetingText}>
-            {getGreeting()}, {firstName} 👑
+            {getGreeting()}, {firstName}
           </Text>
           <View style={styles.contextPillRow}>
             <View style={styles.platformBadge}>
               <Text style={styles.platformBadgeText}>
-                ☁️ TuitionOS Multi-Tenant Cloud
+                TuitionOS Multi-Tenant Cloud
               </Text>
             </View>
             <View style={styles.roleBadge}>
@@ -207,15 +209,15 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
             style={styles.quickActionPill}
             onPress={onOpenCreateModal}
           >
-            <Text style={styles.quickActionIcon}>🏛️</Text>
-            <Text style={styles.quickActionText}>+ Provision Institute</Text>
+            <Building2 size={16} color="#FFFFFF" />
+            <Text style={styles.quickActionText}>Provision Institute</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.quickActionPill}
             onPress={() => onNavigateTab('institutes')}
           >
-            <Text style={styles.quickActionIcon}>📋</Text>
+            <ClipboardList size={16} color="#FFFFFF" />
             <Text style={styles.quickActionText}>Manage Tenants</Text>
           </TouchableOpacity>
 
@@ -223,7 +225,7 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
             style={styles.quickActionPill}
             onPress={() => onNavigateTab('security')}
           >
-            <Text style={styles.quickActionIcon}>🔒</Text>
+            <ShieldCheck size={16} color="#FFFFFF" />
             <Text style={styles.quickActionText}>Security Audit</Text>
           </TouchableOpacity>
 
@@ -231,7 +233,7 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
             style={styles.quickActionPill}
             onPress={() => onNavigateTab('adminAccount')}
           >
-            <Text style={styles.quickActionIcon}>🔑</Text>
+            <Key size={16} color="#FFFFFF" />
             <Text style={styles.quickActionText}>Admin Credentials</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -241,7 +243,7 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
       <View style={styles.actionCard}>
         <View style={styles.actionCardHeader}>
           <View style={styles.actionCardIconBox}>
-            <Text style={styles.actionCardIcon}>🏛️</Text>
+            <Building2 size={18} color={themeTokens.colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionCardTitle}>Multi-Tenant Governance</Text>
@@ -312,7 +314,7 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
       <View style={styles.actionCard}>
         <View style={styles.actionCardHeader}>
           <View style={[styles.actionCardIconBox, { backgroundColor: '#F0FDF4' }]}>
-            <Text style={styles.actionCardIcon}>🔒</Text>
+            <LockIcon size={18} color="#15803D" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionCardTitle}>Tenant Isolation Compliance</Text>

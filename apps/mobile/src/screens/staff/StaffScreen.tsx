@@ -1,3 +1,4 @@
+import { Search, X, Users, Mic, BookOpen, FileText, Trophy, MessageSquare, BarChart2, Calendar, Phone, ArrowRight, Paperclip } from 'lucide-react-native';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -738,7 +739,7 @@ export const StaffScreen: React.FC = () => {
 
             {/* Search Input Bar */}
             <View style={styles.searchBarWrapper}>
-              <Text style={styles.searchIcon}>🔍</Text>
+              <Search size={14} color="#8D6E63" />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search by student name or roll..."
@@ -748,7 +749,7 @@ export const StaffScreen: React.FC = () => {
               />
               {studentSearchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setStudentSearchQuery('')} style={{ padding: 4 }}>
-                  <Text style={{ fontSize: 14, color: '#8D6E63' }}>✕</Text>
+                  <X size={14} color="#8D6E63" />
                 </TouchableOpacity>
               )}
             </View>
@@ -772,7 +773,7 @@ export const StaffScreen: React.FC = () => {
 
             {filteredStudents.length === 0 ? (
               <Card style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>👨‍🎓</Text>
+                <Users size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Students Found</Text>
                 <Text style={styles.emptyDesc}>
                   {studentSearchQuery ? 'No students matched your search criteria.' : 'No students enrolled in this batch yet.'}
@@ -794,7 +795,7 @@ export const StaffScreen: React.FC = () => {
                       <Text style={styles.studentSub}>
                         Adm: {s.admissionNumber || '—'} {s.rollNumber ? `• Roll: ${s.rollNumber}` : ''}
                       </Text>
-                      {s.phone && <Text style={styles.phoneText}>📞 {s.phone}</Text>}
+                      {s.phone && <Text style={styles.phoneText}>{s.phone}</Text>}
                     </View>
                     <Badge
                       label={s.status || 'ACTIVE'}
@@ -809,7 +810,7 @@ export const StaffScreen: React.FC = () => {
                       style={styles.cardDetailsHint}
                       onPress={() => setSelectedStudentId(s.id)}
                     >
-                      <Text style={styles.cardDetailsHintText}>Full Profile ➔</Text>
+                      <Text style={styles.cardDetailsHintText}>Full Profile</Text>
                     </TouchableOpacity>
 
                     <View style={styles.actionBtnGroup}>
@@ -878,7 +879,7 @@ export const StaffScreen: React.FC = () => {
 
             {/* Read-Only Today's Date Banner */}
             <View style={styles.todayDateBanner}>
-              <Text style={styles.todayDateBannerTitle}>📅 Today's Attendance Session</Text>
+              <Text style={styles.todayDateBannerTitle}>Today's Attendance Session</Text>
               <Text style={styles.todayDateBannerText}>
                 {new Date().toLocaleDateString('en-IN', {
                   weekday: 'short',
@@ -891,7 +892,7 @@ export const StaffScreen: React.FC = () => {
             {/* Voice-Assisted Input */}
             <Card style={{ marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={styles.voiceSectionTitle}>🎤 Voice-Assisted Attendance</Text>
+                <Text style={styles.voiceSectionTitle}>Voice-Assisted Attendance</Text>
                 {isVoiceListening && (
                   <View style={styles.liveListeningTag}>
                     <Text style={styles.liveListeningText}>● LISTENING</Text>
@@ -916,7 +917,7 @@ export const StaffScreen: React.FC = () => {
                     }}
                     style={{ padding: 4 }}
                   >
-                    <Text style={{ fontSize: 13, color: '#8D6E63' }}>✕</Text>
+                    <X size={13} color="#8D6E63" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -941,7 +942,7 @@ export const StaffScreen: React.FC = () => {
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
                       <Text style={styles.voiceConfirmBtnText}>
-                        {pendingVoiceCandidate.todayStatus === 'CHECKED_IN' ? 'Check-Out ➔' : 'Check-In ➔'}
+                        {pendingVoiceCandidate.todayStatus === 'CHECKED_IN' ? 'Check-Out' : 'Check-In'}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -962,7 +963,7 @@ export const StaffScreen: React.FC = () => {
                       <Text style={styles.disambiguationItemText}>
                         {cand.user?.fullName || cand.firstName} (Adm: {cand.admissionNumber || '—'})
                       </Text>
-                      <Text style={styles.disambiguationActionText}>Mark ➔</Text>
+                      <Text style={styles.disambiguationActionText}>Mark</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -971,7 +972,7 @@ export const StaffScreen: React.FC = () => {
 
             {/* Manual Attendance Check-in Controls */}
             <Card style={{ marginBottom: 14 }}>
-              <Text style={styles.voiceSectionTitle}>✍️ Manual Check-in / Check-out</Text>
+              <Text style={styles.voiceSectionTitle}>Manual Check-in / Check-out</Text>
 
               {/* Student selected indicator */}
               <View style={styles.selectedStudentIndicator}>
@@ -1089,7 +1090,7 @@ export const StaffScreen: React.FC = () => {
 
             {materialsList.length === 0 ? (
               <Card style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📚</Text>
+                <BookOpen size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Materials Uploaded</Text>
                 <Text style={styles.emptyDesc}>Share study materials, notes and exercises with your batch students.</Text>
                 <TouchableOpacity
@@ -1130,7 +1131,7 @@ export const StaffScreen: React.FC = () => {
                       style={styles.analyticsBtn}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.analyticsBtnText}>📊 View Analytics</Text>
+                      <Text style={styles.analyticsBtnText}>View Analytics</Text>
                     </TouchableOpacity>
 
                     <Badge
@@ -1186,7 +1187,7 @@ export const StaffScreen: React.FC = () => {
 
             {homeworkList.length === 0 ? (
               <Card style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📝</Text>
+                <FileText size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Homework Tasks</Text>
                 <Text style={styles.emptyDesc}>Create assignments to track student submissions.</Text>
                 <TouchableOpacity
@@ -1220,7 +1221,7 @@ export const StaffScreen: React.FC = () => {
                       Due: {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString('en-IN') : 'Open'}
                     </Text>
                     <Text style={styles.homeworkReviewLinkText}>
-                      Review Submissions & Grade ➔
+                      Review Submissions & Grade
                     </Text>
                   </View>
                 </Card>
@@ -1246,7 +1247,7 @@ export const StaffScreen: React.FC = () => {
 
             {examsList.length === 0 ? (
               <Card style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🏆</Text>
+                <Trophy size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Scheduled Exams</Text>
                 <Text style={styles.emptyDesc}>Exams created for your assigned batches will appear here.</Text>
               </Card>
@@ -1355,13 +1356,13 @@ export const StaffScreen: React.FC = () => {
                             {isMine ? 'You' : m.sender?.fullName || 'Parent'}
                           </Text>
                           {m.attachmentType === 'AUDIO' && (
-                            <Text style={styles.attachmentNotice}>🎤 Voice note attachment</Text>
+                            <Text style={styles.attachmentNotice}>Voice note attachment</Text>
                           )}
                           {m.attachmentType === 'IMAGE' && (
-                            <Text style={styles.attachmentNotice}>📷 Photo attachment</Text>
+                            <Text style={styles.attachmentNotice}>Photo attachment</Text>
                           )}
                           {m.attachmentType === 'DOCUMENT' && (
-                            <Text style={styles.attachmentNotice}>📄 {m.attachmentName || 'Document.pdf'}</Text>
+                            <Text style={styles.attachmentNotice}>{m.attachmentName || 'Document.pdf'}</Text>
                           )}
                           {Boolean(m.body || m.content) && (
                             <Text
@@ -1430,7 +1431,7 @@ export const StaffScreen: React.FC = () => {
 
                 {conversations.length === 0 ? (
                   <Card style={styles.emptyCard}>
-                    <Text style={styles.emptyIcon}>💬</Text>
+                    <MessageSquare size={42} color={themeTokens.colors.primary} />
                     <Text style={styles.emptyTitle}>No Conversations</Text>
                     <Text style={styles.emptyDesc}>Parent messages will appear here.</Text>
                   </Card>
@@ -1488,7 +1489,7 @@ export const StaffScreen: React.FC = () => {
                 <Text style={styles.modalSub}>Batch: {reviewHw?.batch?.name}</Text>
               </View>
               <TouchableOpacity onPress={() => setReviewHw(null)}>
-                <Text style={{ fontSize: 20, color: '#64748b' }}>✕</Text>
+                <X size={18} color="#64748b" />
               </TouchableOpacity>
             </View>
 
@@ -1544,7 +1545,7 @@ export const StaffScreen: React.FC = () => {
                         )}
                         {r.submission.attachmentUrl && (
                           <Text style={{ fontSize: 11, color: '#2563eb', marginBottom: 4 }}>
-                            📎 Attachment uploaded
+                            Attachment uploaded
                           </Text>
                         )}
                         {r.submission.grade && (

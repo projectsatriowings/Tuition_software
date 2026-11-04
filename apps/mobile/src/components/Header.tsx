@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useMobileAuth } from '../context/AuthContext';
 import { themeTokens } from '@tuition/shared';
+import { Bell, RotateCw, LogOut } from 'lucide-react-native';
 
 interface HeaderProps {
   title?: string;
@@ -53,8 +54,8 @@ export const Header: React.FC<HeaderProps> = ({
 
         <View style={styles.actions}>
           {onOpenNotifications && (
-            <TouchableOpacity onPress={onOpenNotifications} style={[styles.actionBtn, styles.bellBtn]}>
-              <Text style={styles.bellBtnText}>🔔</Text>
+            <TouchableOpacity onPress={onOpenNotifications} style={[styles.actionBtn, styles.bellBtn]} accessibilityLabel="Notifications">
+              <Bell size={18} color={themeTokens.colors.textLight} />
               {unreadNotificationsCount > 0 && (
                 <View style={styles.badgeDot}>
                   <Text style={styles.badgeDotText}>
@@ -65,11 +66,12 @@ export const Header: React.FC<HeaderProps> = ({
             </TouchableOpacity>
           )}
           {onRefresh && (
-            <TouchableOpacity onPress={onRefresh} style={styles.actionBtn}>
-              <Text style={styles.actionBtnText}>↻</Text>
+            <TouchableOpacity onPress={onRefresh} style={styles.actionBtn} accessibilityLabel="Refresh">
+              <RotateCw size={16} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={logout} style={[styles.actionBtn, styles.logoutBtn]}>
+          <TouchableOpacity onPress={logout} style={[styles.actionBtn, styles.logoutBtn]} accessibilityLabel="Sign Out">
+            <LogOut size={13} color={themeTokens.colors.textLight} style={{ marginRight: 4 }} />
             <Text style={styles.logoutBtnText}>Logout</Text>
           </TouchableOpacity>
         </View>
@@ -187,6 +189,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(185, 28, 28, 0.25)',
     borderWidth: 1,
     borderColor: 'rgba(185, 28, 28, 0.5)',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   logoutBtnText: {
     color: '#FECACA',

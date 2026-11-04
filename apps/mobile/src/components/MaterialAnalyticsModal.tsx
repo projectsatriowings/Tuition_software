@@ -10,6 +10,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { BarChart2, X } from 'lucide-react-native';
 import { mobileApiFetch } from '../services/api';
 import { MobileButton } from './ui';
 import { Badge } from './Badge';
@@ -75,7 +76,7 @@ export const MaterialAnalyticsModal: React.FC<MaterialAnalyticsModalProps> = ({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
+            <X size={20} color={themeTokens.colors.textLight} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle} numberOfLines={1}>
@@ -122,7 +123,7 @@ export const MaterialAnalyticsModal: React.FC<MaterialAnalyticsModalProps> = ({
 
             {uniqueViewers.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>📊</Text>
+                <BarChart2 size={38} color={themeTokens.colors.taupe} style={{ marginBottom: 8 }} />
                 <Text style={styles.emptyTitle}>No Viewers Recorded Yet</Text>
                 <Text style={styles.emptySub}>
                   When students open this published material on the web or mobile app, engagement telemetry will appear here in real time.

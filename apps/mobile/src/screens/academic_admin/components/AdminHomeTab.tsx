@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { UserPlus, UserCheck, BookOpen, CreditCard, GraduationCap, Users, Radio, ChevronRight } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -108,12 +110,12 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={styles.greetingText}>
-            {getGreeting()}, {firstName} 👋
+            {getGreeting()}, {firstName}
           </Text>
           <View style={styles.contextPillRow}>
             <View style={styles.instituteBadge}>
               <Text style={styles.instituteBadgeText}>
-                🏛️ {institute?.name || 'TuitionOS Academy'}
+                {institute?.name || 'TuitionOS Academy'}
               </Text>
             </View>
             <View style={styles.roleBadge}>
@@ -243,7 +245,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
               accessibilityLabel="Add Student"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#F0FDF4' }]}>
-                <Text style={styles.quickActionIcon}>👨‍🎓</Text>
+                <UserPlus size={16} color="#15803D" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Add Student</Text>
@@ -259,7 +261,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
               accessibilityLabel="Manage Staff"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#EFF6FF' }]}>
-                <Text style={styles.quickActionIcon}>👨‍🏫</Text>
+                <UserCheck size={16} color="#1D4ED8" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Manage Staff</Text>
@@ -277,7 +279,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
               accessibilityLabel="Manage Batches"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#FEF3C7' }]}>
-                <Text style={styles.quickActionIcon}>🏫</Text>
+                <BookOpen size={16} color="#B45309" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Manage Batches</Text>
@@ -293,7 +295,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
               accessibilityLabel="Fee Collections"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#FDF2F8' }]}>
-                <Text style={styles.quickActionIcon}>💳</Text>
+                <CreditCard size={16} color="#BE185D" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Fee Collections</Text>
@@ -308,7 +310,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
       <View style={styles.actionCard}>
         <View style={styles.actionCardHeader}>
           <View style={[styles.actionCardIconBox, { backgroundColor: '#FEF2F2' }]}>
-            <Text style={styles.actionCardIcon}>💳</Text>
+            <CreditCard size={18} color="#DC2626" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionCardTitle}>Institute Treasury & Fee Dues</Text>
@@ -375,7 +377,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
       <View style={styles.actionCard}>
         <View style={styles.actionCardHeader}>
           <View style={[styles.actionCardIconBox, { backgroundColor: '#EFF6FF' }]}>
-            <Text style={styles.actionCardIcon}>🏫</Text>
+            <GraduationCap size={18} color="#2563EB" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionCardTitle}>Academic Batches & Sections</Text>
@@ -431,7 +433,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
       <View style={styles.actionCard}>
         <View style={styles.actionCardHeader}>
           <View style={[styles.actionCardIconBox, { backgroundColor: '#F0FDF4' }]}>
-            <Text style={styles.actionCardIcon}>👨‍🎓</Text>
+            <Users size={18} color="#16A34A" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionCardTitle}>Student Enrollment</Text>
@@ -482,7 +484,7 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
       <View style={styles.actionCard}>
         <View style={styles.actionCardHeader}>
           <View style={[styles.actionCardIconBox, { backgroundColor: '#FFF7ED' }]}>
-            <Text style={styles.actionCardIcon}>📡</Text>
+            <Radio size={18} color="#EA580C" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionCardTitle}>Campus Attendance & Safety</Text>

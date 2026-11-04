@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { Headphones, FileText, X } from 'lucide-react-native';
 import { mobileApiFetch, buildAuthenticatedDownloadUrl } from '../services/api';
 
 export interface MaterialViewerModalProps {
@@ -94,7 +95,7 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={20} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
           </View>
 
@@ -137,7 +138,7 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({
             {/* Audio Viewer */}
             {isAudio ? (
               <View style={styles.audioBox}>
-                <Text style={styles.audioIcon}>🎧</Text>
+                <Headphones size={38} color="#4E342E" style={{ marginBottom: 8 }} />
                 <Text style={styles.audioTitle}>Audio Lecture / Voice Note</Text>
                 <Text style={styles.audioSub}>
                   {material.fileName || 'Audio study resource'}
@@ -158,7 +159,7 @@ export const MaterialViewerModal: React.FC<MaterialViewerModalProps> = ({
             {/* PDF & Document Viewer */}
             {isPdf || (!isImage && !isAudio && !isText && material.fileUrl) ? (
               <View style={styles.fileBox}>
-                <Text style={styles.fileIcon}>📄</Text>
+                <FileText size={38} color="#4E342E" style={{ marginBottom: 8 }} />
                 <Text style={styles.fileName}>{material.fileName || 'Educational Document'}</Text>
                 <Text style={styles.fileSub}>
                   {material.type} file &bull; Authenticated Access

@@ -1,3 +1,4 @@
+import { Lock as LockIcon, AlertCircle } from 'lucide-react-native';
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -94,7 +95,7 @@ export const ChangePasswordScreen: React.FC = () => {
       >
         <SlideInView distance={10} duration={240} style={styles.card}>
           <View style={styles.iconCircle}>
-            <Text style={styles.lockIcon}>🔒</Text>
+            <LockIcon size={32} color={themeTokens.colors.primary} />
           </View>
 
           <Text style={styles.title}>Update Your Password</Text>
@@ -104,7 +105,10 @@ export const ChangePasswordScreen: React.FC = () => {
 
           {errorMsg ? (
             <FadeInView duration={160} style={styles.errorBox}>
-              <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <AlertCircle size={14} color="#DC2626" />
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
             </FadeInView>
           ) : null}
 

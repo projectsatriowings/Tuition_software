@@ -13,6 +13,7 @@ import {
   AppStateStatus,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { Trophy, X } from 'lucide-react-native';
 import { mobileApiFetch } from '../services/api';
 import { MobileButton, ProgressBar } from './ui';
 import { Badge } from './Badge';
@@ -263,7 +264,7 @@ export const QuizTakerModal: React.FC<QuizTakerModalProps> = ({
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <TouchableOpacity onPress={handleRequestClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={20} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
 
             <View style={styles.headerCenter}>
@@ -330,7 +331,7 @@ export const QuizTakerModal: React.FC<QuizTakerModalProps> = ({
           <ScrollView contentContainerStyle={styles.resultContainer}>
             <View style={styles.resultCard}>
               <View style={styles.trophyCircle}>
-                <Text style={styles.trophyIcon}>🏆</Text>
+                <Trophy size={36} color="#D97706" />
               </View>
 
               <Text style={styles.resultTitle}>Quiz Completed!</Text>

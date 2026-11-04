@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableScale } from '../../../theme/motion';
+import { Home, BookOpen, FileText, Trophy, MoreHorizontal } from 'lucide-react-native';
 
 export type StudentPrimaryTab = 'home' | 'learning' | 'homework' | 'results' | 'more';
 export type StudentActiveTab =
@@ -20,19 +21,19 @@ interface StudentBottomNavProps {
 interface NavItem {
   id: StudentPrimaryTab;
   label: string;
-  icon: string;
+  icon: (color: string) => React.ReactNode;
   matchTabs?: StudentActiveTab[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: '🏠', matchTabs: ['home'] },
-  { id: 'learning', label: 'Learning', icon: '📚', matchTabs: ['learning'] },
-  { id: 'homework', label: 'Homework', icon: '📝', matchTabs: ['homework'] },
-  { id: 'results', label: 'Results', icon: '🏆', matchTabs: ['results'] },
+  { id: 'home', label: 'Home', icon: (color) => <Home size={20} color={color} strokeWidth={2.2} />, matchTabs: ['home'] },
+  { id: 'learning', label: 'Learning', icon: (color) => <BookOpen size={20} color={color} strokeWidth={2.2} />, matchTabs: ['learning'] },
+  { id: 'homework', label: 'Homework', icon: (color) => <FileText size={20} color={color} strokeWidth={2.2} />, matchTabs: ['homework'] },
+  { id: 'results', label: 'Results', icon: (color) => <Trophy size={20} color={color} strokeWidth={2.2} />, matchTabs: ['results'] },
   {
     id: 'more',
     label: 'More',
-    icon: '•••',
+    icon: (color) => <MoreHorizontal size={20} color={color} strokeWidth={2.2} />,
     matchTabs: ['more', 'progress', 'timetable', 'fees', 'profile'],
   },
 ];
@@ -63,9 +64,7 @@ export const StudentBottomNav: React.FC<StudentBottomNavProps> = ({
             >
               <View style={[styles.pill, isActive && styles.activePill]}>
                 <View style={styles.iconWrapper}>
-                  <Text style={[styles.iconText, isActive && styles.activeIconText]}>
-                    {item.icon}
-                  </Text>
+                  item.icon(isActive ? '#4E342E' : '#8D6E63')
                   {item.id === 'more' && unreadCount > 0 && (
                     <View style={styles.badgeDot}>
                       <Text style={styles.badgeDotText}>

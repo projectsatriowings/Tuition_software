@@ -8,6 +8,21 @@ import {
   Alert,
 } from 'react-native';
 import { ParentActiveTab } from './ParentBottomNav';
+import {
+  Phone,
+  Building2,
+  BarChart2,
+  FileText,
+  Trophy,
+  Calendar,
+  CreditCard,
+  MessageSquare,
+  Star,
+  Bell,
+  User,
+  LogOut,
+  ChevronRight,
+} from 'lucide-react-native';
 
 interface ParentMoreTabProps {
   user: any;
@@ -87,7 +102,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Parent &bull; {children.length} Linked Child{children.length === 1 ? '' : 'ren'}
             </Text>
             <Text style={styles.profileContact}>
-              📞 {parentPhone} {parentEmail !== '—' ? `• ${parentEmail}` : ''}
+              {parentPhone} {parentEmail !== '—' ? `• ${parentEmail}` : ''}
             </Text>
           </View>
         </View>
@@ -112,8 +127,8 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
 
         {/* Institute Footer */}
         <View style={styles.instituteFooter}>
-          <Text style={styles.instituteLabel}>
-            🏛️ {institute?.name || 'TuitionOS Academy'}
+          <Text style={[styles.instituteLabel, { flexDirection: 'row', alignItems: 'center' }]}>
+            {institute?.name || 'TuitionOS Academy'}
           </Text>
           <View style={styles.codeBadge}>
             <Text style={styles.codeBadgeText}>
@@ -133,7 +148,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F5ECE8' }]}>
-            <Text style={styles.menuIcon}>📊</Text>
+            <BarChart2 size={20} color="#4E342E" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Academic Progress Reports</Text>
@@ -141,7 +156,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Faculty term evaluations, ratings & remarks
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -150,7 +165,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FFF7ED' }]}>
-            <Text style={styles.menuIcon}>📝</Text>
+            <FileText size={20} color="#EA580C" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Homework & Submissions</Text>
@@ -158,7 +173,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Assignments, submissions & teacher feedback
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -167,7 +182,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F0FDF4' }]}>
-            <Text style={styles.menuIcon}>🏆</Text>
+            <Trophy size={20} color="#16A34A" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Exams & Published Results</Text>
@@ -175,7 +190,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Report card, marks obtained & schedules
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -184,7 +199,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#EFF6FF' }]}>
-            <Text style={styles.menuIcon}>📅</Text>
+            <Calendar size={20} color="#2563EB" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Class Timetable & Schedule</Text>
@@ -192,7 +207,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Weekly subject schedule and teacher rooms
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
       </View>
 
@@ -206,7 +221,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FEF2F2' }]}>
-            <Text style={styles.menuIcon}>💳</Text>
+            <CreditCard size={20} color="#DC2626" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Fees & Official Receipts</Text>
@@ -224,7 +239,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
                 <Text style={styles.feeClearText}>Cleared ✓</Text>
               </View>
             )}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
       </View>
@@ -239,7 +254,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F5ECE8' }]}>
-            <Text style={styles.menuIcon}>💬</Text>
+            <MessageSquare size={20} color="#4E342E" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Faculty & Staff Chat</Text>
@@ -253,7 +268,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
                 <Text style={styles.notifBadgeText}>{unreadMessagesCount}</Text>
               </View>
             )}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -263,7 +278,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FEF3C7' }]}>
-            <Text style={styles.menuIcon}>⭐</Text>
+            <Star size={20} color="#D97706" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Reviews & Private Inquiries</Text>
@@ -271,7 +286,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Private management inquiries, feedback & replies
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
       </View>
 
@@ -285,7 +300,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FDF2F8' }]}>
-            <Text style={styles.menuIcon}>🔔</Text>
+            <Bell size={20} color="#DB2777" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Notification Center</Text>
@@ -299,7 +314,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
                 <Text style={styles.notifBadgeText}>{unreadCount}</Text>
               </View>
             )}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -309,7 +324,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F3F4F6' }]}>
-            <Text style={styles.menuIcon}>👤</Text>
+            <User size={20} color="#4B5563" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Family & Account Details</Text>
@@ -317,7 +332,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Linked children, emergency contact & SMS settings
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -326,7 +341,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FEE2E2' }]}>
-            <Text style={styles.menuIcon}>🚪</Text>
+            <LogOut size={20} color="#DC2626" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.signOutTitle}>Sign Out</Text>
@@ -334,7 +349,7 @@ export const ParentMoreTab: React.FC<ParentMoreTabProps> = ({
               Sign out of this parent session on TuitionOS
             </Text>
           </View>
-          <Text style={[styles.menuArrow, { color: '#DC2626' }]}>›</Text>
+          <ChevronRight size={18} color="#DC2626" />
         </TouchableOpacity>
       </View>
     </ScrollView>

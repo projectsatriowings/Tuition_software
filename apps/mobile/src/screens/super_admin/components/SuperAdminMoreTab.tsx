@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { Building2, PlusCircle, Key, ShieldCheck, Server, Bell, ChevronRight, LogOut } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -53,21 +55,21 @@ export const SuperAdminMoreTab: React.FC<SuperAdminMoreTabProps> = ({
           id: 'institutes',
           title: 'Institute Directory & Tenancy',
           desc: `${institutesCount} multi-tenant educational centers`,
-          icon: '🏛️',
+          icon: <Building2 size={20} color="#4E342E" />,
           action: () => onNavigateTab('institutes'),
         },
         {
           id: 'create',
           title: 'Provision New Institute',
           desc: 'Create new tenant and initial director credentials',
-          icon: '➕',
+          icon: <PlusCircle size={20} color="#2E7D32" />,
           action: onOpenCreateModal,
         },
         {
           id: 'adminAccount',
           title: 'Admin Credential Resets',
           desc: 'Emergency password recovery for Academic Admins',
-          icon: '🔑',
+          icon: <Key size={20} color="#D97706" />,
           action: () => onNavigateTab('adminAccount'),
         },
       ],
@@ -79,21 +81,21 @@ export const SuperAdminMoreTab: React.FC<SuperAdminMoreTabProps> = ({
           id: 'security',
           title: 'Security & Row Isolation',
           desc: 'Tenant data segregation & RBAC verification',
-          icon: '🔒',
+          icon: <ShieldCheck size={20} color="#1565C0" />,
           action: () => onNavigateTab('security'),
         },
         {
           id: 'engineStatus',
           title: 'Cloud Engine & DB Telemetry',
           desc: 'Neon PostgreSQL 16 & Express REST backend specs',
-          icon: '⚙️',
+          icon: <Server size={20} color="#6A1B9A" />,
           action: () => onNavigateTab('engineStatus'),
         },
         {
           id: 'notifications',
           title: 'System Notifications & Alerts',
           desc: 'Platform health alerts and audit warnings',
-          icon: '🔔',
+          icon: <Bell size={20} color="#C2185B" />,
           action: () =>
             Alert.alert(
               'System Notifications',
@@ -160,13 +162,13 @@ export const SuperAdminMoreTab: React.FC<SuperAdminMoreTabProps> = ({
                 activeOpacity={0.7}
               >
                 <View style={styles.menuIconCircle}>
-                  <Text style={styles.menuIconText}>{item.icon}</Text>
+                  {item.icon}
                 </View>
                 <View style={styles.menuItemContent}>
                   <Text style={styles.menuItemTitle}>{item.title}</Text>
                   <Text style={styles.menuItemDesc}>{item.desc}</Text>
                 </View>
-                <Text style={styles.chevron}>›</Text>
+                <ChevronRight size={18} color="#BCAAA4" />
               </TouchableOpacity>
             ))}
           </View>
@@ -181,7 +183,7 @@ export const SuperAdminMoreTab: React.FC<SuperAdminMoreTabProps> = ({
           onPress={handleSignOutPress}
           activeOpacity={0.8}
         >
-          <Text style={styles.signOutIcon}>🚪</Text>
+          <LogOut size={16} color="#DC2626" style={{ marginRight: 6 }} />
           <Text style={styles.signOutText}>Sign Out of Super Admin Console</Text>
         </TouchableOpacity>
       </View>

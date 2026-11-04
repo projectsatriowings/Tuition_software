@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { X } from 'lucide-react-native';
 import React, { useState, useEffect } from 'react';
 import {
   Modal,
@@ -95,7 +97,7 @@ export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={18} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
           </View>
 

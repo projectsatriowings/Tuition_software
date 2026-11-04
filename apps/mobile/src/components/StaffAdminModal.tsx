@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { CheckCircle2, X } from 'lucide-react-native';
 import { PressableScale } from '../theme/motion';
 import { mobileApiFetch } from '../services/api';
 import { MobileButton, MobileInput } from './ui';
@@ -120,7 +121,7 @@ export const StaffAdminModal: React.FC<StaffAdminModalProps> = ({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
+            <X size={20} color={themeTokens.colors.textLight} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Add Faculty Member</Text>
@@ -133,7 +134,7 @@ export const StaffAdminModal: React.FC<StaffAdminModalProps> = ({
           <ScrollView contentContainerStyle={styles.successContainer}>
             <View style={styles.successCard}>
               <View style={styles.checkCircle}>
-                <Text style={styles.checkIcon}>✓</Text>
+                <CheckCircle2 size={36} color="#059669" />
               </View>
               <Text style={styles.successTitle}>Faculty Registered!</Text>
               <Text style={styles.successSub}>

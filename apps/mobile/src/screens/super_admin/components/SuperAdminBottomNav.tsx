@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableScale } from '../../../theme/motion';
+import { LayoutDashboard, Building2, ShieldCheck, MoreHorizontal } from 'lucide-react-native';
 
 export type SuperAdminPrimaryTab = 'home' | 'institutes' | 'security' | 'more';
 export type SuperAdminActiveTab =
@@ -20,23 +21,23 @@ interface SuperAdminBottomNavProps {
 interface NavItem {
   id: SuperAdminPrimaryTab;
   label: string;
-  icon: string;
+  icon: (color: string) => React.ReactNode;
   matchTabs?: SuperAdminActiveTab[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Platform', icon: '👑', matchTabs: ['home'] },
+  { id: 'home', label: 'Platform', icon: (color) => <LayoutDashboard size={20} color={color} strokeWidth={2.2} />, matchTabs: ['home'] },
   {
     id: 'institutes',
     label: 'Institutes',
-    icon: '🏛️',
+    icon: (color) => <Building2 size={20} color={color} strokeWidth={2.2} />,
     matchTabs: ['institutes', 'createInstitute', 'instituteDetails'],
   },
-  { id: 'security', label: 'Security', icon: '🔒', matchTabs: ['security', 'engineStatus'] },
+  { id: 'security', label: 'Security', icon: (color) => <ShieldCheck size={20} color={color} strokeWidth={2.2} />, matchTabs: ['security', 'engineStatus'] },
   {
     id: 'more',
     label: 'More',
-    icon: '•••',
+    icon: (color) => <MoreHorizontal size={20} color={color} strokeWidth={2.2} />,
     matchTabs: ['more', 'adminAccount'],
   },
 ];
@@ -67,9 +68,7 @@ export const SuperAdminBottomNav: React.FC<SuperAdminBottomNavProps> = ({
             >
               <View style={[styles.pill, isActive && styles.activePill]}>
                 <View style={styles.iconWrapper}>
-                  <Text style={[styles.iconText, isActive && styles.activeIconText]}>
-                    {item.icon}
-                  </Text>
+                  item.icon(isActive ? '#4E342E' : '#8D6E63')
                   {item.id === 'more' && unreadCount > 0 && (
                     <View style={styles.badgeDot}>
                       <Text style={styles.badgeDotText}>

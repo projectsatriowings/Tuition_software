@@ -1,3 +1,5 @@
+import { BookOpen, MessageSquare, BarChart2, FileText, Trophy, Receipt, Calendar, Star, ChevronRight, File, Headphones } from 'lucide-react-native';
+import { themeTokens } from '@tuition/shared';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -593,7 +595,7 @@ export const ParentScreen: React.FC = () => {
 
             {filteredMaterials.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📚</Text>
+                <BookOpen size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Study Materials Available</Text>
                 <Text style={styles.emptySub}>
                   There are no study files published for this subject filter.
@@ -626,7 +628,7 @@ export const ParentScreen: React.FC = () => {
 
                     <View style={styles.itemCardFooter}>
                       <Text style={styles.itemCardDate}>
-                        📅 {new Date(mat.createdAt).toLocaleDateString('en-IN')}
+                        {new Date(mat.createdAt).toLocaleDateString('en-IN')}
                       </Text>
                       <TouchableOpacity
                         style={styles.itemActionBtn}
@@ -667,7 +669,7 @@ export const ParentScreen: React.FC = () => {
                 >
                   {messages.length === 0 ? (
                     <View style={styles.emptyCard}>
-                      <Text style={styles.emptyIcon}>💬</Text>
+                      <MessageSquare size={42} color={themeTokens.colors.primary} />
                       <Text style={styles.emptyTitle}>No Messages Yet</Text>
                       <Text style={styles.emptySub}>
                         Send a message below to start chatting with the teacher.
@@ -689,14 +691,14 @@ export const ParentScreen: React.FC = () => {
                           </Text>
 
                           {m.attachmentType === 'AUDIO' && (
-                            <Text style={styles.msgAttachment}>🎤 Voice note attachment</Text>
+                            <Text style={styles.msgAttachment}>Voice note attachment</Text>
                           )}
                           {m.attachmentType === 'IMAGE' && (
-                            <Text style={styles.msgAttachment}>📷 Photo attachment</Text>
+                            <Text style={styles.msgAttachment}>Photo attachment</Text>
                           )}
                           {m.attachmentType === 'DOCUMENT' && (
                             <Text style={styles.msgAttachment}>
-                              📄 {m.attachmentName || 'Document'}
+                              {m.attachmentName || 'Document'}
                             </Text>
                           )}
 
@@ -811,7 +813,7 @@ export const ParentScreen: React.FC = () => {
 
                 {conversations.length === 0 ? (
                   <View style={styles.emptyCard}>
-                    <Text style={styles.emptyIcon}>💬</Text>
+                    <MessageSquare size={42} color={themeTokens.colors.primary} />
                     <Text style={styles.emptyTitle}>No Conversations Found</Text>
                     <Text style={styles.emptySub}>
                       Your message threads with academy staff will appear here.
@@ -832,7 +834,7 @@ export const ParentScreen: React.FC = () => {
                             { backgroundColor: '#F5ECE8' },
                           ]}
                         >
-                          <Text style={styles.itemIcon}>💬</Text>
+                          <MessageSquare size={16} color={themeTokens.colors.primary} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.itemCardTitle}>
@@ -842,7 +844,7 @@ export const ParentScreen: React.FC = () => {
                             Tap to view messages & reply
                           </Text>
                         </View>
-                        <Text style={styles.menuArrow}>›</Text>
+                        <ChevronRight size={16} color="#8D6E63" />
                       </View>
                     </TouchableOpacity>
                   ))
@@ -888,7 +890,7 @@ export const ParentScreen: React.FC = () => {
 
             {childProgressReports.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📊</Text>
+                <BarChart2 size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Progress Reports Published</Text>
                 <Text style={styles.emptySub}>
                   Teachers have not published term evaluations for this student yet.
@@ -1014,7 +1016,7 @@ export const ParentScreen: React.FC = () => {
 
             {filteredHomework.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📝</Text>
+                <FileText size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Homework Found</Text>
                 <Text style={styles.emptySub}>
                   There are no homework items matching this status filter.
@@ -1065,7 +1067,7 @@ export const ParentScreen: React.FC = () => {
 
                     <View style={styles.itemCardFooter}>
                       <Text style={styles.hwDueText}>
-                        📅 Due:{' '}
+                        Due:{' '}
                         {hw.dueDate
                           ? new Date(hw.dueDate).toLocaleDateString('en-IN')
                           : 'Open'}
@@ -1172,7 +1174,7 @@ export const ParentScreen: React.FC = () => {
 
             {filteredExams.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🏆</Text>
+                <Trophy size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Examination Records</Text>
                 <Text style={styles.emptySub}>
                   There are no scheduled or published exams matching this filter.
@@ -1225,7 +1227,7 @@ export const ParentScreen: React.FC = () => {
                     </View>
 
                     <Text style={styles.examDateText}>
-                      📅 Date: {new Date(ex.examDate).toLocaleDateString('en-IN')}
+                      Date: {new Date(ex.examDate).toLocaleDateString('en-IN')}
                       {ex.startTime ? ` (${ex.startTime}${ex.endTime ? ' - ' + ex.endTime : ''})` : ''}
                     </Text>
 
@@ -1318,7 +1320,7 @@ export const ParentScreen: React.FC = () => {
 
             {childStatement?.payments?.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🧾</Text>
+                <Receipt size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Payments Recorded</Text>
                 <Text style={styles.emptySub}>
                   There are no completed payments found for this student.
@@ -1344,7 +1346,7 @@ export const ParentScreen: React.FC = () => {
                       style={styles.itemActionBtn}
                       onPress={() => handleOpenReceipt(pm.id)}
                     >
-                      <Text style={styles.itemActionBtnText}>View Receipt 📄</Text>
+                      <Text style={styles.itemActionBtnText}>View Receipt</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1371,7 +1373,7 @@ export const ParentScreen: React.FC = () => {
 
             {childTimetable.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📅</Text>
+                <Calendar size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Timetable Available</Text>
                 <Text style={styles.emptySub}>
                   Class timetable is not configured yet for this batch.
@@ -1387,7 +1389,7 @@ export const ParentScreen: React.FC = () => {
                         { backgroundColor: '#EFF6FF' },
                       ]}
                     >
-                      <Text style={styles.itemIcon}>📖</Text>
+                      <BookOpen size={16} color={themeTokens.colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemCardTitle}>{subj.name}</Text>
@@ -1470,7 +1472,7 @@ export const ParentScreen: React.FC = () => {
                       </View>
                     </View>
                     <Text style={styles.itemCardDate}>
-                      📅 {new Date(rev.createdAt).toLocaleDateString('en-IN')}
+                      {new Date(rev.createdAt).toLocaleDateString('en-IN')}
                     </Text>
                   </View>
 
@@ -1581,13 +1583,13 @@ export const ParentScreen: React.FC = () => {
                 <View style={styles.profileRow}>
                   <Text style={styles.profileFieldLabel}>Primary Contact:</Text>
                   <Text style={styles.profileFieldValue}>
-                    {child.isPrimaryContact ? 'Yes ✓' : 'Secondary'}
+                    {child.isPrimaryContact ? 'Yes' : 'Secondary'}
                   </Text>
                 </View>
                 <View style={styles.profileRow}>
                   <Text style={styles.profileFieldLabel}>SMS Alerts Active:</Text>
                   <Text style={styles.profileFieldValue}>
-                    {child.canReceiveSms !== false ? 'Enabled ✓' : 'Disabled'}
+                    {child.canReceiveSms !== false ? 'Enabled' : 'Disabled'}
                   </Text>
                 </View>
               </View>

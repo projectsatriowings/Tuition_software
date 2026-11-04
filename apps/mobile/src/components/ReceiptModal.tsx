@@ -1,4 +1,5 @@
 import React from 'react';
+import { X } from 'lucide-react-native';
 import {
   Modal,
   View,
@@ -78,7 +79,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <Text style={styles.receiptNo}>{receipt.receiptNumber}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={18} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
           </View>
 

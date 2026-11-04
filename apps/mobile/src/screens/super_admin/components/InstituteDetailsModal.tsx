@@ -1,3 +1,5 @@
+import { X } from 'lucide-react-native';
+import { themeTokens } from '@tuition/shared';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -204,7 +206,7 @@ export const InstituteDetailsModal: React.FC<InstituteDetailsModalProps> = ({
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={18} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
           </View>
 
@@ -292,7 +294,7 @@ export const InstituteDetailsModal: React.FC<InstituteDetailsModalProps> = ({
                     style={styles.editToggleBtn}
                   >
                     <Text style={styles.editToggleBtnText}>
-                      {isEditing ? 'Cancel Edit' : '✎ Edit Info'}
+                      {isEditing ? 'Cancel Edit' : 'Edit Info'}
                     </Text>
                   </TouchableOpacity>
                 </View>

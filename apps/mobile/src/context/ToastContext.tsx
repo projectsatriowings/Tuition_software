@@ -1,3 +1,4 @@
+import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -197,7 +198,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   accessibilityRole="button"
                   accessibilityLabel="Dismiss notification"
                 >
-                  <Text style={styles.dismissBtn}>✕</Text>
+                  <X size={16} color="#FFFFFF" />
                 </PressableScale>
               </View>
             </View>

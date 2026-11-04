@@ -11,6 +11,15 @@ import { Card } from '../../../components/Card';
 import { Badge } from '../../../components/Badge';
 import { themeTokens } from '@tuition/shared';
 import { StaffActiveTab } from './StaffBottomNav';
+import {
+  FileText,
+  Trophy,
+  MessageSquare,
+  Star,
+  Bell,
+  LogOut,
+  ChevronRight,
+} from 'lucide-react-native';
 
 interface StaffMoreTabProps {
   user: any;
@@ -90,7 +99,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconWrap, { backgroundColor: '#FFF3E0' }]}>
-            <Text style={styles.menuIcon}>📝</Text>
+            <FileText size={20} color="#EA580C" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Homework & Tasks</Text>
@@ -98,7 +107,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           </View>
           <View style={styles.menuRight}>
             <Badge label={`${homeworkCount}`} variant="indigo" size="sm" />
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -109,7 +118,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconWrap, { backgroundColor: '#FCE4EC' }]}>
-            <Text style={styles.menuIcon}>🏆</Text>
+            <Trophy size={20} color="#DB2777" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Exams & Grading</Text>
@@ -117,7 +126,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           </View>
           <View style={styles.menuRight}>
             <Badge label={`${examCount}`} variant="warning" size="sm" />
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -128,7 +137,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconWrap, { backgroundColor: '#E0F2FE' }]}>
-            <Text style={styles.menuIcon}>💬</Text>
+            <MessageSquare size={20} color="#0284C7" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Parent Messages</Text>
@@ -140,7 +149,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
             ) : (
               <Badge label={`${conversationCount}`} variant="neutral" size="sm" />
             )}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -151,14 +160,14 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconWrap, { backgroundColor: '#FEF3C7' }]}>
-            <Text style={styles.menuIcon}>⭐</Text>
+            <Star size={20} color="#D97706" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Parent Reviews & Inquiries</Text>
             <Text style={styles.menuSubtitle}>Formal feedback submissions & faculty responses</Text>
           </View>
           <View style={styles.menuRight}>
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
       </View>
@@ -174,7 +183,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconWrap, { backgroundColor: '#EDE7F6' }]}>
-            <Text style={styles.menuIcon}>🔔</Text>
+            <Bell size={20} color="#7C3AED" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Notifications</Text>
@@ -184,7 +193,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
             {unreadNotifCount > 0 ? (
               <Badge label={`${unreadNotifCount} unread`} variant="warning" size="sm" />
             ) : null}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -204,7 +213,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
         onPress={confirmLogout}
         activeOpacity={0.8}
       >
-        <Text style={styles.logoutIcon}>🚪</Text>
+        <LogOut size={16} color="#DC2626" style={{ marginRight: 6 }} />
         <Text style={styles.logoutBtnText}>Sign Out of TuitionOS</Text>
       </TouchableOpacity>
 
