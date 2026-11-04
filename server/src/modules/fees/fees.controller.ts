@@ -546,6 +546,20 @@ export async function listFeeAssignments(req: AuthenticatedRequest, res: Respons
       student: { instituteId },
     };
 
+    if (req.user?.role === 'PARENT') {
+      const relations = await prisma.studentParentRelation.findMany({
+        where: { parent: { userId: req.user.userId } },
+        select: { studentId: true },
+      });
+      const allowedStudentIds = relations.map((r) => r.studentId);
+      where.studentId = { in: allowedStudentIds };
+      delete where.student.instituteId;
+    } else if (req.user?.role === 'STUDENT') {
+      const student = await prisma.student.findFirst({ where: { userId: req.user.userId } });
+      if (!student) return res.status(403).json({ success: false, error: 'Student profile not found' });
+      where.studentId = student.id;
+    }
+
     if (studentId) where.studentId = String(studentId);
     if (feeStructureId) where.feeStructureId = String(feeStructureId);
     if (academicYear) where.academicYear = String(academicYear);
@@ -628,10 +642,11 @@ export async function getFeeAssignmentById(req: AuthenticatedRequest, res: Respo
     const instituteId = req.instituteId;
     const { id } = req.params;
 
+    const isParent = req.user?.role === 'PARENT';
     const assignment = await prisma.studentFeeAssignment.findFirst({
       where: {
         id,
-        student: { instituteId },
+        ...(isParent ? {} : { student: { instituteId } }),
       },
       include: {
         student: {
@@ -704,9 +719,13 @@ export async function getStudentFeeStatement(req: AuthenticatedRequest, res: Res
     const instituteId = req.instituteId;
     const { studentId } = req.params;
 
-    // Check student in institute
+    const isParent = req.user?.role === 'PARENT';
+    // Check student in institute (relaxed for parent viewing their linked child across institutes)
     const student = await prisma.student.findFirst({
-      where: { id: studentId, instituteId },
+      where: {
+        id: studentId,
+        ...(isParent ? {} : { instituteId }),
+      },
       include: {
         enrollments: {
           where: { isActive: true },
@@ -1021,6 +1040,7 @@ export async function listPayments(req: AuthenticatedRequest, res: Response) {
       });
       const allowedStudentIds = relations.map((r) => r.studentId);
       where.studentId = { in: allowedStudentIds };
+      delete where.instituteId;
     }
 
     const [total, payments] = await Promise.all([
@@ -1080,10 +1100,11 @@ export async function getReceipt(req: AuthenticatedRequest, res: Response) {
     const { id } = req.params;
 
     // Support lookup by either payment ID or receipt number
+    const isParent = req.user?.role === 'PARENT';
     const payment = await prisma.payment.findFirst({
       where: {
         OR: [{ id }, { receiptNumber: id }],
-        instituteId,
+        ...(isParent ? {} : { instituteId }),
       },
       include: {
         institute: {

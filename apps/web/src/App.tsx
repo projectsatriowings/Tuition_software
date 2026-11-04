@@ -9,24 +9,51 @@ import { ToastProvider } from './context/ToastContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { pageTransitionVariants } from './utils/animations';
 
-// Route-level code splitting via React.lazy
-const SuperAdminDashboard = lazy(() => import('./pages/SuperAdminDashboard').then((m) => ({ default: m.SuperAdminDashboard })));
-const AcademicAdminDashboard = lazy(() => import('./pages/AcademicAdminDashboard').then((m) => ({ default: m.AcademicAdminDashboard })));
-const StaffManagement = lazy(() => import('./pages/StaffManagement').then((m) => ({ default: m.StaffManagement })));
-const StaffAttendanceAdmin = lazy(() => import('./pages/StaffAttendanceAdmin').then((m) => ({ default: m.StaffAttendanceAdmin })));
-const StaffMyAttendance = lazy(() => import('./pages/StaffMyAttendance').then((m) => ({ default: m.StaffMyAttendance })));
-const StudentManagement = lazy(() => import('./pages/StudentManagement').then((m) => ({ default: m.StudentManagement })));
-const AcademicsManagement = lazy(() => import('./pages/AcademicsManagement').then((m) => ({ default: m.AcademicsManagement })));
-const AttendanceManagement = lazy(() => import('./pages/AttendanceManagement').then((m) => ({ default: m.AttendanceManagement })));
-const ParentPortal = lazy(() => import('./pages/ParentPortal').then((m) => ({ default: m.ParentPortal })));
-const StudentPortal = lazy(() => import('./pages/StudentPortal').then((m) => ({ default: m.StudentPortal })));
-const MaterialsManagement = lazy(() => import('./pages/MaterialsManagement').then((m) => ({ default: m.MaterialsManagement })));
-const HomeworkManagement = lazy(() => import('./pages/HomeworkManagement').then((m) => ({ default: m.HomeworkManagement })));
-const ExaminationsManagement = lazy(() => import('./pages/ExaminationsManagement').then((m) => ({ default: m.ExaminationsManagement })));
-const QuestionGenerator = lazy(() => import('./pages/QuestionGenerator/QuestionGenerator').then((m) => ({ default: m.QuestionGenerator })));
-const ProgressReviewsManagement = lazy(() => import('./pages/ProgressReviewsManagement').then((m) => ({ default: m.ProgressReviewsManagement })));
-const MessagingInbox = lazy(() => import('./pages/MessagingInbox').then((m) => ({ default: m.MessagingInbox })));
-const FeesManagement = lazy(() => import('./pages/FeesManagement').then((m) => ({ default: m.FeesManagement })));
+// Route-level code splitting via React.lazy with automatic reload retry on fresh deployment
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>
+) {
+  return lazy(async () => {
+    try {
+      return await factory();
+    } catch (err: any) {
+      const isChunkError =
+        err?.message?.includes('dynamically imported module') ||
+        err?.message?.includes('Failed to fetch dynamically imported module') ||
+        err?.message?.includes('Loading chunk') ||
+        err?.message?.includes('text/html');
+
+      if (isChunkError) {
+        const lastReload = Number(sessionStorage.getItem('tuitionos_last_lazy_reload') || '0');
+        const now = Date.now();
+        if (now - lastReload > 10000) {
+          sessionStorage.setItem('tuitionos_last_lazy_reload', String(now));
+          window.location.reload();
+          return new Promise<{ default: T }>(() => {});
+        }
+      }
+      throw err;
+    }
+  });
+}
+
+const SuperAdminDashboard = lazyWithRetry(() => import('./pages/SuperAdminDashboard').then((m) => ({ default: m.SuperAdminDashboard })));
+const AcademicAdminDashboard = lazyWithRetry(() => import('./pages/AcademicAdminDashboard').then((m) => ({ default: m.AcademicAdminDashboard })));
+const StaffManagement = lazyWithRetry(() => import('./pages/StaffManagement').then((m) => ({ default: m.StaffManagement })));
+const StaffAttendanceAdmin = lazyWithRetry(() => import('./pages/StaffAttendanceAdmin').then((m) => ({ default: m.StaffAttendanceAdmin })));
+const StaffMyAttendance = lazyWithRetry(() => import('./pages/StaffMyAttendance').then((m) => ({ default: m.StaffMyAttendance })));
+const StudentManagement = lazyWithRetry(() => import('./pages/StudentManagement').then((m) => ({ default: m.StudentManagement })));
+const AcademicsManagement = lazyWithRetry(() => import('./pages/AcademicsManagement').then((m) => ({ default: m.AcademicsManagement })));
+const AttendanceManagement = lazyWithRetry(() => import('./pages/AttendanceManagement').then((m) => ({ default: m.AttendanceManagement })));
+const ParentPortal = lazyWithRetry(() => import('./pages/ParentPortal').then((m) => ({ default: m.ParentPortal })));
+const StudentPortal = lazyWithRetry(() => import('./pages/StudentPortal').then((m) => ({ default: m.StudentPortal })));
+const MaterialsManagement = lazyWithRetry(() => import('./pages/MaterialsManagement').then((m) => ({ default: m.MaterialsManagement })));
+const HomeworkManagement = lazyWithRetry(() => import('./pages/HomeworkManagement').then((m) => ({ default: m.HomeworkManagement })));
+const ExaminationsManagement = lazyWithRetry(() => import('./pages/ExaminationsManagement').then((m) => ({ default: m.ExaminationsManagement })));
+const QuestionGenerator = lazyWithRetry(() => import('./pages/QuestionGenerator/QuestionGenerator').then((m) => ({ default: m.QuestionGenerator })));
+const ProgressReviewsManagement = lazyWithRetry(() => import('./pages/ProgressReviewsManagement').then((m) => ({ default: m.ProgressReviewsManagement })));
+const MessagingInbox = lazyWithRetry(() => import('./pages/MessagingInbox').then((m) => ({ default: m.MessagingInbox })));
+const FeesManagement = lazyWithRetry(() => import('./pages/FeesManagement').then((m) => ({ default: m.FeesManagement })));
 
 const getDefaultTabForRole = (role?: string): string => {
   switch (role) {
