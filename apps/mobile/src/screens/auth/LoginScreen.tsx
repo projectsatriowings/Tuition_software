@@ -259,21 +259,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
                 <View style={styles.presetRow}>
                   <TouchableOpacity
                     style={styles.presetButton}
+                    onPress={() => handleSelectPreset((AppConfig.presets as any).cloudRender || 'https://tuition-software.onrender.com/api')}
+                  >
+                    <Text style={styles.presetButtonText}>Cloud Server (Render)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.presetButton}
                     onPress={() => handleSelectPreset(AppConfig.presets.localLanDefault)}
                   >
-                    <Text style={styles.presetButtonText}>Physical Phone LAN (192.168.1.5)</Text>
+                    <Text style={styles.presetButtonText}>Local Wi-Fi PC (192.168.1.13)</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.presetButton}
                     onPress={() => handleSelectPreset(AppConfig.presets.androidEmulator)}
                   >
                     <Text style={styles.presetButtonText}>Android Emulator (10.0.2.2)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.presetButton}
-                    onPress={() => handleSelectPreset(AppConfig.presets.localhost)}
-                  >
-                    <Text style={styles.presetButtonText}>Localhost (127.0.0.1)</Text>
                   </TouchableOpacity>
                 </View>
 
