@@ -29,7 +29,7 @@ import {
   RefreshCw,
   Layers,
 } from 'lucide-react-native';
-import { api } from '../services/api';
+import { mobileApiFetch } from '../services/api';
 import { themeTokens } from '@tuition/shared';
 import { PressableScale } from '../theme/motion';
 
@@ -81,7 +81,7 @@ export const AIQuestionGeneratorModal: React.FC<AIQuestionGeneratorModalProps> =
   const loadSavedPapers = async () => {
     setLoadingSaved(true);
     try {
-      const res = await api.get('/question-generator/papers');
+      const res = await mobileApiFetch('/question-generator/papers');
       if (res?.success && res.data?.papers) {
         setSavedPapers(res.data.papers);
       }
@@ -150,7 +150,7 @@ export const AIQuestionGeneratorModal: React.FC<AIQuestionGeneratorModalProps> =
         ],
       };
 
-      const res = await api.post('/question-generator/generate', blueprint);
+      const res = await mobileApiFetch('/question-generator/generate', { method: 'POST', body: JSON.stringify(blueprint) });
       if (res?.success && res.data) {
         setGeneratedResult(res.data);
         setActiveTab('preview');

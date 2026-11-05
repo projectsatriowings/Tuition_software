@@ -21,6 +21,7 @@ import {
   ChevronRight,
   MapPin,
   Receipt,
+  Sparkles,
 } from 'lucide-react-native';
 
 interface StaffMoreTabProps {
@@ -36,6 +37,7 @@ interface StaffMoreTabProps {
   onOpenNotifications: () => void;
   onOpenAttendanceModal?: () => void;
   onOpenPayslipsModal?: () => void;
+  onOpenQuestionGenModal?: () => void;
   onLogout: () => void;
 }
 
@@ -52,6 +54,7 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
   onOpenNotifications,
   onOpenAttendanceModal,
   onOpenPayslipsModal,
+  onOpenQuestionGenModal,
   onLogout,
 }) => {
   const staffInitial = user?.fullName?.[0] || 'F';
@@ -116,6 +119,25 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
             <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
+
+        
+        {/* AI Question Paper Generator */}
+        {onOpenQuestionGenModal && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenQuestionGenModal}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: '#F5F3FF' }]}>
+              <Sparkles size={20} color="#7C3AED" />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>AI Question Generator</Text>
+              <Text style={styles.menuSubtitle}>Syllabus-aligned test papers, blueprints & solutions</Text>
+            </View>
+            <ChevronRight size={18} color="#BCAAA4" />
+          </TouchableOpacity>
+        )}
 
         {/* Exams & Grading */}
         <TouchableOpacity

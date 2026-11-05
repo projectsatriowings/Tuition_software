@@ -33,6 +33,7 @@ import { StaffReviewReplyModal } from '../../components/StaffReviewReplyModal';
 import { MaterialAnalyticsModal } from '../../components/MaterialAnalyticsModal';
 import { StaffMyAttendanceModal } from '../../components/StaffMyAttendanceModal';
 import { StaffMyPayslipsModal } from '../../components/StaffMyPayslipsModal';
+import { AIQuestionGeneratorModal } from '../../components/AIQuestionGeneratorModal';
 import { MobileButton } from '../../components/ui';
 import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 
@@ -65,6 +66,7 @@ export const StaffScreen: React.FC = () => {
   const [showReviewsModal, setShowReviewsModal] = useState(false);
   const [showStaffAttendanceModal, setShowStaffAttendanceModal] = useState(false);
   const [showStaffPayslipsModal, setShowStaffPayslipsModal] = useState(false);
+  const [showQuestionGenModal, setShowQuestionGenModal] = useState(false);
   const [analyticsMaterial, setAnalyticsMaterial] = useState<any | null>(null);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [materialsList, setMaterialsList] = useState<any[]>([]);
@@ -1160,6 +1162,7 @@ export const StaffScreen: React.FC = () => {
             onOpenNotifications={() => setShowNotificationModal(true)}
             onOpenAttendanceModal={() => setShowStaffAttendanceModal(true)}
             onOpenPayslipsModal={() => setShowStaffPayslipsModal(true)}
+            onOpenQuestionGenModal={() => setShowQuestionGenModal(true)}
             onLogout={logout}
           />
         )}
@@ -1812,6 +1815,13 @@ export const StaffScreen: React.FC = () => {
       <StaffMyPayslipsModal
         visible={showStaffPayslipsModal}
         onClose={() => setShowStaffPayslipsModal(false)}
+      />
+
+      {/* AI Question Generator Modal for Faculty */}
+      <AIQuestionGeneratorModal
+        visible={showQuestionGenModal}
+        onClose={() => setShowQuestionGenModal(false)}
+        instituteName={institute?.name}
       />
     </View>
   );

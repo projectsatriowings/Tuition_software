@@ -21,6 +21,8 @@ import {
   ChevronRight,
   Building2,
   Layers,
+  Banknote,
+  Sparkles,
 } from 'lucide-react-native';
 
 interface AdminMoreTabProps {
@@ -33,6 +35,8 @@ interface AdminMoreTabProps {
   onOpenNotifications: () => void;
   onOpenBranches?: () => void;
   onOpenFeeStructures?: () => void;
+  onOpenPayroll?: () => void;
+  onOpenQuestionGenerator?: () => void;
   onSignOut: () => void;
 }
 
@@ -46,6 +50,8 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
   onOpenNotifications,
   onOpenBranches,
   onOpenFeeStructures,
+  onOpenPayroll,
+  onOpenQuestionGenerator,
   onSignOut,
 }) => {
   const adminName = user?.fullName || 'Academic Director';
@@ -127,7 +133,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               <Building2 size={20} color="#4E342E" />
             </View>
             <View style={styles.menuTextBox}>
-              <Text style={styles.menuItemTitle}>Physical Campuses & Branches</Text>
+              <Text style={styles.menuItemTitle}>Multi-Branch Hub (Campuses & GPS)</Text>
               <Text style={styles.menuItemSub}>
                 Manage physical locations, geofences, shifts & student transfers
               </Text>
@@ -168,6 +174,26 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
             <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
+
+        
+        {onOpenPayroll && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenPayroll}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconBox, { backgroundColor: '#ECFDF5' }]}>
+              <Banknote size={20} color="#059669" />
+            </View>
+            <View style={styles.menuTextBox}>
+              <Text style={styles.menuItemTitle}>Staff Payroll & Salary Engine</Text>
+              <Text style={styles.menuItemSub}>
+                Monthly compensation calculations, salary register & lock runs
+              </Text>
+            </View>
+            <ChevronRight size={18} color="#BCAAA4" />
+          </TouchableOpacity>
+        )}
 
         {onOpenFeeStructures && (
           <TouchableOpacity
@@ -226,6 +252,26 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           </View>
           <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
+
+        
+        {onOpenQuestionGenerator && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenQuestionGenerator}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconBox, { backgroundColor: '#F5F3FF' }]}>
+              <Sparkles size={20} color="#7C3AED" />
+            </View>
+            <View style={styles.menuTextBox}>
+              <Text style={styles.menuItemTitle}>AI Question Paper Generator</Text>
+              <Text style={styles.menuItemSub}>
+                Syllabus-aligned exam generator, blueprint patterns & solutions
+              </Text>
+            </View>
+            <ChevronRight size={18} color="#BCAAA4" />
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.menuItem}

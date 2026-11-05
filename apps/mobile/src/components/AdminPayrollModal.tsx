@@ -28,7 +28,7 @@ import {
   FileText,
   Settings,
 } from 'lucide-react-native';
-import { api } from '../services/api';
+import { mobileApiFetch } from '../services/api';
 import { themeTokens } from '@tuition/shared';
 import { PressableScale } from '../theme/motion';
 
@@ -68,9 +68,9 @@ export const AdminPayrollModal: React.FC<AdminPayrollModalProps> = ({
     setLoading(true);
     try {
       const [dashRes, staffRes, policyRes] = await Promise.all([
-        api.get(`/payroll/dashboard?year=${selectedYear}&month=${selectedMonth}`),
-        api.get('/payroll/staff-salaries'),
-        api.get('/payroll/policy'),
+        mobileApiFetch(`/payroll/dashboard?year=${selectedYear}&month=${selectedMonth}`),
+        mobileApiFetch('/payroll/staff-salaries'),
+        mobileApiFetch('/payroll/policy'),
       ]);
 
       if (dashRes?.success && dashRes.data) {
@@ -124,10 +124,7 @@ export const AdminPayrollModal: React.FC<AdminPayrollModalProps> = ({
           onPress: async () => {
             setProcessingRun(true);
             try {
-              const res = await api.post('/payroll/runs/generate', {
-                year: selectedYear,
-                month: selectedMonth,
-              });
+              const res = await mobileApiFetch('/payroll/runs/generate', { method: 'POST', body: JSON.stringify({ year: selectedYear, month: selectedMonth }) });
               if (res?.success) {
                 Alert.alert('Success', `Payroll for ${monthNames[selectedMonth - 1]} ${selectedYear} calculated successfully.`);
                 loadPayrollData();
@@ -159,11 +156,7 @@ export const AdminPayrollModal: React.FC<AdminPayrollModalProps> = ({
             setApprovingRun(true);
             try {
               const runId = dashboardData?.metrics?.runId || dashboardData?.run?.id;
-              const res = await api.post('/payroll/runs/approve', {
-                runId,
-                year: selectedYear,
-                month: selectedMonth,
-              });
+              const res = await mobileApiFetch('/payroll/runs/approve', { method: 'POST', body: JSON.stringify({ runId, year: selectedYear, month: selectedMonth }) });
               if (res?.success) {
                 Alert.alert('Approved', 'Monthly payroll run has been approved and locked.');
                 loadPayrollData();
