@@ -189,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => handleItemClick('question_generator')}
                 className={navItemClass('question_generator')}
               >
-                <FileQuestion className="w-4 h-4 text-amber-300" /> AI Question Generator
+                <FileQuestion className="w-4 h-4" /> AI Question Generator
               </button>
 
               <button
