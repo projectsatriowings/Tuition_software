@@ -92,6 +92,7 @@ const isTabAllowedForRole = (tab: string, role?: string): boolean => {
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<string>(() => {
     const raw = window.location.pathname.replace(/^\//, '').trim();
     if (raw && raw !== '/') {
@@ -171,13 +172,22 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="h-screen bg-[#F7F2EF] overflow-hidden text-[#2D1E18] flex flex-col font-sans">
-      <Navbar />
+      <Navbar onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)} isMobileMenuOpen={mobileMenuOpen} />
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar currentTab={currentTab} onSelectTab={(tab) => { setCurrentTab(tab); window.history.pushState({}, '', `/${tab}`); }} />
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+        <Sidebar
+          currentTab={currentTab}
+          onSelectTab={(tab) => {
+            setCurrentTab(tab);
+            window.history.pushState({}, '', `/${tab}`);
+            setMobileMenuOpen(false);
+          }}
+          isOpenOnMobile={mobileMenuOpen}
+          onCloseMobile={() => setMobileMenuOpen(false)}
+        />
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#F7F2EF]">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#F7F2EF] w-full min-w-0">
+          <div className="max-w-7xl mx-auto w-full min-w-0">
             <Suspense fallback={<PageSkeleton />}>
               <AnimatePresence mode="wait">
                 <motion.div

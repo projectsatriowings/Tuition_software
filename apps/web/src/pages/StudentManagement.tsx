@@ -1242,8 +1242,8 @@ Please keep this login and password safe. Use your registered mobile number and 
         </div>
 
         {/* Students Table - No Horizontal Scroll, Responsive 3-Dots Actions */}
-        <div className="w-full">
-          <table className="w-full text-left text-xs divide-y divide-[#EFEBE9] table-auto">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full text-left text-xs divide-y divide-[#EFEBE9] table-auto min-w-[640px] sm:min-w-full">
             <thead>
               <tr className="border-b border-[#D7CCC8] text-[#6D4C41] bg-[#F7F2EF] uppercase tracking-wider text-[11px]">
                 <th className="py-3 px-3.5 font-bold">Student Name</th>
