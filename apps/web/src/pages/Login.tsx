@@ -32,9 +32,9 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     role: 'SUPER_ADMIN',
     label: 'Super Admin',
     roleBadgeColor: 'text-[#3E2723]',
-    identifier: 'superadmin@platform.local',
-    password: 'AdminSecurePassword#2026',
-    subtext: 'superadmin@platform.local',
+    identifier: 'superadmin@gmail.com',
+    password: 'admin@123',
+    subtext: 'superadmin@gmail.com',
   },
   {
     role: 'ACADEMIC_ADMIN',
@@ -213,11 +213,10 @@ export const Login: React.FC = () => {
                     setSelectedRole(item.role);
                     setError(null);
                   }}
-                  className={`py-2 px-1 text-xs font-semibold rounded-xl transition-all ${
-                    selectedRole === item.role
+                  className={`py-2 px-1 text-xs font-semibold rounded-xl transition-all ${selectedRole === item.role
                       ? 'bg-[#6D4C41] text-white shadow-md font-bold'
                       : 'text-[#D7CCC8] hover:text-white hover:bg-[#4E342E]/60'
-                  }`}
+                    }`}
                 >
                   {item.label}
                 </button>

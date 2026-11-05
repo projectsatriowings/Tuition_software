@@ -1,5 +1,5 @@
 import { themeTokens } from '@tuition/shared';
-import { UserPlus, UserCheck, BookOpen, CreditCard, GraduationCap, Users, Radio, ChevronRight } from 'lucide-react-native';
+import { UserPlus, UserCheck, BookOpen, CreditCard, GraduationCap, Users, Radio, ChevronRight, Building2, Banknote, Sparkles } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -29,6 +29,9 @@ interface AdminHomeTabProps {
   onOpenAdmitModal: () => void;
   onOpenStaffModal: () => void;
   onOpenNewBatchModal: () => void;
+  onOpenBranches?: () => void;
+  onOpenPayroll?: () => void;
+  onOpenQuestionGenerator?: () => void;
 }
 
 export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
@@ -47,6 +50,9 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
   onOpenAdmitModal,
   onOpenStaffModal,
   onOpenNewBatchModal,
+  onOpenBranches,
+  onOpenPayroll,
+  onOpenQuestionGenerator,
 }) => {
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -300,6 +306,58 @@ export const AdminHomeTab: React.FC<AdminHomeTabProps> = ({
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Fee Collections</Text>
                 <Text style={styles.quickActionSub}>Collect & receipt</Text>
+              </View>
+            </PressableScale>
+          </View>
+
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenBranches}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Multi-Branch Hub"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#F5ECE8' }]}>
+                <Building2 size={16} color="#4E342E" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Multi-Branch Hub</Text>
+                <Text style={styles.quickActionSub}>Campuses & GPS</Text>
+              </View>
+            </PressableScale>
+
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenPayroll}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Staff Payroll"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#ECFDF5' }]}>
+                <Banknote size={16} color="#059669" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Staff Payroll</Text>
+                <Text style={styles.quickActionSub}>Salary engine & runs</Text>
+              </View>
+            </PressableScale>
+          </View>
+
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenQuestionGenerator}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="AI Question Generator"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#F5F3FF' }]}>
+                <Sparkles size={16} color="#7C3AED" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>AI Questions</Text>
+                <Text style={styles.quickActionSub}>Generate test papers</Text>
               </View>
             </PressableScale>
           </View>

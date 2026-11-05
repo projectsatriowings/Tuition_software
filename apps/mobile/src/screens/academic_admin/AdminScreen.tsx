@@ -22,6 +22,10 @@ import { NotificationModal } from '../../components/NotificationModal';
 import { StudentDetailsModal } from '../../components/StudentDetailsModal';
 import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffAdminModal } from '../../components/StaffAdminModal';
+import { BranchManagementModal } from '../../components/BranchManagementModal';
+import { FeeStructuresModal } from '../../components/FeeStructuresModal';
+import { AdminPayrollModal } from '../../components/AdminPayrollModal';
+import { AIQuestionGeneratorModal } from '../../components/AIQuestionGeneratorModal';
 import { PressableScale, AnimatedDialog, FadeInView } from '../../theme/motion';
 import { TouchableWithoutFeedback } from 'react-native';
 import {
@@ -52,6 +56,10 @@ export const AdminScreen: React.FC = () => {
   const [students, setStudents] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [showStaffModal, setShowStaffModal] = useState(false);
+  const [showBranchModal, setShowBranchModal] = useState(false);
+  const [showFeeStructuresModal, setShowFeeStructuresModal] = useState(false);
+  const [showPayrollModal, setShowPayrollModal] = useState(false);
+  const [showQuestionGeneratorModal, setShowQuestionGeneratorModal] = useState(false);
 
   // Materials & Homework overview
   const [materials, setMaterials] = useState<any[]>([]);
@@ -396,6 +404,9 @@ export const AdminScreen: React.FC = () => {
             onOpenAdmitModal={() => setShowAdmitModal(true)}
             onOpenStaffModal={() => setShowStaffModal(true)}
             onOpenNewBatchModal={() => setShowNewBatchModal(true)}
+            onOpenBranches={() => setShowBranchModal(true)}
+            onOpenPayroll={() => setShowPayrollModal(true)}
+            onOpenQuestionGenerator={() => setShowQuestionGeneratorModal(true)}
           />
         )}
 
@@ -537,6 +548,10 @@ export const AdminScreen: React.FC = () => {
             outstandingReport={outstandingReport}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenNotifications={() => setShowNotificationModal(true)}
+            onOpenBranches={() => setShowBranchModal(true)}
+            onOpenFeeStructures={() => setShowFeeStructuresModal(true)}
+            onOpenPayroll={() => setShowPayrollModal(true)}
+            onOpenQuestionGenerator={() => setShowQuestionGeneratorModal(true)}
             onSignOut={logout}
           />
         )}
@@ -1170,6 +1185,31 @@ export const AdminScreen: React.FC = () => {
         onClose={() => setShowStaffModal(false)}
         batches={batches}
         onStaffCreated={fetchAdminData}
+      />
+
+      {/* Physical Branch Management Bottom Sheet */}
+      <BranchManagementModal
+        visible={showBranchModal}
+        onClose={() => setShowBranchModal(false)}
+      />
+
+      {/* Fee Structures Bottom Sheet */}
+      <FeeStructuresModal
+        visible={showFeeStructuresModal}
+        onClose={() => setShowFeeStructuresModal(false)}
+      />
+
+      {/* Staff Payroll Engine Modal */}
+      <AdminPayrollModal
+        visible={showPayrollModal}
+        onClose={() => setShowPayrollModal(false)}
+      />
+
+      {/* AI Question Paper Generator Modal */}
+      <AIQuestionGeneratorModal
+        visible={showQuestionGeneratorModal}
+        onClose={() => setShowQuestionGeneratorModal(false)}
+        instituteName={institute?.name}
       />
 
       {/* Confirmation Modal for Lifecycle Status Actions */}

@@ -1,8 +1,10 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useMobileAuth } from '../context/AuthContext';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { useMobileAuth, MobileBranch } from '../context/AuthContext';
 import { themeTokens } from '@tuition/shared';
-import { Bell, RotateCw, LogOut } from 'lucide-react-native';
+import { Bell, RotateCw, LogOut, Building2, ChevronDown, Check, X } from 'lucide-react-native';
+import { PressableScale } from '../theme/motion';
+import { InteractiveBottomSheet } from './ui/InteractiveBottomSheet';
 
 interface HeaderProps {
   title?: string;
@@ -19,7 +21,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   unreadNotificationsCount = 0,
 }) => {
-  const { user, institute, logout } = useMobileAuth();
+  const { user, institute, branches, activeBranch, selectBranch, logout } = useMobileAuth();
+  const [showBranchModal, setShowBranchModal] = useState(false);
 
   const getRoleLabel = (role?: string) => {
     switch (role) {
@@ -29,6 +32,14 @@ export const Header: React.FC<HeaderProps> = ({
       case 'PARENT': return 'Parent';
       case 'STUDENT': return 'Student';
       default: return role || '';
+    }
+  };
+
+  const handleSelectBranch = async (branch: MobileBranch | null) => {
+    await selectBranch(branch);
+    setShowBranchModal(false);
+    if (onRefresh) {
+      onRefresh();
     }
   };
 
@@ -77,12 +88,106 @@ export const Header: React.FC<HeaderProps> = ({
         </View>
       </View>
 
+      {/* Branch Context Selector Bar */}
+      {branches.length > 1 && (
+        <View style={styles.branchRow}>
+          <TouchableOpacity
+            style={styles.branchSelectorPill}
+            onPress={() => setShowBranchModal(true)}
+            activeOpacity={0.8}
+            accessibilityLabel="Switch active physical branch"
+          >
+            <Building2 size={13} color="#D7CCC8" />
+            <Text style={styles.branchText} numberOfLines={1}>
+              {activeBranch ? `${activeBranch.name} (${activeBranch.code})` : 'All Branches (Consolidated)'}
+            </Text>
+            <ChevronDown size={12} color="#D7CCC8" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {branches.length === 1 && (
+        <View style={styles.branchRow}>
+          <View style={styles.singleBranchBadge}>
+            <Building2 size={12} color="#D7CCC8" />
+            <Text style={styles.singleBranchText} numberOfLines={1}>
+              📍 {branches[0].name} ({branches[0].code}) {branches[0].isDefault ? '[HQ]' : ''}
+            </Text>
+          </View>
+        </View>
+      )}
+
       {(title || subtitle) && (
         <View style={styles.titleSection}>
           {title && <Text style={styles.title}>{title}</Text>}
           {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         </View>
       )}
+
+      {/* Branch Selector Bottom Sheet */}
+      <InteractiveBottomSheet
+        visible={showBranchModal}
+        onClose={() => setShowBranchModal(false)}
+        title="Select Campus Branch"
+        subtitle="Scope analytics, batches, attendance and records to branch"
+      >
+        <View style={styles.modalContent}>
+          {/* Option: All Branches */}
+          <PressableScale
+            onPress={() => handleSelectBranch(null)}
+            style={[styles.branchOptionCard, !activeBranch && styles.branchOptionActive]}
+          >
+            <View style={styles.branchOptionLeft}>
+              <View style={[styles.iconCircle, !activeBranch && styles.iconCircleActive]}>
+                <Building2 size={18} color={!activeBranch ? '#FFFFFF' : '#4E342E'} />
+              </View>
+              <View>
+                <Text style={[styles.branchOptionTitle, !activeBranch && styles.branchOptionTitleActive]}>
+                  🏢 All Branches (Consolidated)
+                </Text>
+                <Text style={styles.branchOptionSubtitle}>
+                  View combined metrics across all campuses
+                </Text>
+              </View>
+            </View>
+            {!activeBranch && <Check size={18} color="#4E342E" strokeWidth={2.5} />}
+          </PressableScale>
+
+          {/* Individual Physical Branches */}
+          {branches.map((b) => {
+            const isSelected = activeBranch?.id === b.id;
+            return (
+              <PressableScale
+                key={b.id}
+                onPress={() => handleSelectBranch(b)}
+                style={[styles.branchOptionCard, isSelected && styles.branchOptionActive]}
+              >
+                <View style={styles.branchOptionLeft}>
+                  <View style={[styles.iconCircle, isSelected && styles.iconCircleActive]}>
+                    <Building2 size={18} color={isSelected ? '#FFFFFF' : '#4E342E'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.branchOptionTitle, isSelected && styles.branchOptionTitleActive]}>
+                        {b.name}
+                      </Text>
+                      {b.isDefault && (
+                        <View style={styles.hqBadge}>
+                          <Text style={styles.hqBadgeText}>HQ</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.branchOptionSubtitle}>
+                      Code: {b.code} {b.city ? `• ${b.city}` : ''}
+                    </Text>
+                  </View>
+                </View>
+                {isSelected && <Check size={18} color="#4E342E" strokeWidth={2.5} />}
+              </PressableScale>
+            );
+          })}
+        </View>
+      </InteractiveBottomSheet>
     </View>
   );
 };
@@ -127,42 +232,47 @@ const styles = StyleSheet.create({
   },
   userName: {
     color: themeTokens.colors.textLight,
-    fontSize: 14,
     fontWeight: 'bold',
+    fontSize: 14,
   },
   roleBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 1,
+    marginTop: 2,
   },
   roleText: {
-    color: themeTokens.colors.beige,
+    color: '#D7CCC8',
     fontSize: 11,
     fontWeight: '600',
   },
   instituteText: {
-    color: themeTokens.colors.textLightMuted,
+    color: '#BCAAA4',
     fontSize: 11,
+    fontWeight: '500',
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  bellBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  actionBtn: {
     paddingHorizontal: 8,
-    position: 'relative',
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: themeTokens.colors.cocoa,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  bellBtnText: {
-    fontSize: 14,
+  bellBtn: {
+    position: 'relative',
+    paddingHorizontal: 8,
   },
   badgeDot: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -3,
+    right: -3,
     backgroundColor: '#DC2626',
-    borderRadius: 9,
+    borderRadius: 8,
     minWidth: 16,
     height: 16,
     paddingHorizontal: 3,
@@ -172,43 +282,123 @@ const styles = StyleSheet.create({
   badgeDotText: {
     color: '#FFFFFF',
     fontSize: 9,
-    fontWeight: '900',
-  },
-  actionBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: themeTokens.colors.cocoa,
-  },
-  actionBtnText: {
-    color: themeTokens.colors.beige,
-    fontSize: 13,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   logoutBtn: {
-    backgroundColor: 'rgba(185, 28, 28, 0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(185, 28, 28, 0.5)',
+    flexDirection: 'row',
+    backgroundColor: '#5D4037',
+  },
+  logoutBtnText: {
+    color: themeTokens.colors.textLight,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  branchRow: {
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoutBtnText: {
-    color: '#FECACA',
+  branchSelectorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#5D4037',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#6D4C41',
+  },
+  branchText: {
+    color: '#FAF7F2',
+    fontSize: 11.5,
+    fontWeight: '700',
+    maxWidth: 240,
+  },
+  singleBranchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 2,
+  },
+  singleBranchText: {
+    color: '#D7CCC8',
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   titleSection: {
-    marginTop: 12,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#5D4037',
   },
   title: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: themeTokens.colors.textLight,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
   },
   subtitle: {
-    color: themeTokens.colors.beige,
-    fontSize: 12,
+    fontSize: 11.5,
+    color: '#D7CCC8',
+    marginTop: 1,
+  },
+  modalContent: {
+    padding: 16,
+    gap: 10,
+  },
+  branchOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#FAF7F2',
+    borderWidth: 1.5,
+    borderColor: '#EFEBE9',
+  },
+  branchOptionActive: {
+    backgroundColor: '#F5ECE8',
+    borderColor: '#4E342E',
+  },
+  branchOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  iconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EFEBE9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconCircleActive: {
+    backgroundColor: '#4E342E',
+  },
+  branchOptionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
+  branchOptionTitleActive: {
+    color: '#4E342E',
+  },
+  branchOptionSubtitle: {
+    fontSize: 11,
+    color: '#8D6E63',
     marginTop: 2,
+  },
+  hqBadge: {
+    backgroundColor: '#4E342E',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  hqBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

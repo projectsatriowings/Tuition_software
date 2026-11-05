@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { mobileApiFetch, setApiBaseUrl, getApiBaseUrl } from '../services/api';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { mobileApiFetch, setApiBaseUrl, getApiBaseUrl, setActiveBranchId } from '../services/api';
 import { MobileStorage } from '../services/storage';
 import { AppConfig } from '../config/index';
 
@@ -24,6 +24,20 @@ export interface MobileInstitute {
   name: string;
 }
 
+export interface MobileBranch {
+  id: string;
+  instituteId: string;
+  name: string;
+  code: string;
+  isDefault: boolean;
+  isActive: boolean;
+  address?: string | null;
+  city?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  geofenceRadius?: number;
+}
+
 export interface PendingAuthSession {
   accessToken: string;
   refreshToken?: string;
@@ -39,6 +53,8 @@ export interface PendingAuthSession {
 interface AuthContextType {
   user: MobileUser | null;
   institute: MobileInstitute | null;
+  branches: MobileBranch[];
+  activeBranch: MobileBranch | null;
   loading: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -55,6 +71,8 @@ interface AuthContextType {
   selectInstituteAndCompleteLogin: (selectedInstitute: MobileInstitute) => Promise<void>;
   cancelPendingAuth: () => void;
   switchInstitute: (newInst: MobileInstitute) => Promise<void>;
+  selectBranch: (branch: MobileBranch | null) => Promise<void>;
+  loadBranches: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateApiBaseUrl: (newUrl: string) => void;
@@ -70,14 +88,64 @@ export const isStaffManagedRole = (role?: string | null): boolean => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<MobileUser | null>(null);
   const [institute, setInstitute] = useState<MobileInstitute | null>(null);
+  const [branches, setBranches] = useState<MobileBranch[]>([]);
+  const [activeBranch, setActiveBranch] = useState<MobileBranch | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(false);
   const [apiBaseUrl, setApiBaseUrlState] = useState<string>(getApiBaseUrl());
   const [pendingAuthSession, setPendingAuthSession] = useState<PendingAuthSession | null>(null);
 
+  const loadBranches = useCallback(async () => {
+    try {
+      const res = await mobileApiFetch('/branches', { skipCache: true });
+      if (res.success && Array.isArray(res.data)) {
+        const branchList = res.data as MobileBranch[];
+        setBranches(branchList);
+
+        const storedBranchId = await MobileStorage.getItem(AppConfig.storageKeys.activeBranch);
+        if (storedBranchId && storedBranchId !== 'all') {
+          const matched = branchList.find((b) => b.id === storedBranchId);
+          if (matched) {
+            setActiveBranch(matched);
+            await setActiveBranchId(matched.id);
+            return;
+          }
+        }
+
+        // If only 1 branch exists (HQ), set as default
+        if (branchList.length === 1) {
+          setActiveBranch(branchList[0]);
+          await setActiveBranchId(branchList[0].id);
+        } else {
+          setActiveBranch(null);
+          await setActiveBranchId(null);
+        }
+      }
+    } catch {
+      // Non-blocking error for branch fetch
+    }
+  }, []);
+
+  const selectBranch = async (branch: MobileBranch | null) => {
+    setActiveBranch(branch);
+    if (branch) {
+      await setActiveBranchId(branch.id);
+      await MobileStorage.setItem(AppConfig.storageKeys.activeBranch, branch.id);
+    } else {
+      await setActiveBranchId(null);
+      await MobileStorage.removeItem(AppConfig.storageKeys.activeBranch);
+    }
+  };
+
   useEffect(() => {
     checkExistingSession();
   }, []);
+
+  useEffect(() => {
+    if (institute?.id) {
+      loadBranches();
+    }
+  }, [institute?.id, loadBranches]);
 
   const checkExistingSession = async () => {
     try {
@@ -99,7 +167,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             setInstitute(JSON.parse(cachedInst));
           } catch {
-            // backward compatibility if raw ID string
             setInstitute({ id: cachedInst, code: '', name: 'Selected Institute' });
           }
         }
@@ -143,7 +210,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.success && res.data) {
         const { accessToken, refreshToken, user: authUser, institute: authInst, memberships, mustChangePassword: needChange } = res.data;
 
-        // If user belongs to multiple active institutes and no explicit institute was targeted, prompt selection
         if (memberships && memberships.length > 1 && !instituteCode) {
           setPendingAuthSession({
             accessToken,
@@ -155,7 +221,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { success: true, pendingAuth: true };
         }
 
-        // Single institute, Super Admin, or direct code resolution: finalize login directly
         await MobileStorage.setItem(AppConfig.storageKeys.accessToken, accessToken);
         if (refreshToken) {
           await MobileStorage.setItem(AppConfig.storageKeys.refreshToken, refreshToken);
@@ -208,6 +273,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchInstitute = async (newInst: MobileInstitute) => {
     setInstitute(newInst);
     await MobileStorage.setItem(AppConfig.storageKeys.activeInstitute, JSON.stringify(newInst));
+    await selectBranch(null);
   };
 
   const logout = async () => {
@@ -215,8 +281,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await MobileStorage.removeItem(AppConfig.storageKeys.refreshToken);
     await MobileStorage.removeItem(AppConfig.storageKeys.userProfile);
     await MobileStorage.removeItem(AppConfig.storageKeys.activeInstitute);
+    await MobileStorage.removeItem(AppConfig.storageKeys.activeBranch);
+    await setActiveBranchId(null);
     setUser(null);
     setInstitute(null);
+    setBranches([]);
+    setActiveBranch(null);
     setMustChangePassword(false);
     setPendingAuthSession(null);
   };
@@ -253,13 +323,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setApiBaseUrlState(newUrl);
   };
 
-  const effectiveNeedsPasswordChange = false;
-
   return (
     <AuthContext.Provider
       value={{
         user,
         institute,
+        branches,
+        activeBranch,
         loading,
         isLoading: loading,
         isAuthenticated: !!user,
@@ -272,6 +342,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectInstituteAndCompleteLogin,
         cancelPendingAuth,
         switchInstitute,
+        selectBranch,
+        loadBranches,
         logout,
         changePassword,
         updateApiBaseUrl,

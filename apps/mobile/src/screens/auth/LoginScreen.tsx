@@ -27,6 +27,7 @@ import {
   Settings,
   CheckCircle2,
   XCircle,
+  Sparkles,
 } from 'lucide-react-native';
 import { FadeInView, SlideInView, PressableScale } from '../../theme/motion';
 import { MobileInput, MobileButton } from '../../components/ui';
@@ -34,6 +35,65 @@ import { MobileInput, MobileButton } from '../../components/ui';
 interface LoginScreenProps {
   onSuccess?: () => void;
 }
+
+
+interface DemoAccount {
+  role: string;
+  label: string;
+  identifier: string;
+  password: string;
+  subtext: string;
+  badgeBg: string;
+  badgeColor: string;
+}
+
+const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    role: 'ACADEMIC_ADMIN',
+    label: 'Academic Admin',
+    identifier: 'admin@apexacademy.com',
+    password: 'Password#123',
+    subtext: 'Director & Admin Portal',
+    badgeBg: '#F5ECE8',
+    badgeColor: '#4E342E',
+  },
+  {
+    role: 'STAFF',
+    label: 'Staff / Faculty',
+    identifier: 'teacher@apexacademy.com',
+    password: 'Password#123',
+    subtext: 'Attendance & Batches',
+    badgeBg: '#ECFDF5',
+    badgeColor: '#059669',
+  },
+  {
+    role: 'STUDENT',
+    label: 'Student Portal',
+    identifier: 'student@apexacademy.com',
+    password: 'Password#123',
+    subtext: 'Timetables & Ledger',
+    badgeBg: '#EFF6FF',
+    badgeColor: '#2563EB',
+  },
+  {
+    role: 'PARENT',
+    label: 'Parent Portal',
+    identifier: '9826444306',
+    password: 'Password#123',
+    subtext: 'Phone: 9826444306',
+    badgeBg: '#FEF3C7',
+    badgeColor: '#D97706',
+  },
+  {
+    role: 'SUPER_ADMIN',
+    label: 'Super Admin',
+    identifier: 'superadmin@gmail.com',
+    password: 'admin@123',
+    subtext: 'Platform Admin',
+    badgeBg: '#F3F4F6',
+    badgeColor: '#374151',
+  },
+];
 
 export const LoginScreen: React.FC<LoginScreenProps> = () => {
   const {
@@ -66,6 +126,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
     const res = await checkServerConnection(candidate);
     setHealthResult(res);
     setTestingConnection(false);
+  };
+
+
+  const handleSelectDemo = (demo: DemoAccount) => {
+    setUsername(demo.identifier);
+    setPassword(demo.password);
+    setErrorMsg(null);
   };
 
   const handleSaveHost = () => {
@@ -225,6 +292,43 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
             size="lg"
             style={{ marginTop: 6 }}
           />
+
+          {/* Quick Demo Credentials Autofill Section */}
+          <View style={styles.demoSection}>
+            <View style={styles.demoHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={14} color="#8D6E63" />
+                <Text style={styles.demoHeaderTitle}>DEMO QUICK ACCESS</Text>
+              </View>
+              <View style={styles.demoBadge}>
+                <Text style={styles.demoBadgeText}>Tap to Autofill</Text>
+              </View>
+            </View>
+
+            <View style={styles.demoGrid}>
+              {DEMO_ACCOUNTS.map((demo) => (
+                <PressableScale
+                  key={demo.role}
+                  style={styles.demoCard}
+                  onPress={() => handleSelectDemo(demo)}
+                  activeScale={0.96}
+                >
+                  <View style={[styles.demoRolePill, { backgroundColor: demo.badgeBg }]}>
+                    <Text style={[styles.demoRolePillText, { color: demo.badgeColor }]}>
+                      {demo.label}
+                    </Text>
+                  </View>
+                  <Text style={styles.demoCardIdentifier} numberOfLines={1}>
+                    {demo.identifier}
+                  </Text>
+                  <Text style={styles.demoCardSubtext} numberOfLines={1}>
+                    {demo.subtext}
+                  </Text>
+                </PressableScale>
+              ))}
+            </View>
+          </View>
+
 
           {/* Security & Access Notice */}
           <View style={styles.securityNotice}>
@@ -740,6 +844,73 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: themeTokens.colors.textSecondary,
   },
+  
+  demoSection: {
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEBE9',
+  },
+  demoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  demoHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#6D4C41',
+    letterSpacing: 0.6,
+  },
+  demoBadge: {
+    backgroundColor: '#F5ECE8',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#D7CCC8',
+  },
+  demoBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4E342E',
+  },
+  demoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  demoCard: {
+    width: '48%',
+    backgroundColor: '#FAF7F5',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+  },
+  demoRolePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  demoRolePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  demoCardIdentifier: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
+  demoCardSubtext: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 1,
+  },
+
   footerText: {
     textAlign: 'center',
     fontSize: 11,

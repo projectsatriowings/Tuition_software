@@ -42,8 +42,8 @@ export const config = {
     localPath: process.env.STORAGE_LOCAL_PATH || './uploads',
   },
   superAdmin: {
-    email: process.env.SUPER_ADMIN_EMAIL || 'superadmin@platform.local',
-    defaultPassword: process.env.SUPER_ADMIN_DEFAULT_PASSWORD || 'AdminSecurePassword#2026',
+    email: process.env.SUPER_ADMIN_EMAIL || 'superadmin@gmail.com',
+    defaultPassword: process.env.SUPER_ADMIN_DEFAULT_PASSWORD || 'admin@123',
     name: process.env.SUPER_ADMIN_NAME || 'Platform Administrator',
   },
 };

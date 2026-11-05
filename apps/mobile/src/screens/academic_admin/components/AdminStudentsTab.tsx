@@ -169,20 +169,21 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
             const status = st.status || 'ACTIVE';
 
             return (
-              <View key={st.id} style={styles.studentCard}>
-                <PressableScale
-                  style={styles.cardMainRow}
-                  onPress={() => onSelectStudent(st.id)}
-                  activeScale={0.985}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel={`View profile for ${fullName}`}
-                >
+              <PressableScale
+                key={st.id}
+                style={styles.studentCard}
+                onPress={() => onSelectStudent(st.id)}
+                activeScale={0.985}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel={`View full profile for ${fullName}`}
+              >
+                <View style={styles.cardMainRow}>
                   <StudentAvatar
                     studentId={st.id}
                     photoUrl={st.photoUrl}
                     name={fullName}
-                    size={42}
+                    size={44}
                   />
 
                   <View style={styles.studentInfo}>
@@ -225,27 +226,22 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                       </Text>
                     )}
                   </View>
-                </PressableScale>
 
-                {/* Bottom Actions Row */}
+                  <ChevronRight size={18} color="#BCAAA4" />
+                </View>
+
+                {/* Bottom Actions Row: lifecycle actions */}
                 <View style={styles.cardActionsRow}>
-                  <PressableScale
-                    style={styles.detailsBtn}
-                    onPress={() => onSelectStudent(st.id)}
-                    activeScale={0.96}
-                    accessibilityRole="button"
-                    accessibilityLabel="View full profile"
-                  >
-                    <Text style={styles.detailsBtnText}>View Full Profile</Text>
-                  <ChevronRight size={14} color={themeTokens.colors.primary} />
-                  </PressableScale>
-
+                  <View style={{ flex: 1 }} />
                   <View style={styles.lifecycleBtnRow}>
                     {status === 'ACTIVE' ? (
                       <>
                         <PressableScale
                           style={styles.passBtn}
-                          onPress={() => onStatusConfirm(st, 'PASSED_OUT')}
+                          onPress={(e) => {
+                            if (e && e.stopPropagation) e.stopPropagation();
+                            onStatusConfirm(st, 'PASSED_OUT');
+                          }}
                           activeScale={0.95}
                           accessibilityRole="button"
                           accessibilityLabel="Mark student passed out"
@@ -254,7 +250,10 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                         </PressableScale>
                         <PressableScale
                           style={styles.discBtn}
-                          onPress={() => onStatusConfirm(st, 'DISCONTINUED')}
+                          onPress={(e) => {
+                            if (e && e.stopPropagation) e.stopPropagation();
+                            onStatusConfirm(st, 'DISCONTINUED');
+                          }}
                           activeScale={0.95}
                           accessibilityRole="button"
                           accessibilityLabel="Discontinue student"
@@ -265,7 +264,10 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                     ) : (
                       <PressableScale
                         style={styles.reactivateBtn}
-                        onPress={() => onStatusConfirm(st, 'ACTIVE')}
+                        onPress={(e) => {
+                          if (e && e.stopPropagation) e.stopPropagation();
+                          onStatusConfirm(st, 'ACTIVE');
+                        }}
                         activeScale={0.95}
                         accessibilityRole="button"
                         accessibilityLabel="Reactivate student"
@@ -275,7 +277,7 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                     )}
                   </View>
                 </View>
-              </View>
+              </PressableScale>
             );
           })
         )}
@@ -455,9 +457,9 @@ const styles = StyleSheet.create({
   },
   cardActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F5ECE8',

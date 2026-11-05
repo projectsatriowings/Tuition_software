@@ -3,30 +3,28 @@ import { MobileStorage } from './storage';
 
 export interface MobileApiResponse<T = any> {
   success: boolean;
-  message?: string;
   data?: T;
   error?: string;
-  timestamp?: string;
+  statusCode?: number;
+  message?: string;
+  count?: number;
 }
 
 export interface HealthCheckResult {
-  ok: boolean;
-  service?: string;
-  databaseConnected?: boolean;
-  latencyMs?: number;
+  reachable: boolean;
+  ok?: boolean;
+  resolvedUrl?: string;
   statusCode?: number;
-  resolvedUrl: string;
   message: string;
+  latencyMs?: number;
+  serviceOnline?: boolean;
 }
 
 let activeBaseUrl: string = normalizeApiUrl(AppConfig.defaultApiBaseUrl);
+let activeBranchId: string | null = null;
 
 /**
  * Builds a clean, fully-qualified URL preventing missing or duplicate /api segments.
- * Example inputs:
- *   baseUrl: "http://192.168.1.5:5000", endpoint: "/auth/login" -> "http://192.168.1.5:5000/api/auth/login"
- *   baseUrl: "http://192.168.1.5:5000/api", endpoint: "/api/auth/login" -> "http://192.168.1.5:5000/api/auth/login"
- *   baseUrl: "http://192.168.1.5:5000/api", endpoint: "health" -> "http://192.168.1.5:5000/api/health"
  */
 export function buildApiUrl(base: string, endpoint: string): string {
   const normBase = normalizeApiUrl(base); // always ends with /api
@@ -56,59 +54,60 @@ export function getApiBaseUrl(): string {
   return activeBaseUrl;
 }
 
+export async function getActiveBranchId(): Promise<string | null> {
+  if (activeBranchId) return activeBranchId;
+  const stored = await MobileStorage.getItem(AppConfig.storageKeys.activeBranch);
+  activeBranchId = stored || null;
+  return activeBranchId;
+}
+
+export async function setActiveBranchId(branchId: string | null): Promise<void> {
+  activeBranchId = branchId;
+  if (branchId) {
+    await MobileStorage.setItem(AppConfig.storageKeys.activeBranch, branchId);
+  } else {
+    await MobileStorage.removeItem(AppConfig.storageKeys.activeBranch);
+  }
+  invalidateMobileCache();
+}
+
 /**
  * Builds an authenticated URL with auth token and institute ID query parameters for browser/Linking navigation.
  */
 export async function buildAuthenticatedDownloadUrl(endpoint: string): Promise<string> {
-  const base = getApiBaseUrl();
-  const url = buildApiUrl(base, endpoint);
   const token = await MobileStorage.getItem(AppConfig.storageKeys.accessToken);
   const storedInstitute = await MobileStorage.getItem(AppConfig.storageKeys.activeInstitute);
-  let resolvedInstituteId: string | null = null;
+  let resolvedInstituteId = '';
   if (storedInstitute) {
-    if (storedInstitute.startsWith('{')) {
-      try {
-        resolvedInstituteId = JSON.parse(storedInstitute).id || null;
-      } catch {
-        resolvedInstituteId = storedInstitute;
-      }
-    } else {
+    try {
+      resolvedInstituteId = JSON.parse(storedInstitute).id || storedInstitute;
+    } catch {
       resolvedInstituteId = storedInstitute;
     }
   }
 
-  const separator = url.includes('?') ? '&' : '?';
-  const params: string[] = [];
-  if (token) params.push(`token=${encodeURIComponent(token)}`);
-  if (resolvedInstituteId) params.push(`instituteId=${encodeURIComponent(resolvedInstituteId)}`);
-
-  return params.length > 0 ? `${url}${separator}${params.join('&')}` : url;
+  const storedUrl = await MobileStorage.getItem(AppConfig.storageKeys.customApiUrl);
+  const base = storedUrl ? normalizeApiUrl(storedUrl) : activeBaseUrl;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+  const url = new URL(`${base}/${cleanEndpoint}`);
+  if (token) {
+    url.searchParams.set('token', token);
+  }
+  if (resolvedInstituteId) {
+    url.searchParams.set('instituteId', resolvedInstituteId);
+  }
+  const branchId = await getActiveBranchId();
+  if (branchId && branchId !== 'all') {
+    url.searchParams.set('branchId', branchId);
+  }
+  return url.toString();
 }
-
-// Generate unique idempotency key for transactions
-export function generateIdempotencyKey(prefix: string = 'MOB'): string {
-  return `${prefix}-${Date.now()}-${Math.floor(100000 + Math.random() * 900000)}`;
-}
-
-let isRefreshing = false;
-let failedQueue: Array<{ resolve: (token: string) => void; reject: (err: any) => void }> = [];
-
-const processQueue = (error: any, token: string | null = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token!);
-    }
-  });
-  failedQueue = [];
-};
 
 /**
- * Proactively tests server reachability and health check against candidate or active API URL
+ * Performs a robust diagnostic probe against target base URL to evaluate reachability
  */
 export async function checkServerConnection(candidateUrl?: string): Promise<HealthCheckResult> {
-  const targetBase = candidateUrl ? normalizeApiUrl(candidateUrl) : activeBaseUrl;
+  const targetBase = normalizeApiUrl(candidateUrl || activeBaseUrl);
   const healthUrl = buildApiUrl(targetBase, '/health');
 
   const startTime = Date.now();
@@ -122,34 +121,39 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-    const latencyMs = Date.now() - startTime;
+    const latency = Date.now() - startTime;
 
-    if (!res.ok) {
+    if (res.ok) {
+      let isOnline = true;
+      try {
+        const body = await res.json();
+        isOnline = body.status === 'ok' || body.success === true || !!body.data;
+      } catch {
+        // HTTP 200 response without JSON is still reachable
+      }
       return {
-        ok: false,
-        statusCode: res.status,
+        reachable: true,
+        ok: true,
         resolvedUrl: healthUrl,
-        message: `Server reached but responded with HTTP ${res.status}. Check backend logs.`,
+        statusCode: res.status,
+        latencyMs: latency,
+        serviceOnline: isOnline,
+        message: `Connected successfully (${latency}ms). Server is active.`,
+      };
+    } else {
+      return {
+        reachable: true,
+        ok: false,
+        resolvedUrl: healthUrl,
+        statusCode: res.status,
+        latencyMs: latency,
+        serviceOnline: false,
+        message: `Server returned HTTP ${res.status}. Endpoint reached, but server reported an error.`,
       };
     }
-
-    const data = await res.json();
-    const isHealthy = data.status === 'healthy' || data.database?.connected;
-
-    return {
-      ok: true,
-      service: data.service || 'tuition-management-api',
-      databaseConnected: data.database?.connected ?? true,
-      latencyMs,
-      statusCode: res.status,
-      resolvedUrl: healthUrl,
-      message: `Connected successfully (${latencyMs}ms). Database: ${
-        data.database?.connected ? 'Online' : 'Degraded'
-      }`,
-    };
   } catch (err: any) {
     clearTimeout(timeoutId);
-    const latencyMs = Date.now() - startTime;
+    const latency = Date.now() - startTime;
 
     let diagnosticMsg = '';
     if (err.name === 'AbortError') {
@@ -157,20 +161,24 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
     } else if (err.message && (err.message.includes('Cleartext') || err.message.includes('CLEARTEXT'))) {
       diagnosticMsg = `Cleartext HTTP blocked by Android. Ensure usesCleartextTraffic is enabled.`;
     } else {
-      diagnosticMsg = `Cannot connect to ${targetBase}. Verify: 1) Computer & phone on same Wi-Fi; 2) Backend running on port 5000; 3) Windows Firewall allows port 5000.`;
+      diagnosticMsg = `Could not reach ${targetBase}. Verify Wi-Fi network and ensure backend is running. Error: ${err.message || 'Network request failed'}`;
     }
 
     return {
+      reachable: false,
       ok: false,
-      latencyMs,
       resolvedUrl: healthUrl,
+      latencyMs: latency,
+      serviceOnline: false,
       message: diagnosticMsg,
     };
   }
 }
 
-const mobileInFlight = new Map<string, Promise<MobileApiResponse<any>>>();
-const mobileCache = new Map<string, { res: MobileApiResponse<any>; expiry: number }>();
+// In-flight promise map for request deduplication
+const mobileInFlight = new Map<string, Promise<any>>();
+// Memory cache for read operations
+const mobileCache = new Map<string, { res: any; expiry: number }>();
 
 export function invalidateMobileCache(pattern?: string) {
   if (!pattern) {
@@ -178,24 +186,47 @@ export function invalidateMobileCache(pattern?: string) {
     return;
   }
   for (const k of mobileCache.keys()) {
-    if (k.includes(pattern)) mobileCache.delete(k);
+    if (k.includes(pattern)) {
+      mobileCache.delete(k);
+    }
   }
 }
 
+export interface MobileRequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  headers?: Record<string, string>;
+  body?: any;
+  skipCache?: boolean;
+  cacheTtlMs?: number;
+  timeoutMs?: number;
+  isRetry?: boolean;
+  idempotencyKey?: string;
+}
+
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (err: any) => void;
+}> = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else if (token) {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 export async function mobileApiFetch<T = any>(
   endpoint: string,
-  options: {
-    method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
-    body?: any;
-    headers?: Record<string, string>;
-    idempotencyKey?: string;
-    isRetry?: boolean;
-    timeoutMs?: number;
-    skipCache?: boolean;
-    cacheTtlMs?: number;
-  } = {}
+  options: MobileRequestOptions = {}
 ): Promise<MobileApiResponse<T>> {
   const method = options.method || 'GET';
+
+  // Invalidate cache on mutations
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     invalidateMobileCache();
   }
@@ -220,8 +251,10 @@ export async function mobileApiFetch<T = any>(
     }
   }
 
+  const branchId = await getActiveBranchId();
+
   const isCacheable = method === 'GET' && !options.skipCache && !endpoint.includes('/auth/login');
-  const cacheKey = `${token ? token.slice(-8) : 'anon'}:${resolvedInstituteId || 'global'}:${endpoint}`;
+  const cacheKey = `${token ? token.slice(-8) : 'anon'}:${resolvedInstituteId || 'global'}:${branchId || 'all'}:${endpoint}`;
 
   if (isCacheable) {
     const cached = mobileCache.get(cacheKey);
@@ -245,13 +278,16 @@ export async function mobileApiFetch<T = any>(
   if (resolvedInstituteId) {
     headers['x-institute-id'] = resolvedInstituteId;
   }
+  if (branchId && branchId !== 'all') {
+    headers['x-branch-id'] = branchId;
+  }
   if (options.idempotencyKey) {
     headers['x-idempotency-key'] = options.idempotencyKey;
   }
 
   const finalUrl = buildApiUrl(activeBaseUrl, endpoint);
 
-  // 12-second timeout controller
+  // Timeout controller
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs || 25000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -280,8 +316,8 @@ export async function mobileApiFetch<T = any>(
                     headers: { ...options.headers, Authorization: `Bearer ${newToken}` },
                   });
                   resolve(retryRes);
-                } catch (e) {
-                  reject(e);
+                } catch (retryErr) {
+                  reject(retryErr);
                 }
               },
               reject,
@@ -291,35 +327,31 @@ export async function mobileApiFetch<T = any>(
 
         isRefreshing = true;
         try {
-          const refreshUrl = buildApiUrl(activeBaseUrl, '/auth/refresh');
-          const refreshRes = await fetch(refreshUrl, {
+          const refreshRes = await fetch(buildApiUrl(activeBaseUrl, '/auth/refresh'), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
             body: JSON.stringify({ refreshToken }),
           });
 
-          const refreshJson: any = await refreshRes.json();
-          if (refreshRes.ok && refreshJson.success && refreshJson.data?.accessToken) {
-            const newAccessToken = refreshJson.data.accessToken;
-            const newRefreshToken = refreshJson.data.refreshToken || refreshToken;
-
-            await MobileStorage.setItem(AppConfig.storageKeys.accessToken, newAccessToken);
-            await MobileStorage.setItem(AppConfig.storageKeys.refreshToken, newRefreshToken);
-
-            processQueue(null, newAccessToken);
-            isRefreshing = false;
-
-            return mobileApiFetch<T>(endpoint, {
-              ...options,
-              isRetry: true,
-            });
-          } else {
-            // Refresh failed: clear session
-            processQueue(new Error('Session expired'), null);
-            isRefreshing = false;
-            await MobileStorage.removeItem(AppConfig.storageKeys.accessToken);
-            await MobileStorage.removeItem(AppConfig.storageKeys.refreshToken);
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            const newAccessToken = refreshData?.data?.accessToken || refreshData?.accessToken;
+            if (newAccessToken) {
+              await MobileStorage.setItem(AppConfig.storageKeys.accessToken, newAccessToken);
+              processQueue(null, newAccessToken);
+              isRefreshing = false;
+              return mobileApiFetch<T>(endpoint, {
+                ...options,
+                isRetry: true,
+                headers: { ...options.headers, Authorization: `Bearer ${newAccessToken}` },
+              });
+            }
           }
+          processQueue(new Error('Session expired'), null);
+          isRefreshing = false;
         } catch (refreshErr) {
           processQueue(refreshErr, null);
           isRefreshing = false;
@@ -327,78 +359,71 @@ export async function mobileApiFetch<T = any>(
       }
     }
 
-    const text = await res.text();
-    let json: any = {};
+    let parsedData: any = null;
     try {
-      json = JSON.parse(text);
+      parsedData = await res.json();
     } catch {
-      json = { error: text || `HTTP ${res.status}` };
+      // Body not JSON
     }
 
-    if (!res.ok) {
-      let friendlyError = json.error;
-      if (!friendlyError) {
-        if (res.status === 401) friendlyError = 'Authentication failed. Please check your credentials.';
-        else if (res.status === 403) friendlyError = 'Access denied. You do not have permission for this resource.';
-        else if (res.status === 404) friendlyError = `Endpoint not found (404) on ${activeBaseUrl}.`;
-        else if (res.status >= 500) friendlyError = `Server error (${res.status}). Please try again later.`;
-        else friendlyError = `Server returned HTTP ${res.status}`;
-      }
+    const result: MobileApiResponse<T> = {
+      success: res.ok && (parsedData?.success !== false),
+      statusCode: res.status,
+      data: parsedData?.data !== undefined ? parsedData.data : parsedData,
+      error: parsedData?.error || (!res.ok ? `HTTP Error ${res.status}` : undefined),
+      message: parsedData?.message,
+      count: parsedData?.count,
+    };
 
-      return {
-        success: false,
-        error: friendlyError,
-        data: json.data,
-        timestamp: new Date().toISOString(),
-      };
+    if (isCacheable && result.success) {
+      const ttl = options.cacheTtlMs || 60000; // 1 min default cache
+      mobileCache.set(cacheKey, { res: result, expiry: Date.now() + ttl });
     }
 
-    if (isCacheable) {
-      const ttl = options.cacheTtlMs ?? (endpoint.includes('/batches') ? 20000 : 8000);
-      mobileCache.set(cacheKey, { res: json, expiry: Date.now() + ttl });
-    }
-
-    return json;
-  } catch (netErr: any) {
+    return result;
+  } catch (err: any) {
     clearTimeout(timeoutId);
-
-    let specificError = '';
-    if (netErr.name === 'AbortError') {
-      specificError = `Request timed out connecting to ${activeBaseUrl}. The server did not respond within ${timeoutMs / 1000}s.`;
-    } else if (netErr.message && (netErr.message.includes('Cleartext') || netErr.message.includes('CLEARTEXT'))) {
-      specificError = `Android cleartext HTTP blocked. Development requires usesCleartextTraffic: true in app.json.`;
-    } else {
-      specificError = `Network error connecting to ${activeBaseUrl}. Ensure your phone is on the same Wi-Fi network, Windows Firewall allows port 5000, and backend is running.`;
+    let errMsg = err.message || 'Network request failed';
+    if (err.name === 'AbortError') {
+      errMsg = `Request timed out after ${timeoutMs / 1000}s. Server is slow or unreachable.`;
     }
-
     return {
       success: false,
-      error: specificError,
-      timestamp: new Date().toISOString(),
+      error: errMsg,
+      statusCode: 0,
     };
+  } finally {
+    mobileInFlight.delete(cacheKey);
   }
 }
 
+/**
+ * Convenient REST wrapper providing .get, .post, .put, .patch, .delete returning { data: res }
+ */
 export const api = {
-  get: async <T = any>(endpoint: string) => {
-    const res = await mobileApiFetch<T>(endpoint, { method: 'GET' });
+  get: async <T = any>(endpoint: string, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'GET' });
     return { data: res };
   },
-  post: async <T = any>(endpoint: string, body?: any) => {
-    const res = await mobileApiFetch<T>(endpoint, { method: 'POST', body });
+  post: async <T = any>(endpoint: string, body?: any, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'POST', body });
     return { data: res };
   },
-  patch: async <T = any>(endpoint: string, body?: any) => {
-    const res = await mobileApiFetch<T>(endpoint, { method: 'PATCH', body });
+  put: async <T = any>(endpoint: string, body?: any, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'PUT', body });
     return { data: res };
   },
-  put: async <T = any>(endpoint: string, body?: any) => {
-    const res = await mobileApiFetch<T>(endpoint, { method: 'PUT', body });
+  patch: async <T = any>(endpoint: string, body?: any, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'PATCH', body });
     return { data: res };
   },
-  delete: async <T = any>(endpoint: string) => {
-    const res = await mobileApiFetch<T>(endpoint, { method: 'DELETE' });
+  delete: async <T = any>(endpoint: string, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'DELETE' });
     return { data: res };
   },
 };
 
+export function generateIdempotencyKey(actionName: string): string {
+  const rand = Math.random().toString(36).substring(2, 10);
+  return `${actionName}-${Date.now()}-${rand}`;
+}

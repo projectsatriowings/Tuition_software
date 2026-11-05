@@ -31,6 +31,9 @@ import { AdmitStudentModal } from '../../components/AdmitStudentModal';
 import { StaffExamGradingModal } from '../../components/StaffExamGradingModal';
 import { StaffReviewReplyModal } from '../../components/StaffReviewReplyModal';
 import { MaterialAnalyticsModal } from '../../components/MaterialAnalyticsModal';
+import { StaffMyAttendanceModal } from '../../components/StaffMyAttendanceModal';
+import { StaffMyPayslipsModal } from '../../components/StaffMyPayslipsModal';
+import { AIQuestionGeneratorModal } from '../../components/AIQuestionGeneratorModal';
 import { MobileButton } from '../../components/ui';
 import { themeTokens, matchStudentVoice, EnrolledStudentCandidate } from '@tuition/shared';
 
@@ -61,6 +64,9 @@ export const StaffScreen: React.FC = () => {
   const [examsList, setExamsList] = useState<any[]>([]);
   const [gradingExam, setGradingExam] = useState<any | null>(null);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
+  const [showStaffAttendanceModal, setShowStaffAttendanceModal] = useState(false);
+  const [showStaffPayslipsModal, setShowStaffPayslipsModal] = useState(false);
+  const [showQuestionGenModal, setShowQuestionGenModal] = useState(false);
   const [analyticsMaterial, setAnalyticsMaterial] = useState<any | null>(null);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
   const [materialsList, setMaterialsList] = useState<any[]>([]);
@@ -702,6 +708,7 @@ export const StaffScreen: React.FC = () => {
             onOpenReviewHw={openHomeworkReview}
             onOpenGradingExam={(exam) => setGradingExam(exam)}
             onOpenConversation={openStaffConversation}
+            onOpenAttendanceModal={() => setShowStaffAttendanceModal(true)}
           />
         )}
 
@@ -806,13 +813,7 @@ export const StaffScreen: React.FC = () => {
 
                   {/* Lifecycle Action Buttons */}
                   <View style={styles.studentActionRow}>
-                    <TouchableOpacity
-                      style={styles.cardDetailsHint}
-                      onPress={() => setSelectedStudentId(s.id)}
-                    >
-                      <Text style={styles.cardDetailsHintText}>Full Profile</Text>
-                    </TouchableOpacity>
-
+                    <View style={{ flex: 1 }} />
                     <View style={styles.actionBtnGroup}>
                       {s.status === 'ACTIVE' ? (
                         <>
@@ -1159,6 +1160,9 @@ export const StaffScreen: React.FC = () => {
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenReviewsModal={() => setShowReviewsModal(true)}
             onOpenNotifications={() => setShowNotificationModal(true)}
+            onOpenAttendanceModal={() => setShowStaffAttendanceModal(true)}
+            onOpenPayslipsModal={() => setShowStaffPayslipsModal(true)}
+            onOpenQuestionGenModal={() => setShowQuestionGenModal(true)}
             onLogout={logout}
           />
         )}
@@ -1799,6 +1803,25 @@ export const StaffScreen: React.FC = () => {
         onClose={() => setShowNotificationModal(false)}
         onUnreadCountChange={setUnreadNotifCount}
         onNavigateToEntity={handleNavigateToEntity}
+      />
+
+      {/* Faculty Geofence Attendance & WFH Modal */}
+      <StaffMyAttendanceModal
+        visible={showStaffAttendanceModal}
+        onClose={() => setShowStaffAttendanceModal(false)}
+      />
+
+      {/* Faculty Salary Slips Modal */}
+      <StaffMyPayslipsModal
+        visible={showStaffPayslipsModal}
+        onClose={() => setShowStaffPayslipsModal(false)}
+      />
+
+      {/* AI Question Generator Modal for Faculty */}
+      <AIQuestionGeneratorModal
+        visible={showQuestionGenModal}
+        onClose={() => setShowQuestionGenModal(false)}
+        instituteName={institute?.name}
       />
     </View>
   );

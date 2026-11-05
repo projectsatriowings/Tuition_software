@@ -1,4 +1,4 @@
-import { ClipboardCheck, Users, FileText, BookOpen, ChevronRight, Tag, Trophy, MessageSquare, CheckCircle2, Clock } from 'lucide-react-native';
+import { ClipboardCheck, Users, FileText, BookOpen, ChevronRight, Tag, Trophy, MessageSquare, CheckCircle2, Clock, MapPin } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -37,6 +37,7 @@ interface StaffHomeTabProps {
   onOpenReviewHw: (hw: any) => void;
   onOpenGradingExam: (exam: any) => void;
   onOpenConversation: (conv: any) => void;
+  onOpenAttendanceModal?: () => void;
 }
 
 export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
@@ -61,6 +62,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
   onOpenReviewHw,
   onOpenGradingExam,
   onOpenConversation,
+  onOpenAttendanceModal,
 }) => {
   // Compute greeting based on local time
   const hour = new Date().getHours();
@@ -136,6 +138,40 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
           </View>
         </View>
       </View>
+
+      {/* FACULTY ATTENDANCE SHIFT BANNER */}
+      {onOpenAttendanceModal && (
+        <TouchableOpacity
+          onPress={onOpenAttendanceModal}
+          style={{
+            backgroundColor: '#4E342E',
+            borderRadius: 14,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            marginBottom: 14,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            shadowColor: '#2D1E18',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
+          activeOpacity={0.85}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+              <MapPin size={18} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>Faculty Shift Punch</Text>
+              <Text style={{ fontSize: 11, color: '#D7CCC8' }}>GPS On-Site Geofence & WFH Check-in</Text>
+            </View>
+          </View>
+          <Text style={{ color: '#FCD34D', fontSize: 12, fontWeight: '700' }}>Punch →</Text>
+        </TouchableOpacity>
+      )}
 
       {/* 2. COMPACT SUMMARY KPI CARD (Clean, cohesive summary - not oversized boxes) */}
       <View style={styles.kpiCard}>

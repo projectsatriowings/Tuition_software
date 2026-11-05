@@ -31,6 +31,7 @@ export const AppConfig = {
     refreshToken: 'tuition_mobile_refresh_token',
     userProfile: 'tuition_mobile_user',
     activeInstitute: 'tuition_mobile_institute',
+    activeBranch: 'tuition_mobile_active_branch',
     customApiUrl: 'tuition_mobile_custom_api_url',
   },
   currency: {
