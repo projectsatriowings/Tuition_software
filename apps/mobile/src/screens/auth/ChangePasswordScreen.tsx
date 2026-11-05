@@ -19,6 +19,7 @@ import {
   PressableScale,
   useAndroidBackHandler,
 } from '../../theme/motion';
+import { MobileInput, MobileButton } from '../../components/ui';
 
 export const ChangePasswordScreen: React.FC = () => {
   const { user, changePassword, logout } = useMobileAuth();
@@ -34,6 +35,7 @@ export const ChangePasswordScreen: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   // Android hardware back button handler: prompt user before aborting
   const handleBackPress = useCallback(() => {
@@ -70,15 +72,19 @@ export const ChangePasswordScreen: React.FC = () => {
     setErrorMsg(null);
 
     const res = await changePassword(currentPassword, newPassword);
-    setLoading(false);
 
     if (res.success) {
-      Alert.alert(
-        'Success',
-        'Password updated successfully. You will now be redirected to your dashboard.',
-        [{ text: 'OK' }]
-      );
+      setIsSuccess(true);
+      setTimeout(() => {
+        setLoading(false);
+        Alert.alert(
+          'Success',
+          'Password updated successfully. You will now be redirected to your dashboard.',
+          [{ text: 'OK' }]
+        );
+      }, 400);
     } else {
+      setLoading(false);
       setErrorMsg(res.error || 'Failed to update password');
     }
   };
@@ -112,56 +118,55 @@ export const ChangePasswordScreen: React.FC = () => {
             </FadeInView>
           ) : null}
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Current Temporary Password</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="Enter temporary password"
-              placeholderTextColor={themeTokens.colors.textSubtle}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-            />
-          </View>
+          <MobileInput
+            label="Current Temporary Password"
+            secureTextEntry
+            placeholder="Enter temporary password"
+            value={currentPassword}
+            onChangeText={(t) => {
+              setCurrentPassword(t);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            editable={!loading && !isSuccess}
+          />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>New Secure Password</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="At least 8 characters"
-              placeholderTextColor={themeTokens.colors.textSubtle}
-              value={newPassword}
-              onChangeText={setNewPassword}
-            />
-          </View>
+          <MobileInput
+            label="New Secure Password"
+            secureTextEntry
+            placeholder="At least 8 characters"
+            value={newPassword}
+            onChangeText={(t) => {
+              setNewPassword(t);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            hint="Must be at least 8 characters"
+            isValid={newPassword.length >= 8}
+            editable={!loading && !isSuccess}
+          />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm New Password</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="Repeat new password"
-              placeholderTextColor={themeTokens.colors.textSubtle}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-          </View>
+          <MobileInput
+            label="Confirm New Password"
+            secureTextEntry
+            placeholder="Repeat new password"
+            value={confirmPassword}
+            onChangeText={(t) => {
+              setConfirmPassword(t);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            isValid={confirmPassword.length >= 8 && confirmPassword === newPassword}
+            editable={!loading && !isSuccess}
+          />
 
-          <PressableScale
+          <MobileButton
+            title="Update Password & Continue"
             onPress={handleSubmit}
-            disabled={loading}
-            activeScale={0.97}
-            style={[styles.submitBtn, loading && styles.btnDisabled]}
-            accessibilityRole="button"
-            accessibilityLabel="Update Password & Continue"
-          >
-            {loading ? (
-              <ActivityIndicator color={themeTokens.colors.textLight} />
-            ) : (
-              <Text style={styles.submitBtnText}>Update Password & Continue</Text>
-            )}
-          </PressableScale>
+            loading={loading && !isSuccess}
+            isSuccess={isSuccess}
+            successTitle="Password Updated!"
+            fullWidth
+            size="lg"
+            style={{ marginTop: 6 }}
+          />
 
           <PressableScale
             onPress={logout}

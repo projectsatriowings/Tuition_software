@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,11 @@ import {
   TouchableOpacity,
   StyleProp,
   ViewStyle,
+  Animated,
 } from 'react-native';
+import { Eye, EyeOff, CheckCircle2 } from 'lucide-react-native';
 import { themeTokens } from '@tuition/shared';
+import { useReducedMotion, motionTokens } from '../../theme/motion';
 
 export interface MobileInputProps extends TextInputProps {
   label?: string;
@@ -19,6 +22,8 @@ export interface MobileInputProps extends TextInputProps {
   rightIcon?: React.ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
   required?: boolean;
+  isValid?: boolean;
+  showCharCount?: boolean;
 }
 
 export const MobileInput: React.FC<MobileInputProps> = ({
@@ -30,13 +35,90 @@ export const MobileInput: React.FC<MobileInputProps> = ({
   containerStyle,
   required,
   secureTextEntry,
+  isValid,
+  showCharCount,
+  value,
+  maxLength,
   ...props
 }) => {
+  const reducedMotion = useReducedMotion();
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Focus glow & border animation driver
+  const focusAnim = useRef(new Animated.Value(0)).current;
+  // Validation checkmark pop driver
+  const checkAnim = useRef(new Animated.Value(isValid ? 1 : 0)).current;
+  // Eye icon fade driver
+  const eyeFadeAnim = useRef(new Animated.Value(1)).current;
+
   const isPassword = !!secureTextEntry;
   const isActualSecure = isPassword && !showPassword;
+
+  // Handle focus animation
+  useEffect(() => {
+    if (reducedMotion) {
+      focusAnim.setValue(isFocused ? 1 : 0);
+      return;
+    }
+    Animated.timing(focusAnim, {
+      toValue: isFocused ? 1 : 0,
+      duration: motionTokens.duration.fast,
+      useNativeDriver: false,
+    }).start();
+  }, [isFocused, reducedMotion, focusAnim]);
+
+  // Handle live validation checkmark pop
+  useEffect(() => {
+    if (isValid) {
+      if (reducedMotion) {
+        checkAnim.setValue(1);
+      } else {
+        checkAnim.setValue(0.3);
+        Animated.spring(checkAnim, {
+          toValue: 1,
+          friction: 4,
+          tension: 70,
+          useNativeDriver: true,
+        }).start();
+      }
+    } else {
+      checkAnim.setValue(0);
+    }
+  }, [isValid, reducedMotion, checkAnim]);
+
+  // Handle password toggle
+  const togglePasswordVisibility = () => {
+    if (!reducedMotion) {
+      Animated.sequence([
+        Animated.timing(eyeFadeAnim, {
+          toValue: 0.3,
+          duration: 60,
+          useNativeDriver: true,
+        }),
+        Animated.timing(eyeFadeAnim, {
+          toValue: 1,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+    setShowPassword((prev) => !prev);
+  };
+
+  const borderColor = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [error ? '#DC2626' : '#D7CCC8', error ? '#DC2626' : '#4E342E'],
+  });
+
+  const backgroundColor = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FAF7F2', '#FFFFFF'],
+  });
+
+  const charCount = typeof value === 'string' ? value.length : 0;
+  const isNearLimit = maxLength ? charCount >= maxLength * 0.9 : false;
+  const isAtLimit = maxLength ? charCount >= maxLength : false;
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -47,10 +129,14 @@ export const MobileInput: React.FC<MobileInputProps> = ({
         </View>
       )}
 
-      <View
+      <Animated.View
         style={[
           styles.inputWrapper,
-          isFocused && styles.inputWrapperFocused,
+          {
+            borderColor,
+            backgroundColor,
+          },
+          isFocused && styles.inputWrapperFocusedGlow,
           !!error && styles.inputWrapperError,
           props.editable === false && styles.inputWrapperDisabled,
         ]}
@@ -59,7 +145,7 @@ export const MobileInput: React.FC<MobileInputProps> = ({
 
         <TextInput
           style={[styles.input, props.style]}
-          placeholderTextColor={themeTokens.colors.textSubtle}
+          placeholderTextColor="#8D6E63"
           onFocus={(e) => {
             setIsFocused(true);
             props.onFocus?.(e);
@@ -69,27 +155,70 @@ export const MobileInput: React.FC<MobileInputProps> = ({
             props.onBlur?.(e);
           }}
           secureTextEntry={isActualSecure}
+          value={value}
+          maxLength={maxLength}
           {...props}
         />
 
+        {/* Live Validation Checkmark */}
+        {isValid && !isPassword && !rightIcon && (
+          <Animated.View
+            style={[
+              styles.checkWrap,
+              {
+                transform: [{ scale: checkAnim }],
+                opacity: checkAnim,
+              },
+            ]}
+          >
+            <CheckCircle2 size={18} color="#15803D" />
+          </Animated.View>
+        )}
+
+        {/* Password Reveal Toggle */}
         {isPassword ? (
           <TouchableOpacity
             style={styles.iconButton}
-            onPress={() => setShowPassword(!showPassword)}
+            onPress={togglePasswordVisibility}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
           >
-            <Text style={styles.passwordToggleText}>{showPassword ? 'Hide' : 'Show'}</Text>
+            <Animated.View style={{ opacity: eyeFadeAnim }}>
+              {showPassword ? (
+                <EyeOff size={18} color="#4E342E" />
+              ) : (
+                <Eye size={18} color="#8D6E63" />
+              )}
+            </Animated.View>
           </TouchableOpacity>
         ) : (
           rightIcon && <View style={styles.iconContainer}>{rightIcon}</View>
         )}
-      </View>
+      </Animated.View>
 
-      {error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : hint ? (
-        <Text style={styles.hintText}>{hint}</Text>
-      ) : null}
+      {/* Helper / Error & Char Counter Row */}
+      <View style={styles.bottomRow}>
+        <View style={styles.messageWrap}>
+          {error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : hint ? (
+            <Text style={styles.hintText}>{hint}</Text>
+          ) : null}
+        </View>
+
+        {(showCharCount || maxLength) && maxLength && (
+          <Text
+            style={[
+              styles.charCounter,
+              isNearLimit && styles.charCounterNearLimit,
+              isAtLimit && styles.charCounterLimit,
+            ]}
+          >
+            {charCount}/{maxLength}
+          </Text>
+        )}
+      </View>
     </View>
   );
 };
@@ -107,39 +236,40 @@ const styles = StyleSheet.create({
   label: {
     fontSize: themeTokens.typography.sizes.sm,
     fontWeight: themeTokens.typography.weights.semibold,
-    color: themeTokens.colors.textSecondary,
+    color: '#4E342E',
   },
   requiredAsterisk: {
-    color: themeTokens.colors.error,
+    color: '#DC2626',
     fontSize: themeTokens.typography.sizes.sm,
     fontWeight: '700',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: themeTokens.colors.surface,
     borderWidth: 1.5,
-    borderColor: themeTokens.colors.border,
-    borderRadius: themeTokens.radii.md,
-    minHeight: 46,
+    borderRadius: 12,
+    minHeight: 48,
     paddingHorizontal: 12,
   },
-  inputWrapperFocused: {
-    borderColor: themeTokens.colors.primary,
-    backgroundColor: themeTokens.colors.surfaceMuted,
+  inputWrapperFocusedGlow: {
+    shadowColor: '#4E342E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 3,
   },
   inputWrapperError: {
-    borderColor: themeTokens.colors.error,
+    borderColor: '#DC2626',
   },
   inputWrapperDisabled: {
-    backgroundColor: themeTokens.colors.borderSubtle,
-    borderColor: themeTokens.colors.border,
+    backgroundColor: '#EFEBE9',
+    borderColor: '#D7CCC8',
     opacity: 0.7,
   },
   input: {
     flex: 1,
-    fontSize: themeTokens.typography.sizes.base,
-    color: themeTokens.colors.textPrimary,
+    fontSize: 14,
+    color: '#2D1E18',
     paddingVertical: 10,
   },
   iconContainer: {
@@ -148,22 +278,44 @@ const styles = StyleSheet.create({
   iconButton: {
     paddingHorizontal: 6,
     paddingVertical: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  passwordToggleText: {
-    fontSize: themeTokens.typography.sizes.xs,
-    fontWeight: '700',
-    color: themeTokens.colors.primary,
+  checkWrap: {
+    paddingHorizontal: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginTop: 4,
+    paddingHorizontal: 2,
+  },
+  messageWrap: {
+    flex: 1,
+    paddingRight: 8,
   },
   errorText: {
-    color: themeTokens.colors.error,
-    fontSize: themeTokens.typography.sizes.xs,
-    marginTop: 4,
+    color: '#DC2626',
+    fontSize: 12,
     fontWeight: '500',
   },
   hintText: {
-    color: themeTokens.colors.textSubtle,
-    fontSize: themeTokens.typography.sizes.xs,
-    marginTop: 4,
+    color: '#8D6E63',
+    fontSize: 12,
+  },
+  charCounter: {
+    fontSize: 11,
+    color: '#8D6E63',
+    fontWeight: '600',
+  },
+  charCounterNearLimit: {
+    color: '#D97706',
+  },
+  charCounterLimit: {
+    color: '#DC2626',
+    fontWeight: '700',
   },
 });
-

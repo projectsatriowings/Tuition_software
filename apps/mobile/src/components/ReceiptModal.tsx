@@ -1,17 +1,14 @@
 import React from 'react';
-import { X } from 'lucide-react-native';
 import {
-  Modal,
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
   Alert,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
-import { PressableScale, AnimatedSheet } from '../theme/motion';
-import { TouchableWithoutFeedback } from 'react-native';
+import { PressableScale } from '../theme/motion';
+import { InteractiveBottomSheet } from './ui/InteractiveBottomSheet';
 
 interface ReceiptData {
   receiptNumber: string;
@@ -69,212 +66,174 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.headerTitle}>Official Fee Receipt</Text>
-              <Text style={styles.receiptNo}>{receipt.receiptNumber}</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={18} color={themeTokens.colors.textLight} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {/* Institute & Status Badge */}
-            <View style={styles.instituteBox}>
-              <Text style={styles.instituteName}>
-                {receipt.instituteName || 'TuitionOS Enterprise'}
-              </Text>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusPillText}>PAID & VERIFIED</Text>
-              </View>
-            </View>
-
-            {/* Total Amount Callout */}
-            <View style={styles.amountBox}>
-              <Text style={styles.amountLabel}>AMOUNT PAID</Text>
-              <Text style={styles.amountValue}>{formatCurrency(receipt.amount)}</Text>
-              <Text style={styles.paymentMethod}>
-                Method: {receipt.paymentMethod || 'UPI / Cash'}
-              </Text>
-            </View>
-
-            {/* Receipt Details Grid */}
-            <View style={styles.detailsGrid}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Student Name</Text>
-                <Text style={styles.detailValue}>{receipt.studentName || 'Student'}</Text>
-              </View>
-              {receipt.studentRoll && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Roll Number</Text>
-                  <Text style={styles.detailValue}>{receipt.studentRoll}</Text>
-                </View>
-              )}
-              {receipt.batchName && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Batch / Class</Text>
-                  <Text style={styles.detailValue}>{receipt.batchName}</Text>
-                </View>
-              )}
-              {receipt.feeTitle && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Fee Description</Text>
-                  <Text style={styles.detailValue}>{receipt.feeTitle}</Text>
-                </View>
-              )}
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Payment Date</Text>
-                <Text style={styles.detailValue}>{formatDate(receipt.paidAt)}</Text>
-              </View>
-              {receipt.transactionReference && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Ref / Txn ID</Text>
-                  <Text style={[styles.detailValue, styles.codeValue]}>
-                    {receipt.transactionReference}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.footerNotice}>
-              <Text style={styles.noticeText}>
-                Computer-generated electronic receipt issued via TuitionOS. Valid without physical signature.
-              </Text>
-            </View>
-          </ScrollView>
-
-          {/* Action Footer */}
-          <View style={styles.footer}>
-            <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
-              <Text style={styles.shareBtnText}>Share / Print Receipt</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onClose} style={styles.dismissBtn}>
-              <Text style={styles.dismissBtnText}>Close</Text>
-            </TouchableOpacity>
+    <InteractiveBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Official Fee Receipt"
+      subtitle={receipt.receiptNumber}
+      maxHeight="86%"
+    >
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Institute & Status Badge */}
+        <View style={styles.instituteBox}>
+          <Text style={styles.instituteName}>
+            {receipt.instituteName || 'TuitionOS Enterprise'}
+          </Text>
+          <View style={styles.statusPill}>
+            <Text style={styles.statusPillText}>PAID & VERIFIED</Text>
           </View>
         </View>
+
+        {/* Total Amount Callout */}
+        <View style={styles.amountBox}>
+          <Text style={styles.amountLabel}>AMOUNT PAID</Text>
+          <Text style={styles.amountValue}>{formatCurrency(receipt.amount)}</Text>
+          <Text style={styles.paymentMethod}>
+            Method: {receipt.paymentMethod || 'UPI / Cash'}
+          </Text>
+        </View>
+
+        {/* Receipt Details Grid */}
+        <View style={styles.detailsGrid}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Student Name</Text>
+            <Text style={styles.detailValue}>{receipt.studentName || 'Student'}</Text>
+          </View>
+          {receipt.studentRoll && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Roll Number</Text>
+              <Text style={styles.detailValue}>{receipt.studentRoll}</Text>
+            </View>
+          )}
+          {receipt.batchName && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Batch / Class</Text>
+              <Text style={styles.detailValue}>{receipt.batchName}</Text>
+            </View>
+          )}
+          {receipt.feeTitle && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Fee Category</Text>
+              <Text style={styles.detailValue}>{receipt.feeTitle}</Text>
+            </View>
+          )}
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Payment Date</Text>
+            <Text style={styles.detailValue}>{formatDate(receipt.paidAt)}</Text>
+          </View>
+          {receipt.transactionReference && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Transaction Ref</Text>
+              <Text style={styles.detailValue}>{receipt.transactionReference}</Text>
+            </View>
+          )}
+          {receipt.recordedBy && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Authorized Staff</Text>
+              <Text style={styles.detailValue}>{receipt.recordedBy}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Audit Verification Notice */}
+        <View style={styles.noticeBox}>
+          <Text style={styles.noticeText}>
+            This is an authentic system-generated digital receipt registered with TuitionOS Academic
+            Accounting. No physical signature is required.
+          </Text>
+        </View>
+      </ScrollView>
+
+      {/* Action Footer */}
+      <View style={styles.footer}>
+        <PressableScale
+          onPress={handleShare}
+          style={styles.shareBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Share receipt"
+        >
+          <Text style={styles.shareBtnText}>Share / Save PDF</Text>
+        </PressableScale>
+        <PressableScale
+          onPress={onClose}
+          style={styles.dismissBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss receipt"
+        >
+          <Text style={styles.dismissBtnText}>Close</Text>
+        </PressableScale>
       </View>
-    </Modal>
+    </InteractiveBottomSheet>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(45, 30, 24, 0.65)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: themeTokens.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '85%',
-    paddingBottom: 24,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: themeTokens.colors.borderSubtle,
-    backgroundColor: themeTokens.colors.espresso,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: themeTokens.colors.textLight,
-  },
-  receiptNo: {
-    fontSize: 12,
-    color: themeTokens.colors.beige,
-    fontFamily: 'monospace',
-    marginTop: 2,
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: themeTokens.colors.cocoa,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: themeTokens.colors.textLight,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   content: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    maxHeight: 520,
   },
   instituteBox: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: themeTokens.colors.borderSubtle,
   },
   instituteName: {
+    fontSize: 15,
+    fontWeight: 'bold',
     color: themeTokens.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-    flex: 1,
   },
   statusPill: {
-    backgroundColor: themeTokens.colors.successBg,
-    borderWidth: 1,
-    borderColor: themeTokens.colors.successBorder,
-    borderRadius: 6,
+    backgroundColor: '#DCFCE7',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   statusPillText: {
-    color: themeTokens.colors.success,
+    color: '#15803D',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: 'bold',
     letterSpacing: 0.5,
   },
   amountBox: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderRadius: 14,
+    backgroundColor: '#FAF7F2',
     padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: themeTokens.colors.border,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
   },
   amountLabel: {
-    color: themeTokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
+    color: themeTokens.colors.textSubtle,
     letterSpacing: 1,
+    marginBottom: 4,
   },
   amountValue: {
-    color: themeTokens.colors.textPrimary,
-    fontSize: 32,
-    fontWeight: '900',
-    marginVertical: 4,
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: themeTokens.colors.espresso,
+    marginBottom: 4,
   },
   paymentMethod: {
-    color: themeTokens.colors.taupe,
     fontSize: 12,
-    fontWeight: '600',
+    color: themeTokens.colors.textSecondary,
+    fontWeight: '500',
   },
   detailsGrid: {
-    backgroundColor: themeTokens.colors.surfaceMuted,
-    borderRadius: 12,
+    backgroundColor: themeTokens.colors.surface,
     borderWidth: 1,
-    borderColor: themeTokens.colors.border,
+    borderColor: themeTokens.colors.borderSubtle,
+    borderRadius: 12,
     padding: 14,
     gap: 12,
+    marginBottom: 20,
   },
   detailRow: {
     flexDirection: 'row',
@@ -282,26 +241,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailLabel: {
-    color: themeTokens.colors.textMuted,
     fontSize: 13,
+    color: themeTokens.colors.textSecondary,
   },
   detailValue: {
-    color: themeTokens.colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
+    color: themeTokens.colors.textPrimary,
+    maxWidth: '60%',
+    textAlign: 'right',
   },
-  codeValue: {
-    fontFamily: 'monospace',
-    color: themeTokens.colors.primary,
-    fontSize: 12,
-  },
-  footerNotice: {
-    marginTop: 20,
+  noticeBox: {
     padding: 12,
     backgroundColor: themeTokens.colors.surfaceMuted,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: themeTokens.colors.borderSubtle,
+    marginBottom: 16,
   },
   noticeText: {
     color: themeTokens.colors.textSubtle,
@@ -312,8 +268,12 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 10,
     gap: 10,
-    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEBE9',
+    backgroundColor: '#FFFFFF',
   },
   shareBtn: {
     flex: 1,

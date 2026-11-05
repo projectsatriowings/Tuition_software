@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, SafeAreaView, StatusBar } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import React, { Component, ReactNode } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, StatusBar, TouchableOpacity } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AuthProvider, useMobileAuth } from './src/context/AuthContext';
 import { ToastProvider } from './src/context/ToastContext';
 import { LoginScreen } from './src/screens/auth/LoginScreen';
@@ -11,6 +11,51 @@ import { StaffScreen } from './src/screens/staff/StaffScreen';
 import { AdminScreen } from './src/screens/academic_admin/AdminScreen';
 import { SuperAdminScreen } from './src/screens/super_admin/SuperAdminScreen';
 import { themeTokens } from '@tuition/shared';
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error('Unhandled Root Error:', error, errorInfo);
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Application Startup Error</Text>
+          <Text style={styles.errorMessage}>
+            {this.state.error?.message || 'An unexpected rendering error occurred.'}
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={this.handleReset}>
+            <Text style={styles.retryButtonText}>Reload Screen</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const RootNavigator: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useMobileAuth();
@@ -56,14 +101,16 @@ const RootNavigator: React.FC = () => {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor={themeTokens.colors.espresso} />
-        <AuthProvider>
-          <ToastProvider>
-            <RootNavigator />
-          </ToastProvider>
-        </AuthProvider>
-      </SafeAreaView>
+      <RootErrorBoundary>
+        <SafeAreaView style={styles.safeArea}>
+          <StatusBar barStyle="light-content" backgroundColor={themeTokens.colors.espresso} />
+          <AuthProvider>
+            <ToastProvider>
+              <RootNavigator />
+            </ToastProvider>
+          </AuthProvider>
+        </SafeAreaView>
+      </RootErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -123,5 +170,36 @@ const styles = StyleSheet.create({
     color: themeTokens.colors.textSecondary,
     fontSize: 16,
     fontWeight: '600',
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: '#3E2723',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#D7CCC8',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: '#6D4C41',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });

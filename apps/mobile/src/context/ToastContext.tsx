@@ -1,4 +1,4 @@
-import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
+import { X, CheckCircle2, AlertCircle, AlertTriangle, Info } from 'lucide-react-native';
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -17,6 +17,7 @@ interface ToastMessage {
   message: string;
   type: ToastType;
   duration: number;
+  count: number;
 }
 
 interface ToastContextType {
@@ -36,8 +37,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const translateY = useRef(new Animated.Value(-24)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const cardScale = useRef(new Animated.Value(1)).current;
+  const badgeScale = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastToastRef = useRef<{ message: string; type: ToastType; time: number } | null>(null);
+  const lastToastRef = useRef<{ message: string; type: ToastType; time: number; count: number } | null>(null);
 
   const hideToast = useCallback(() => {
     if (timerRef.current) {
@@ -52,6 +55,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         useNativeDriver: true,
       }).start(() => {
         setCurrentToast(null);
+        lastToastRef.current = null;
       });
       return;
     }
@@ -71,6 +75,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }),
     ]).start(() => {
       setCurrentToast(null);
+      lastToastRef.current = null;
     });
   }, [reducedMotion, translateY, opacity]);
 
@@ -78,13 +83,38 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     (message: string, type: ToastType = 'info', duration: number = 2800) => {
       const now = Date.now();
 
-      // Avoid stacking duplicate animations or duplicate toasts for a single action
+      // Duplicate detection within 3500ms: merge into one toast with incrementing count pill
       if (
         lastToastRef.current &&
         lastToastRef.current.message === message &&
         lastToastRef.current.type === type &&
-        now - lastToastRef.current.time < 650
+        now - lastToastRef.current.time < 3500
       ) {
+        const nextCount = (lastToastRef.current.count || 1) + 1;
+        lastToastRef.current = { message, type, time: now, count: nextCount };
+
+        setCurrentToast((prev) => (prev ? { ...prev, count: nextCount } : null));
+
+        if (!reducedMotion) {
+          // Playful spring pulse on merge count
+          badgeScale.setValue(0.6);
+          cardScale.setValue(1.03);
+          Animated.parallel([
+            Animated.spring(badgeScale, {
+              toValue: 1,
+              friction: 4,
+              tension: 60,
+              useNativeDriver: true,
+            }),
+            Animated.spring(cardScale, {
+              toValue: 1,
+              friction: 6,
+              tension: 50,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        }
+
         if (timerRef.current) clearTimeout(timerRef.current);
         if (duration > 0) {
           timerRef.current = setTimeout(() => {
@@ -94,7 +124,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return;
       }
 
-      lastToastRef.current = { message, type, time: now };
+      lastToastRef.current = { message, type, time: now, count: 1 };
 
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -105,9 +135,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         message,
         type,
         duration,
+        count: 1,
       };
 
       setCurrentToast(toast);
+      badgeScale.setValue(1);
+      cardScale.setValue(1);
 
       if (reducedMotion) {
         translateY.setValue(0);
@@ -121,10 +154,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         translateY.setValue(-24);
         opacity.setValue(0);
         Animated.parallel([
-          Animated.timing(translateY, {
+          Animated.spring(translateY, {
             toValue: 0,
-            duration: 180,
-            easing: motionTokens.easing.standard,
+            friction: 7,
+            tension: 50,
             useNativeDriver: true,
           }),
           Animated.timing(opacity, {
@@ -142,13 +175,26 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }, duration);
       }
     },
-    [hideToast, reducedMotion, translateY, opacity]
+    [hideToast, reducedMotion, translateY, opacity, badgeScale, cardScale]
   );
 
   const success = useCallback((msg: string, d?: number) => showToast(msg, 'success', d), [showToast]);
   const error = useCallback((msg: string, d?: number) => showToast(msg, 'error', d), [showToast]);
   const warning = useCallback((msg: string, d?: number) => showToast(msg, 'warning', d), [showToast]);
   const info = useCallback((msg: string, d?: number) => showToast(msg, 'info', d), [showToast]);
+
+  const renderIcon = (type: ToastType) => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle2 size={18} color="#15803D" />;
+      case 'error':
+        return <AlertCircle size={18} color="#B91C1C" />;
+      case 'warning':
+        return <AlertTriangle size={18} color="#B45309" />;
+      default:
+        return <Info size={18} color="#4E342E" />;
+    }
+  };
 
   return (
     <ToastContext.Provider value={{ showToast, success, error, warning, info }}>
@@ -159,7 +205,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             styles.toastWrapper,
             {
               top: Math.max(insets.top + 8, Platform.OS === 'android' ? 36 : 16),
-              transform: [{ translateY }],
+              transform: [{ translateY }, { scale: cardScale }],
               opacity,
             },
           ]}
@@ -176,9 +222,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ]}
             >
               <View style={styles.contentRow}>
-                <Text style={styles.badgeIcon}>
-                  {currentToast.type === 'success' ? '✓' : currentToast.type === 'error' ? '✕' : currentToast.type === 'warning' ? '⚠' : 'ℹ'}
-                </Text>
+                <View style={styles.iconContainer}>{renderIcon(currentToast.type)}</View>
+
                 <Text
                   style={[
                     styles.messageText,
@@ -191,6 +236,30 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 >
                   {currentToast.message}
                 </Text>
+
+                {currentToast.count > 1 && (
+                  <Animated.View
+                    style={[
+                      styles.mergeBadge,
+                      currentToast.type === 'success' && styles.mergeBadgeSuccess,
+                      currentToast.type === 'error' && styles.mergeBadgeError,
+                      currentToast.type === 'warning' && styles.mergeBadgeWarning,
+                      { transform: [{ scale: badgeScale }] },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.mergeBadgeText,
+                        currentToast.type === 'success' && styles.mergeBadgeTextSuccess,
+                        currentToast.type === 'error' && styles.mergeBadgeTextError,
+                        currentToast.type === 'warning' && styles.mergeBadgeTextWarning,
+                      ]}
+                    >
+                      ×{currentToast.count}
+                    </Text>
+                  </Animated.View>
+                )}
+
                 <PressableScale
                   onPress={hideToast}
                   activeScale={0.88}
@@ -198,7 +267,18 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   accessibilityRole="button"
                   accessibilityLabel="Dismiss notification"
                 >
-                  <X size={16} color="#FFFFFF" />
+                  <X
+                    size={16}
+                    color={
+                      currentToast.type === 'success'
+                        ? '#15803D'
+                        : currentToast.type === 'error'
+                        ? '#B91C1C'
+                        : currentToast.type === 'warning'
+                        ? '#B45309'
+                        : '#5D4037'
+                    }
+                  />
                 </PressableScale>
               </View>
             </View>
@@ -227,7 +307,7 @@ const styles = StyleSheet.create({
   },
   toastCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 440,
     backgroundColor: '#FAF7F2',
     borderRadius: 14,
     paddingVertical: 12,
@@ -245,10 +325,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  badgeIcon: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4E342E',
+  iconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   messageText: {
     flex: 1,
@@ -257,14 +336,41 @@ const styles = StyleSheet.create({
     color: '#2D1E18',
     lineHeight: 18,
   },
+  mergeBadge: {
+    backgroundColor: '#4E342E',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mergeBadgeSuccess: {
+    backgroundColor: '#DCFCE7',
+  },
+  mergeBadgeError: {
+    backgroundColor: '#FEE2E2',
+  },
+  mergeBadgeWarning: {
+    backgroundColor: '#FEF3C7',
+  },
+  mergeBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  mergeBadgeTextSuccess: {
+    color: '#15803D',
+  },
+  mergeBadgeTextError: {
+    color: '#B91C1C',
+  },
+  mergeBadgeTextWarning: {
+    color: '#B45309',
+  },
   dismissBtnWrapper: {
     padding: 4,
-  },
-  dismissBtn: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#8D6E63',
-    paddingHorizontal: 4,
+    borderRadius: 8,
   },
   successCard: {
     backgroundColor: '#F0FDF4',

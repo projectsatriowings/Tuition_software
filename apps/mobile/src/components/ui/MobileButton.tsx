@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Text,
   StyleSheet,
@@ -9,7 +9,9 @@ import {
   TextStyle,
   StyleProp,
   GestureResponderEvent,
+  View,
 } from 'react-native';
+import { Check } from 'lucide-react-native';
 import { themeTokens } from '@tuition/shared';
 import { useReducedMotion, motionTokens } from '../../theme/motion';
 
@@ -20,6 +22,8 @@ export interface MobileButtonProps {
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
+  isSuccess?: boolean;
+  successTitle?: string;
   icon?: React.ReactNode;
   iconPosition?: 'left' | 'right';
   style?: StyleProp<ViewStyle>;
@@ -36,6 +40,8 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   size = 'md',
   loading = false,
   disabled = false,
+  isSuccess = false,
+  successTitle = 'Success',
   icon,
   iconPosition = 'left',
   style,
@@ -47,10 +53,27 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   const reducedMotion = useReducedMotion();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(1)).current;
+  const successScaleAnim = useRef(new Animated.Value(isSuccess ? 1 : 0.4)).current;
   const lastPressTime = useRef<number>(0);
 
+  useEffect(() => {
+    if (isSuccess) {
+      if (reducedMotion) {
+        successScaleAnim.setValue(1);
+      } else {
+        successScaleAnim.setValue(0.4);
+        Animated.spring(successScaleAnim, {
+          toValue: 1,
+          friction: 4,
+          tension: 70,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  }, [isSuccess, reducedMotion, successScaleAnim]);
+
   const handlePressIn = () => {
-    if (disabled || loading) return;
+    if (disabled || loading || isSuccess) return;
 
     if (!reducedMotion) {
       Animated.spring(scaleAnim, {
@@ -69,7 +92,7 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   };
 
   const handlePressOut = () => {
-    if (disabled || loading) return;
+    if (disabled || loading || isSuccess) return;
 
     if (!reducedMotion) {
       Animated.spring(scaleAnim, {
@@ -88,7 +111,7 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   };
 
   const handlePress = () => {
-    if (disabled || loading) return;
+    if (disabled || loading || isSuccess) return;
 
     // Prevent double submission while an existing action is processing
     const now = Date.now();
@@ -100,6 +123,19 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
   };
 
   const getVariantStyles = (): { btn: ViewStyle; text: TextStyle; spinnerColor: string } => {
+    if (isSuccess) {
+      return {
+        btn: {
+          backgroundColor: '#15803D',
+          borderColor: '#15803D',
+        },
+        text: {
+          color: '#FFFFFF',
+        },
+        spinnerColor: '#FFFFFF',
+      };
+    }
+
     switch (variant) {
       case 'primary':
         return {
@@ -229,20 +265,34 @@ export const MobileButton: React.FC<MobileButtonProps> = ({
         onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        disabled={disabled || loading}
+        disabled={disabled || loading || isSuccess}
         accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel || title}
+        accessibilityLabel={accessibilityLabel || (isSuccess ? successTitle : title)}
         testID={testID}
         style={[
           styles.baseButton,
           vStyles.btn,
           sStyles.btn,
-          (disabled || loading) && styles.disabledButton,
+          (disabled || loading) && !isSuccess && styles.disabledButton,
           style,
         ]}
       >
         {loading ? (
           <ActivityIndicator size="small" color={vStyles.spinnerColor} />
+        ) : isSuccess ? (
+          <Animated.View
+            style={[
+              styles.successRow,
+              {
+                transform: [{ scale: successScaleAnim }],
+              },
+            ]}
+          >
+            <Check size={18} color="#FFFFFF" strokeWidth={2.8} />
+            <Text style={[styles.baseText, vStyles.text, sStyles.text, { marginLeft: 6 }]}>
+              {successTitle}
+            </Text>
+          </Animated.View>
         ) : (
           <>
             {icon && iconPosition === 'left' && <>{icon}</>}
@@ -292,5 +342,10 @@ const styles = StyleSheet.create({
   },
   iconTextRight: {
     marginRight: 8,
+  },
+  successRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
