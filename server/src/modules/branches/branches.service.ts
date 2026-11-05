@@ -169,6 +169,10 @@ export class BranchesService {
    * Get single branch with comprehensive relationships
    */
   static async getBranchById(instituteId: string, branchId: string) {
+    if (!branchId || branchId === 'consolidated-summary' || branchId === 'summary') {
+      return null;
+    }
+
     const branch = await prisma.branch.findFirst({
       where: { id: branchId, instituteId },
       include: {
@@ -992,17 +996,29 @@ export class BranchesService {
       _sum: { amountPaid: true },
     });
 
+    const revenueVal = Number(totalRevenue._sum.amountPaid || 0);
+
+    const overview = {
+      totalBranches: branches.length,
+      activeBranches: branches.filter((b) => b.isActive).length,
+      totalStudentsCount: totalStudents,
+      totalStaffAssignments: totalStaff,
+      todayCheckIns: todayStaffCheckins,
+      totalCollections: revenueVal,
+    };
+
     return {
       instituteId,
       totalBranches: branches.length,
       activeBranches: branches.filter((b) => b.isActive).length,
       isMultiBranch: branches.length > 1,
+      overview,
       totals: {
         students: totalStudents,
         staff: totalStaff,
         batches: totalBatches,
         todayStaffCheckins,
-        totalRevenue: Number(totalRevenue._sum.amountPaid || 0),
+        totalRevenue: revenueVal,
       },
       branches: branches.map((b) => ({
         id: b.id,
