@@ -618,3 +618,4 @@ const styles = StyleSheet.create({
     color: '#6D4C41',
   },
 });
+

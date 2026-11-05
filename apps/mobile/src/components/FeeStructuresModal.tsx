@@ -376,3 +376,4 @@ const styles = StyleSheet.create({
     color: '#4E342E',
   },
 });
+
