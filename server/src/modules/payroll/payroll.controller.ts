@@ -528,7 +528,7 @@ export async function generateMonthlyPayroll(req: AuthenticatedRequest, res: Res
       where: { instituteId_year_month: { instituteId, year, month } },
     });
 
-    if (existingRun && [PayrollRunStatus.APPROVED, PayrollRunStatus.PAID].includes(existingRun.status)) {
+    if (existingRun && (existingRun.status === PayrollRunStatus.APPROVED || existingRun.status === PayrollRunStatus.PAID)) {
       return res.status(400).json({
         success: false,
         error: `Payroll for ${month}/${year} is already approved and locked against silent recalculations.`,
@@ -887,7 +887,7 @@ export async function addPayrollAdjustment(req: AuthenticatedRequest, res: Respo
       return res.status(404).json({ success: false, error: 'Payroll record not found' });
     }
 
-    if ([PayrollRunStatus.PAID].includes(record.payrollRun.status)) {
+    if (record.payrollRun.status === PayrollRunStatus.PAID) {
       return res.status(400).json({ success: false, error: 'Cannot modify a fully paid payroll run.' });
     }
 

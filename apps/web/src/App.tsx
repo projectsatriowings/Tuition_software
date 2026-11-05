@@ -57,6 +57,7 @@ const MessagingInbox = lazyWithRetry(() => import('./pages/MessagingInbox').then
 const FeesManagement = lazyWithRetry(() => import('./pages/FeesManagement').then((m) => ({ default: m.FeesManagement })));
 const PayrollManagement = lazyWithRetry(() => import('./pages/PayrollManagement').then((m) => ({ default: m.PayrollManagement })));
 const StaffMyPayslips = lazyWithRetry(() => import('./pages/StaffMyPayslips').then((m) => ({ default: m.StaffMyPayslips })));
+const BranchManagement = lazyWithRetry(() => import('./pages/BranchManagement').then((m) => ({ default: m.BranchManagement })));
 
 const getDefaultTabForRole = (role?: string): string => {
   switch (role) {
@@ -79,9 +80,9 @@ const isTabAllowedForRole = (tab: string, role?: string): boolean => {
   if (!role) return false;
   switch (role) {
     case 'SUPER_ADMIN':
-      return ['super_admin_dashboard', 'staff_attendance', 'staff', 'students', 'academics', 'exams', 'fees', 'payroll'].includes(tab);
+      return ['super_admin_dashboard', 'staff_attendance', 'staff', 'students', 'academics', 'exams', 'fees', 'payroll', 'branches'].includes(tab);
     case 'ACADEMIC_ADMIN':
-      return ['academic_dashboard', 'staff', 'staff_attendance', 'students', 'academics', 'exams', 'question_generator', 'progress_reviews', 'messaging', 'fees', 'payroll'].includes(tab);
+      return ['academic_dashboard', 'staff', 'staff_attendance', 'students', 'academics', 'exams', 'question_generator', 'progress_reviews', 'messaging', 'fees', 'payroll', 'branches'].includes(tab);
     case 'STAFF':
       return ['my_attendance', 'my_payslips', 'attendance', 'academic_dashboard', 'students', 'materials', 'homework', 'exams', 'progress_reviews', 'messaging'].includes(tab);
     case 'PARENT':
@@ -239,6 +240,7 @@ const AppContent: React.FC = () => {
                   {currentTab === 'messaging' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF') && <MessagingInbox />}
                   {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
                   {currentTab === 'payroll' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <PayrollManagement />}
+                  {currentTab === 'branches' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <BranchManagement />}
                   {currentTab === 'my_payslips' && user.role === 'STAFF' && <StaffMyPayslips />}
                 </motion.div>
               </AnimatePresence>

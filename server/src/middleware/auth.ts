@@ -5,6 +5,7 @@ import { prisma } from '../prisma.js';
 export interface AuthenticatedRequest extends Request {
   user?: TokenPayload;
   instituteId?: string;
+  branchId?: string;
 }
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -37,6 +38,10 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   const headerInst = req.headers['x-institute-id'] as string;
   const queryInst = (req.query.instituteId || req.query.inst) as string;
   req.instituteId = payload.instituteId || headerInst || queryInst || undefined;
+
+  const headerBranch = req.headers['x-branch-id'] as string;
+  const queryBranch = (req.query.branchId || req.query.branch) as string;
+  req.branchId = headerBranch || queryBranch || undefined;
   next();
 }
 
@@ -133,4 +138,46 @@ export async function requireInstituteContext(req: AuthenticatedRequest, res: Re
       timestamp: new Date().toISOString(),
     });
   }
+}
+
+export function requireBranchAccess(branchParamName: string = 'branchId') {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    // Platform and Central Institute Admins have access across all branches
+    if (['SUPER_ADMIN', 'ACADEMIC_ADMIN'].includes(req.user.role)) {
+      return next();
+    }
+
+    const targetBranchId = (req.params && req.params[branchParamName]) ||
+      (req.body && req.body[branchParamName]) ||
+      (req.query && (req.query[branchParamName] as string)) ||
+      req.branchId;
+
+    if (!targetBranchId) {
+      return next();
+    }
+
+    // Check staff branch assignment
+    const staffProfile = await prisma.staffProfile.findFirst({
+      where: { userId: req.user.userId, instituteId: req.instituteId },
+      include: {
+        branchAssignments: {
+          where: { branchId: targetBranchId, isActive: true },
+        },
+      },
+    });
+
+    if (!staffProfile || staffProfile.branchAssignments.length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not assigned to this branch',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    next();
+  };
 }

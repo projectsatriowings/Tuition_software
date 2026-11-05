@@ -14,7 +14,7 @@ export interface CalculationInput {
     joiningDate: Date | null;
     user: {
       fullName: string;
-      email: string;
+      email: string | null;
       phone: string | null;
     };
   };
