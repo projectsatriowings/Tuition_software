@@ -58,9 +58,9 @@ export async function createBranch(req: AuthenticatedRequest, res: Response) {
       return res.status(400).json({ success: false, error: 'Institute context required' });
     }
 
-    const { name, code } = req.body;
-    if (!name || !code) {
-      return res.status(400).json({ success: false, error: 'Branch name and code are required' });
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Branch name is required' });
     }
 
     const branch = await BranchesService.createBranch(instituteId, req.body, req.user?.userId || 'system');

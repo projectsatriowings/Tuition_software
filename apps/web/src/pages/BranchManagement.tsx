@@ -26,6 +26,7 @@ import {
   Sliders,
   DollarSign,
   Info,
+  Sparkles,
 } from 'lucide-react';
 
 export interface BranchData {
@@ -67,6 +68,59 @@ export interface BranchData {
   };
 }
 
+/**
+ * Automatically generates a clean, unique, uppercase branch code from the branch name
+ */
+export function generateBranchCode(name: string, existingCodes: string[] = []): string {
+  if (!name || !name.trim()) return '';
+
+  let cleaned = name
+    .replace(/([a-z])([A-Z])/g, (_m, p1, p2) => `${p1} ${p2}`)
+    .replace(/[_\-]+/g, ' ')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .trim();
+
+  const commonSplits = ['guru', 'nagar', 'puram', 'campus', 'academy', 'institute', 'centre', 'center', 'branch', 'road', 'cross', 'layout', 'park'];
+  for (const sub of commonSplits) {
+    const regex = new RegExp(`([a-zA-Z]{3,})(${sub})\\b`, 'gi');
+    cleaned = cleaned.replace(regex, (_m, p1, p2) => `${p1} ${p2}`);
+  }
+
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  let rawCode = '';
+
+  if (words.length >= 3) {
+    rawCode = words.map((w) => w[0]).join('').slice(0, 4).toUpperCase();
+  } else if (words.length === 2) {
+    const w1 = words[0];
+    const w2 = words[1];
+    if (w1.length >= 3 && ['branch', 'campus', 'center', 'centre', 'classes'].includes(w2.toLowerCase())) {
+      rawCode = w1.slice(0, 3).toUpperCase();
+    } else {
+      rawCode = (w1.slice(0, 2) + w2.slice(0, 2)).toUpperCase();
+    }
+  } else if (words.length === 1) {
+    const w = words[0];
+    rawCode = (w.length <= 4 ? w : w.slice(0, 3)).toUpperCase();
+  }
+
+  if (!rawCode) {
+    rawCode = 'BRN';
+  }
+
+  const normalizedExisting = existingCodes.map((c) => (c || '').toUpperCase());
+  let candidate = rawCode.toUpperCase();
+  if (!normalizedExisting.includes(candidate)) {
+    return candidate;
+  }
+
+  let suffix = 1;
+  while (normalizedExisting.includes(`${candidate}${suffix < 10 ? '0' : ''}${suffix}`)) {
+    suffix++;
+  }
+  return `${candidate}${suffix < 10 ? '0' : ''}${suffix}`;
+}
+
 export const BranchManagement: React.FC = () => {
   const { activeInstitute, user } = useAuth();
   const [branches, setBranches] = useState<BranchData[]>([]);
@@ -79,6 +133,7 @@ export const BranchManagement: React.FC = () => {
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingBranch, setEditingBranch] = useState<BranchData | null>(null);
+  const [isCodeManual, setIsCodeManual] = useState(false);
   const [showAssignStaffModal, setShowAssignStaffModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [deactivationTarget, setDeactivationTarget] = useState<BranchData | null>(null);
@@ -175,6 +230,7 @@ export const BranchManagement: React.FC = () => {
 
   const handleOpenCreateModal = () => {
     setEditingBranch(null);
+    setIsCodeManual(false);
     setBranchForm({
       name: '',
       code: '',
@@ -199,6 +255,7 @@ export const BranchManagement: React.FC = () => {
 
   const handleOpenEditModal = (branch: BranchData) => {
     setEditingBranch(branch);
+    setIsCodeManual(true);
     setBranchForm({
       name: branch.name,
       code: branch.code,
@@ -245,9 +302,14 @@ export const BranchManagement: React.FC = () => {
     e.preventDefault();
     setActionLoading(true);
     try {
+      const existingCodes = branches
+        .filter((b) => !editingBranch || b.id !== editingBranch.id)
+        .map((b) => b.code);
+      const finalCode = (branchForm.code.trim() || generateBranchCode(branchForm.name, existingCodes)).toUpperCase();
+
       const payload: any = {
         name: branchForm.name.trim(),
-        code: branchForm.code.trim().toUpperCase(),
+        code: finalCode,
         address: branchForm.address.trim() || undefined,
         city: branchForm.city.trim() || undefined,
         state: branchForm.state.trim() || undefined,
@@ -1099,20 +1161,63 @@ export const BranchManagement: React.FC = () => {
                     required
                     placeholder="e.g. South Campus or Anna Nagar Branch"
                     value={branchForm.name}
-                    onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })}
+                    onChange={(e) => {
+                      const newName = e.target.value;
+                      const existingCodes = branches
+                        .filter((b) => !editingBranch || b.id !== editingBranch.id)
+                        .map((b) => b.code);
+                      if (!isCodeManual) {
+                        const generated = generateBranchCode(newName, existingCodes);
+                        setBranchForm((prev) => ({ ...prev, name: newName, code: generated }));
+                      } else {
+                        setBranchForm((prev) => ({ ...prev, name: newName }));
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-[#2D1E18] block mb-1">Branch Code (Unique) *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. SOU, ANN01, BLR2"
-                    value={branchForm.code}
-                    onChange={(e) => setBranchForm({ ...branchForm, code: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6D4C41] uppercase"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-[#2D1E18]">Branch Code (Unique) *</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existingCodes = branches
+                          .filter((b) => !editingBranch || b.id !== editingBranch.id)
+                          .map((b) => b.code);
+                        const generated = generateBranchCode(branchForm.name, existingCodes);
+                        setIsCodeManual(false);
+                        setBranchForm((prev) => ({ ...prev, code: generated }));
+                      }}
+                      className="text-[11px] text-[#6D4C41] hover:text-[#3E2723] hover:underline flex items-center gap-1 font-semibold transition"
+                      title="Auto-generate code from branch name"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-600" />
+                      Auto-generate
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. SOU, ANN01, DGA"
+                      value={branchForm.code}
+                      onChange={(e) => {
+                        setIsCodeManual(true);
+                        setBranchForm({ ...branchForm, code: e.target.value.toUpperCase() });
+                      }}
+                      className="w-full px-3 py-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6D4C41] uppercase tracking-wider font-mono font-semibold text-[#3E2723]"
+                    />
+                    {!isCodeManual && branchForm.code && (
+                      <span className="absolute right-2.5 top-2.5 px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-amber-100 text-amber-800 border border-amber-300">
+                        Auto
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-[#8D6E63] mt-1 flex items-center gap-1">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                    <span>Automatically generated from branch name. You can customize it if needed.</span>
+                  </p>
                 </div>
               </div>
 

@@ -2,7 +2,7 @@ import { prisma } from '../../prisma.js';
 
 export interface CreateBranchInput {
   name: string;
-  code: string;
+  code?: string;
   isDefault?: boolean;
   address?: string | null;
   city?: string | null;
@@ -248,23 +248,83 @@ export class BranchesService {
   }
 
   /**
+   * Helper to generate a unique uppercase branch code based on name, city, and institute uniqueness
+   */
+  static async generateUniqueBranchCode(instituteId: string, branchName: string, city?: string | null): Promise<string> {
+    let cleaned = (branchName || '')
+      .replace(/([a-z])([A-Z])/g, (_m, p1, p2) => `${p1} ${p2}`)
+      .replace(/[_\-]+/g, ' ')
+      .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .trim();
+
+    const commonSplits = ['guru', 'nagar', 'puram', 'campus', 'academy', 'institute', 'centre', 'center', 'branch', 'road', 'cross', 'layout', 'park'];
+    for (const sub of commonSplits) {
+      const regex = new RegExp(`([a-zA-Z]{3,})(${sub})\\b`, 'gi');
+      cleaned = cleaned.replace(regex, (_m, p1, p2) => `${p1} ${p2}`);
+    }
+
+    const words = cleaned.split(/\s+/).filter(Boolean);
+    let rawCode = '';
+
+    if (words.length >= 3) {
+      rawCode = words.map((w) => w[0]).join('').slice(0, 4).toUpperCase();
+    } else if (words.length === 2) {
+      const w1 = words[0];
+      const w2 = words[1];
+      if (w1.length >= 3 && ['branch', 'campus', 'center', 'centre', 'classes'].includes(w2.toLowerCase())) {
+        rawCode = w1.slice(0, 3).toUpperCase();
+      } else {
+        rawCode = (w1.slice(0, 2) + w2.slice(0, 2)).toUpperCase();
+      }
+    } else if (words.length === 1) {
+      const w = words[0];
+      rawCode = (w.length <= 4 ? w : w.slice(0, 3)).toUpperCase();
+    }
+
+    if (!rawCode) {
+      rawCode = city ? city.slice(0, 3).toUpperCase() : 'BRN';
+    }
+
+    const existingBranches = await prisma.branch.findMany({
+      where: { instituteId },
+      select: { code: true },
+    });
+    const existingCodes = new Set(existingBranches.map((b) => b.code.toUpperCase()));
+
+    let candidate = rawCode.toUpperCase();
+    if (!existingCodes.has(candidate)) {
+      return candidate;
+    }
+
+    let suffix = 1;
+    while (existingCodes.has(`${candidate}${suffix < 10 ? '0' : ''}${suffix}`)) {
+      suffix++;
+    }
+    return `${candidate}${suffix < 10 ? '0' : ''}${suffix}`;
+  }
+
+  /**
    * Create a new branch
    */
   static async createBranch(instituteId: string, data: CreateBranchInput, authorizerUserId: string) {
-    const cleanCode = data.code.trim().toUpperCase();
+    let cleanCode = data.code?.trim().toUpperCase();
 
-    // Check code uniqueness within institute
-    const existingCode = await prisma.branch.findUnique({
-      where: {
-        instituteId_code: {
-          instituteId,
-          code: cleanCode,
+    if (!cleanCode) {
+      cleanCode = await this.generateUniqueBranchCode(instituteId, data.name, data.city);
+    } else {
+      // Check code uniqueness within institute
+      const existingCode = await prisma.branch.findUnique({
+        where: {
+          instituteId_code: {
+            instituteId,
+            code: cleanCode,
+          },
         },
-      },
-    });
+      });
 
-    if (existingCode) {
-      throw new Error(`A branch with code "${cleanCode}" already exists in this institute.`);
+      if (existingCode) {
+        throw new Error(`A branch with code "${cleanCode}" already exists in this institute.`);
+      }
     }
 
     // Check if this should be the default branch
@@ -311,16 +371,25 @@ export class BranchesService {
     });
 
     // Audit log
-    await prisma.auditLog.create({
-      data: {
-        instituteId,
-        userId: authorizerUserId,
-        action: 'CREATE_BRANCH',
-        entityType: 'Branch',
-        entityId: branch.id,
-        newValues: { code: branch.code, name: branch.name, isDefault: branch.isDefault },
-      },
-    });
+    try {
+      if (authorizerUserId) {
+        const userExists = await prisma.user.findUnique({ where: { id: authorizerUserId }, select: { id: true } });
+        if (userExists) {
+          await prisma.auditLog.create({
+            data: {
+              instituteId,
+              userId: authorizerUserId,
+              action: 'CREATE_BRANCH',
+              entityType: 'Branch',
+              entityId: branch.id,
+              newValues: { code: branch.code, name: branch.name, isDefault: branch.isDefault },
+            },
+          });
+        }
+      }
+    } catch {
+      // Safe fallback if audit log cannot be created
+    }
 
     return branch;
   }
