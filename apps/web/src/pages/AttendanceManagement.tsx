@@ -536,7 +536,7 @@ export const AttendanceManagement: React.FC = () => {
         </div>
 
         {/* View Tabs */}
-        <div className="flex items-center gap-1.5 p-1 bg-white border border-[#D7CCC8] rounded-xl shadow-sm">
+        <div className="flex items-center gap-1.5 p-1 bg-white border border-[#D7CCC8] rounded-xl shadow-sm overflow-x-auto max-w-full pb-1">
           <button
             onClick={() => setViewTab('voice')}
             className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
@@ -675,7 +675,7 @@ export const AttendanceManagement: React.FC = () => {
         </div>
 
         {/* Live Attendance KPIs Pill — Guaranteed single line */}
-        <div className="flex items-center gap-2 text-xs font-semibold shrink-0 whitespace-nowrap overflow-x-auto py-0.5">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 text-xs font-semibold shrink-0 whitespace-nowrap overflow-x-auto max-w-full py-0.5">
           <span className="shrink-0 whitespace-nowrap text-[#4E342E] bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1">
             <Users className="w-3.5 h-3.5 text-[#8D6E63]" />
             <span>Total: <strong>{counts.totalStudents}</strong></span>

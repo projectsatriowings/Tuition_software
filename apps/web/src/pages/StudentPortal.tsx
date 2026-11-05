@@ -128,10 +128,10 @@ export const StudentPortal: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Student Banner */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-[#3E2723] via-[#4E342E] to-[#6D4C41] border border-[#6D4C41] shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 text-white">
+      <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-[#3E2723] via-[#4E342E] to-[#6D4C41] border border-[#6D4C41] shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 text-white">
         <div>
-          <div className="flex items-center gap-3">
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <span className="px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 flex items-center gap-1.5">
               <CheckCircle className="w-3.5 h-3.5" /> Enrolled Student
             </span>
             <span className="text-xs font-mono text-[#D7CCC8]">

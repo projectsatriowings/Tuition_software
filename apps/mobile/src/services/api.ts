@@ -113,7 +113,7 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
 
   const startTime = Date.now();
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 7000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const res = await fetch(healthUrl, {
@@ -153,7 +153,7 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
 
     let diagnosticMsg = '';
     if (err.name === 'AbortError') {
-      diagnosticMsg = `Connection timed out after 7s. Server at ${targetBase} did not reply.`;
+      diagnosticMsg = `Connection timed out after 30s. Server at ${targetBase} did not reply. If using Render free tier, verify service is active or wake it up via browser.`;
     } else if (err.message && (err.message.includes('Cleartext') || err.message.includes('CLEARTEXT'))) {
       diagnosticMsg = `Cleartext HTTP blocked by Android. Ensure usesCleartextTraffic is enabled.`;
     } else {
@@ -253,7 +253,7 @@ export async function mobileApiFetch<T = any>(
 
   // 12-second timeout controller
   const controller = new AbortController();
-  const timeoutMs = options.timeoutMs || 12000;
+  const timeoutMs = options.timeoutMs || 25000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {

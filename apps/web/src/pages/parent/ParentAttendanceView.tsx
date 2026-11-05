@@ -184,7 +184,7 @@ export const ParentAttendanceView: React.FC<ParentAttendanceViewProps> = ({ stud
       </div>
 
       {/* Calendar Grid Container */}
-      <div className="p-6 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
+      <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-4 overflow-x-auto min-w-0">
         {/* Day of Week Headers */}
         <div className="grid grid-cols-7 gap-1 text-center font-bold text-xs text-[#8D6E63] uppercase tracking-wider pb-2 border-b border-[#EFEBE9]">
           <span className="text-rose-600">Sun</span>

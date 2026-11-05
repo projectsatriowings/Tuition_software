@@ -29,6 +29,7 @@ import {
   XCircle,
 } from 'lucide-react-native';
 import { FadeInView, SlideInView, PressableScale } from '../../theme/motion';
+import { MobileInput, MobileButton } from '../../components/ui';
 
 interface LoginScreenProps {
   onSuccess?: () => void;
@@ -50,6 +51,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoginSuccess, setIsLoginSuccess] = useState(false);
 
   // Advanced server connectivity configuration
   const [showHostConfig, setShowHostConfig] = useState(false);
@@ -94,9 +96,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
     // Standard login does not require institute code; backend resolves active institute automatically
     const res = await login(username.trim(), password);
 
-    setLoading(false);
-
-    if (!res.success) {
+    if (res.success) {
+      setIsLoginSuccess(true);
+      setTimeout(() => {
+        setLoading(false);
+      }, 450);
+    } else {
+      setLoading(false);
       setErrorMsg(res.error || 'Invalid credentials or inactive account.');
     }
   };
@@ -178,67 +184,47 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
           ) : null}
 
           {/* Email / Phone / Identifier Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Login ID (Admission No, Phone, or Email)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Admission No, Email, or Phone"
-              placeholderTextColor={themeTokens.colors.textSubtle}
-              value={username}
-              onChangeText={(text) => {
-                setUsername(text);
-                if (errorMsg) setErrorMsg(null);
-              }}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              editable={!loading}
-            />
-          </View>
+          <MobileInput
+            label="Login ID (Admission No, Phone, or Email)"
+            placeholder="e.g. Admission No, Email, or Phone"
+            value={username}
+            onChangeText={(text) => {
+              setUsername(text);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            editable={!loading && !isLoginSuccess}
+            isValid={username.trim().length >= 3}
+          />
 
-          {/* Password Input with Visibility Toggle */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="Enter your account password"
-                placeholderTextColor={themeTokens.colors.textSubtle}
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  if (errorMsg) setErrorMsg(null);
-                }}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                editable={!loading}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.toggleBtn}
-                accessibilityLabel="Toggle password visibility"
-              >
-                {showPassword ? <EyeOff size={18} color={themeTokens.colors.taupe} /> : <Eye size={18} color={themeTokens.colors.taupe} />}
-              </TouchableOpacity>
-            </View>
-          </View>
+          {/* Password Input with Animated Visibility Toggle & Focus Glow */}
+          <MobileInput
+            label="Password"
+            placeholder="Enter your account password"
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            secureTextEntry
+            autoCapitalize="none"
+            editable={!loading && !isLoginSuccess}
+          />
 
-          {/* Sign In Action Button */}
-          <TouchableOpacity
-            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+          {/* Sign In Action Button with Load-to-Success Animation */}
+          <MobileButton
+            title="Sign In"
+            icon={<LogIn size={16} color={themeTokens.colors.textLight} />}
             onPress={handleLogin}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color={themeTokens.colors.textLight} size="small" />
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <LogIn size={16} color={themeTokens.colors.textLight} />
-                <Text style={styles.primaryButtonText}>Sign In</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+            loading={loading && !isLoginSuccess}
+            isSuccess={isLoginSuccess}
+            successTitle="Signed In Successfully"
+            fullWidth
+            size="lg"
+            style={{ marginTop: 6 }}
+          />
 
           {/* Security & Access Notice */}
           <View style={styles.securityNotice}>

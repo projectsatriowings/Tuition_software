@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PressableScale } from '../../../theme/motion';
 import { Home, CalendarCheck, BookOpen, MessageSquare, MoreHorizontal } from 'lucide-react-native';
+import { AnimatedBottomNavItem } from '../../../components/navigation/AnimatedBottomNavItem';
 
 export type ParentPrimaryTab = 'home' | 'attendance' | 'learning' | 'messages' | 'more';
 export type ParentActiveTab =
@@ -60,6 +60,12 @@ export const ParentBottomNav: React.FC<ParentBottomNavProps> = ({
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, Platform.OS === 'android' ? 6 : 8);
 
+  const getBadgeCount = (id: ParentPrimaryTab) => {
+    if (id === 'more') return unreadCount;
+    if (id === 'messages') return unreadMessagesCount;
+    return 0;
+  };
+
   return (
     <View style={[styles.container, { paddingBottom: bottomPadding }]}>
       <View style={styles.navRow}>
@@ -67,41 +73,15 @@ export const ParentBottomNav: React.FC<ParentBottomNavProps> = ({
           const isActive = (item.matchTabs || [item.id]).includes(activeTab);
 
           return (
-            <PressableScale
+            <AnimatedBottomNavItem
               key={item.id}
+              id={item.id}
+              label={item.label}
+              isActive={isActive}
+              icon={item.icon}
+              badgeCount={getBadgeCount(item.id)}
               onPress={() => onSelectTab(item.id)}
-              activeScale={0.93}
-              activeOpacity={0.88}
-              style={styles.navItem}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.label} tab`}
-            >
-              <View style={[styles.pill, isActive && styles.activePill]}>
-                <View style={styles.iconWrapper}>
-                  item.icon(isActive ? '#4E342E' : '#8D6E63')
-                  {item.id === 'messages' && unreadMessagesCount > 0 && (
-                    <View style={styles.badgeDot}>
-                      <Text style={styles.badgeDotText}>
-                        {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
-                      </Text>
-                    </View>
-                  )}
-                  {item.id === 'more' && unreadCount > 0 && (
-                    <View style={styles.badgeDot}>
-                      <Text style={styles.badgeDotText}>
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text
-                  style={[styles.navLabel, isActive && styles.activeNavLabel]}
-                  numberOfLines={1}
-                >
-                  {item.label}
-                </Text>
-              </View>
-            </PressableScale>
+            />
           );
         })}
       </View>
@@ -131,65 +111,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingHorizontal: 8,
     paddingTop: 6,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-  },
-  pill: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    minWidth: 54,
-  },
-  activePill: {
-    backgroundColor: '#F5ECE8',
-  },
-  iconWrapper: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconText: {
-    fontSize: 19,
-    marginBottom: 2,
-    color: '#8D6E63',
-  },
-  activeIconText: {
-    color: '#4E342E',
-  },
-  navLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#8D6E63',
-    letterSpacing: 0.2,
-  },
-  activeNavLabel: {
-    color: '#4E342E',
-    fontWeight: '800',
-  },
-  badgeDot: {
-    position: 'absolute',
-    top: -4,
-    right: -10,
-    backgroundColor: '#DC2626',
-    borderRadius: 9,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-  },
-  badgeDotText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-    lineHeight: 11,
   },
 });

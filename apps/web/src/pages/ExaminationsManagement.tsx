@@ -928,7 +928,7 @@ export const ExaminationsManagement: React.FC = () => {
             </div>
 
             {/* Student Marks Table */}
-            <div className="flex-1 overflow-y-auto border border-[#D7CCC8] rounded-2xl">
+            <div className="flex-1 overflow-y-auto overflow-x-auto border border-[#D7CCC8] rounded-2xl">
               {loadingMarksRoster ? (
                 <div className="p-12 text-center text-[#8D6E63] text-xs">Loading roster...</div>
               ) : (

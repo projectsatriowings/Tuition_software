@@ -1041,8 +1041,8 @@ export const MaterialsManagement: React.FC = () => {
                       No student views or interactions recorded for this material yet.
                     </div>
                   ) : (
-                    <div className="border border-[#D7CCC8] rounded-2xl overflow-hidden">
-                      <table className="w-full text-left text-xs">
+                    <div className="border border-[#D7CCC8] rounded-2xl overflow-x-auto">
+                      <table className="w-full text-left text-xs min-w-[500px] sm:min-w-full">
                         <thead className="bg-[#F7F2EF] border-b border-[#D7CCC8] text-[#4E342E] font-semibold">
                           <tr>
                             <th className="p-3">Student Name</th>

@@ -165,11 +165,16 @@ export const StaffMyAttendance: React.FC = () => {
       setClassesLoading(true);
       const res = await apiFetch('/staff-attendance/wfh/online-classes');
       if (res.success && res.data) {
-        const classList = Array.isArray(res.data)
+        const rawList = Array.isArray(res.data)
           ? res.data
           : Array.isArray(res.data.classes)
           ? res.data.classes
           : [];
+        const classList = rawList.map((c: any, idx: number) => ({
+          ...c,
+          id: c.id || c.batchSubjectId || `online-class-${idx}`,
+          batchSubjectId: c.batchSubjectId || c.id,
+        }));
         setOnlineClasses(classList);
       } else {
         setOnlineClasses([]);
@@ -468,7 +473,8 @@ export const StaffMyAttendance: React.FC = () => {
 
     try {
       setClassActionSubmitting(true);
-      const res = await apiFetch(`/staff-attendance/wfh/online-classes/${classActionTarget.id}/status`, {
+      const targetId = classActionTarget.batchSubjectId || classActionTarget.id;
+      const res = await apiFetch(`/staff-attendance/wfh/online-classes/${targetId}/status`, {
         method: 'POST',
         body: JSON.stringify({
           status: classActionStatus,
@@ -504,9 +510,9 @@ export const StaffMyAttendance: React.FC = () => {
   const activeAuth = wfhEligibility?.authorization;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 pb-12 w-full min-w-0">
       {/* Top Header Card */}
-      <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-[#D7CCC8] shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-[#4E342E] text-white flex items-center justify-center font-bold text-lg shadow-sm">
@@ -559,7 +565,7 @@ export const StaffMyAttendance: React.FC = () => {
       )}
 
       {/* Main Attendance Card */}
-      <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm space-y-6">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-[#D7CCC8] shadow-sm space-y-4 sm:space-y-6">
         {/* Work Mode Toggle Selector (On-Site vs WFH) */}
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -782,7 +788,7 @@ export const StaffMyAttendance: React.FC = () => {
                 </div>
 
                 {/* Detected Coordinates readout */}
-                <div className="flex items-center justify-between text-xs pt-1.5 border-t border-[#D7CCC8]/40">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs pt-1.5 border-t border-[#D7CCC8]/40">
                   <span className="text-[#8D6E63]">Detected Device Location:</span>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[11px] font-semibold text-[#4E342E]">
@@ -928,7 +934,7 @@ export const StaffMyAttendance: React.FC = () => {
       {/* ========================================================= */}
       {/* SECTION: TODAY'S ONLINE CLASSES & TEACHING SCHEDULE       */}
       {/* ========================================================= */}
-      <div className="bg-white rounded-2xl p-6 border border-[#D7CCC8] shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-[#D7CCC8] shadow-sm space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-[#D7CCC8]">
           <div className="flex items-center gap-2">
             <Video className="w-4 h-4 text-[#8D6E63]" />
@@ -954,12 +960,12 @@ export const StaffMyAttendance: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {(Array.isArray(onlineClasses) ? onlineClasses : []).map((c) => {
+            {(Array.isArray(onlineClasses) ? onlineClasses : []).map((c, idx) => {
               const log = c.todayLog;
               const deliveryStatus = log?.status || 'SCHEDULED';
               return (
                 <div
-                  key={c.id}
+                  key={c.batchSubjectId || c.id || `online-class-${idx}`}
                   className="p-4 rounded-xl border border-[#D7CCC8] bg-[#FAF8F5] flex flex-col md:flex-row md:items-center justify-between gap-3"
                 >
                   <div className="space-y-1">
@@ -1119,7 +1125,7 @@ export const StaffMyAttendance: React.FC = () => {
       {/* ========================================================= */}
       {requestModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D7CCC8] shadow-2xl space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 border border-[#D7CCC8] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#D7CCC8]">
               <div>
                 <h3 className="text-base font-bold text-[#2D1E18] flex items-center gap-2">
@@ -1281,7 +1287,7 @@ export const StaffMyAttendance: React.FC = () => {
       {/* ========================================================= */}
       {classActionTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D7CCC8] shadow-2xl space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-6 border border-[#D7CCC8] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#D7CCC8]">
               <div>
                 <h3 className="text-base font-bold text-[#2D1E18] flex items-center gap-2">

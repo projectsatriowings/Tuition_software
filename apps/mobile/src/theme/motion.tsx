@@ -9,6 +9,7 @@ import {
   ViewStyle,
   StyleProp,
   GestureResponderEvent,
+  AccessibilityState,
 } from 'react-native';
 
 /**
@@ -436,6 +437,7 @@ export interface PressableScaleProps {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   testID?: string;
+  accessibilityState?: AccessibilityState;
 }
 
 /**
@@ -443,6 +445,8 @@ export interface PressableScaleProps {
  * Reverts to simple opacity feedback when Reduced Motion is enabled.
  * Does not block taps or interfere with parent ScrollView gesture responder.
  */
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 export const PressableScale: React.FC<PressableScaleProps> = ({
   children,
   onPress,
@@ -455,6 +459,7 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
   accessibilityLabel,
   accessibilityHint,
   testID,
+  accessibilityState,
 }) => {
   const reducedMotion = useReducedMotion();
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -499,7 +504,7 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
   };
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       onLongPress={onLongPress}
       onPressIn={handlePressIn}
@@ -509,23 +514,18 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       testID={testID}
-      style={({ pressed }) => [
-        // Ensure child layout is preserved
-        { opacity: disabled ? 0.6 : 1 },
+      accessibilityState={accessibilityState}
+      style={[
+        style,
+        {
+          opacity: opacityAnim,
+          transform: [{ scale: scaleAnim }],
+        },
+        disabled && { opacity: 0.6 },
       ]}
     >
-      <Animated.View
-        style={[
-          style,
-          {
-            opacity: opacityAnim,
-            transform: [{ scale: scaleAnim }],
-          },
-        ]}
-      >
-        {children}
-      </Animated.View>
-    </Pressable>
+      {children}
+    </AnimatedPressable>
   );
 };
 
