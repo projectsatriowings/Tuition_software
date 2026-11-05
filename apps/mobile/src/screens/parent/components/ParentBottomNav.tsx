@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableScale } from '../../../theme/motion';
+import { Home, CalendarCheck, BookOpen, MessageSquare, MoreHorizontal } from 'lucide-react-native';
 
 export type ParentPrimaryTab = 'home' | 'attendance' | 'learning' | 'messages' | 'more';
 export type ParentActiveTab =
@@ -24,19 +25,19 @@ interface ParentBottomNavProps {
 interface NavItem {
   id: ParentPrimaryTab;
   label: string;
-  icon: string;
+  icon: (color: string) => React.ReactNode;
   matchTabs?: ParentActiveTab[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: '🏠', matchTabs: ['home'] },
-  { id: 'attendance', label: 'Attendance', icon: '🛡️', matchTabs: ['attendance'] },
-  { id: 'learning', label: 'Learning', icon: '📚', matchTabs: ['learning'] },
-  { id: 'messages', label: 'Messages', icon: '💬', matchTabs: ['messages'] },
+  { id: 'home', label: 'Home', icon: (color) => <Home size={20} color={color} strokeWidth={2.2} />, matchTabs: ['home'] },
+  { id: 'attendance', label: 'Attendance', icon: (color) => <CalendarCheck size={20} color={color} strokeWidth={2.2} />, matchTabs: ['attendance'] },
+  { id: 'learning', label: 'Learning', icon: (color) => <BookOpen size={20} color={color} strokeWidth={2.2} />, matchTabs: ['learning'] },
+  { id: 'messages', label: 'Messages', icon: (color) => <MessageSquare size={20} color={color} strokeWidth={2.2} />, matchTabs: ['messages'] },
   {
     id: 'more',
     label: 'More',
-    icon: '•••',
+    icon: (color) => <MoreHorizontal size={20} color={color} strokeWidth={2.2} />,
     matchTabs: [
       'more',
       'progress',
@@ -77,9 +78,7 @@ export const ParentBottomNav: React.FC<ParentBottomNavProps> = ({
             >
               <View style={[styles.pill, isActive && styles.activePill]}>
                 <View style={styles.iconWrapper}>
-                  <Text style={[styles.iconText, isActive && styles.activeIconText]}>
-                    {item.icon}
-                  </Text>
+                  item.icon(isActive ? '#4E342E' : '#8D6E63')
                   {item.id === 'messages' && unreadMessagesCount > 0 && (
                     <View style={styles.badgeDot}>
                       <Text style={styles.badgeDotText}>

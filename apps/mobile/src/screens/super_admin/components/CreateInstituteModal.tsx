@@ -1,3 +1,5 @@
+import { X } from 'lucide-react-native';
+import { themeTokens } from '@tuition/shared';
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -161,7 +163,7 @@ export const CreateInstituteModal: React.FC<CreateInstituteModalProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Close"
             >
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={18} color={themeTokens.colors.textLight} />
             </PressableScale>
           </View>
 

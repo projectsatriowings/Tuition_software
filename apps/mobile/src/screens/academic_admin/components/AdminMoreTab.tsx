@@ -8,6 +8,18 @@ import {
   Alert,
 } from 'react-native';
 import { AdminActiveTab } from './AdminBottomNav';
+import {
+  CreditCard,
+  Radio,
+  FileText,
+  Trophy,
+  Calendar,
+  Star,
+  Bell,
+  Settings,
+  LogOut,
+  ChevronRight,
+} from 'lucide-react-native';
 
 interface AdminMoreTabProps {
   user: any;
@@ -77,7 +89,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               </View>
             </View>
             <Text style={styles.profileContact}>
-              📞 {adminPhone} {adminEmail !== '—' ? `• ${adminEmail}` : ''}
+              {adminPhone} {adminEmail !== '—' ? `• ${adminEmail}` : ''}
             </Text>
           </View>
         </View>
@@ -85,7 +97,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
         {/* Institute Context Footer */}
         <View style={styles.instituteFooter}>
           <Text style={styles.instituteLabel}>
-            🏛️ {institute?.name || 'TuitionOS Academy'}
+            {institute?.name || 'TuitionOS Academy'}
           </Text>
           <View style={styles.codeBadge}>
             <Text style={styles.codeBadgeText}>
@@ -105,7 +117,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FEF2F2' }]}>
-            <Text style={styles.menuIcon}>💳</Text>
+            <CreditCard size={20} color="#DC2626" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Fee Collections & Treasury</Text>
@@ -123,7 +135,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
                 <Text style={styles.feeClearText}>Clear ✓</Text>
               </View>
             )}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
       </View>
@@ -138,7 +150,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FFF7ED' }]}>
-            <Text style={styles.menuIcon}>📡</Text>
+            <Radio size={20} color="#EA580C" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Campus Attendance & Safety</Text>
@@ -146,7 +158,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               Voice roll calls, gate entry scans & daily logs
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -155,7 +167,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F0FDF4' }]}>
-            <Text style={styles.menuIcon}>📝</Text>
+            <FileText size={20} color="#16A34A" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Homework & Study Files</Text>
@@ -163,7 +175,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               Batch curriculum materials, homework & reviews
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -172,7 +184,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#EFF6FF' }]}>
-            <Text style={styles.menuIcon}>🏆</Text>
+            <Trophy size={20} color="#2563EB" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Exams & Result Publishing</Text>
@@ -180,7 +192,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               Test schedules, score verification & report cards
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -189,7 +201,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F5ECE8' }]}>
-            <Text style={styles.menuIcon}>📅</Text>
+            <Calendar size={20} color="#4E342E" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Class Timetables & Schedules</Text>
@@ -197,7 +209,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               Weekly subject sessions, timings & faculty assignments
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
       </View>
 
@@ -211,7 +223,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FEF3C7' }]}>
-            <Text style={styles.menuIcon}>⭐</Text>
+            <Star size={20} color="#D97706" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Reviews & Private Inquiries</Text>
@@ -219,7 +231,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               Guardian ratings, inquiries & management replies
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
       </View>
 
@@ -233,7 +245,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FDF2F8' }]}>
-            <Text style={styles.menuIcon}>🔔</Text>
+            <Bell size={20} color="#DB2777" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Notification Center</Text>
@@ -247,7 +259,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
                 <Text style={styles.notifBadgeText}>{unreadCount}</Text>
               </View>
             )}
-            <Text style={styles.menuArrow}>›</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -257,7 +269,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F3F4F6' }]}>
-            <Text style={styles.menuIcon}>⚙️</Text>
+            <Settings size={20} color="#4B5563" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.menuItemTitle}>Institute Context & Policies</Text>
@@ -265,7 +277,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               Campus details, isolation & academic year
             </Text>
           </View>
-          <Text style={styles.menuArrow}>›</Text>
+          <ChevronRight size={18} color="#BCAAA4" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -274,7 +286,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FEE2E2' }]}>
-            <Text style={styles.menuIcon}>🚪</Text>
+            <LogOut size={20} color="#DC2626" />
           </View>
           <View style={styles.menuTextBox}>
             <Text style={styles.signOutTitle}>Sign Out</Text>
@@ -282,7 +294,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
               End active director session on TuitionOS
             </Text>
           </View>
-          <Text style={[styles.menuArrow, { color: '#DC2626' }]}>›</Text>
+          <ChevronRight size={14} color="#DC2626" />
         </TouchableOpacity>
       </View>
     </ScrollView>

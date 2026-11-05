@@ -8,6 +8,16 @@ import {
   Alert,
 } from 'react-native';
 import { StudentActiveTab } from './StudentBottomNav';
+import {
+  Building2,
+  BarChart2,
+  Calendar,
+  CreditCard,
+  Bell,
+  User,
+  LogOut,
+  ChevronRight,
+} from 'lucide-react-native';
 
 interface StudentMoreTabProps {
   user: any;
@@ -94,7 +104,10 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
         </View>
 
         <View style={styles.instituteFooter}>
-          <Text style={styles.instituteLabel}>🏛️ {instituteName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Building2 size={13} color="#8D6E63" />
+            <Text style={styles.instituteLabel}>{instituteName}</Text>
+          </View>
           <View style={styles.codeBadge}>
             <Text style={styles.codeBadgeText}>{instituteCode}</Text>
           </View>
@@ -111,7 +124,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#EDE7F6' }]}>
-            <Text style={styles.menuIcon}>📊</Text>
+            <BarChart2 size={20} color="#673AB7" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Academic Progress Reports</Text>
@@ -127,7 +140,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
                 </Text>
               </View>
             )}
-            <Text style={styles.chevron}>&rsaquo;</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -140,7 +153,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#E3F2FD' }]}>
-            <Text style={styles.menuIcon}>📅</Text>
+            <Calendar size={20} color="#00897B" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Class Timetable</Text>
@@ -149,7 +162,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
             </Text>
           </View>
           <View style={styles.menuRight}>
-            <Text style={styles.chevron}>&rsaquo;</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -162,7 +175,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#E8F5E9' }]}>
-            <Text style={styles.menuIcon}>💳</Text>
+            <CreditCard size={20} color="#E65100" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Fees & Official Receipts</Text>
@@ -180,7 +193,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
                 </Text>
               </View>
             ) : null}
-            <Text style={styles.chevron}>&rsaquo;</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
       </View>
@@ -195,7 +208,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FFF3E0' }]}>
-            <Text style={styles.menuIcon}>🔔</Text>
+            <Bell size={20} color="#0288D1" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Notifications</Text>
@@ -211,7 +224,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
                 </Text>
               </View>
             )}
-            <Text style={styles.chevron}>&rsaquo;</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -224,7 +237,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#F5ECE8' }]}>
-            <Text style={styles.menuIcon}>👤</Text>
+            <User size={20} color="#5D4037" />
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Student Profile</Text>
@@ -233,7 +246,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
             </Text>
           </View>
           <View style={styles.menuRight}>
-            <Text style={styles.chevron}>&rsaquo;</Text>
+            <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
 
@@ -246,7 +259,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
           activeOpacity={0.7}
         >
           <View style={[styles.menuIconBox, { backgroundColor: '#FFEBEE' }]}>
-            <Text style={styles.menuIcon}>🚪</Text>
+            <LogOut size={20} color="#C62828" />
           </View>
           <View style={styles.menuContent}>
             <Text style={[styles.menuTitle, { color: '#C62828' }]}>Sign Out</Text>
@@ -255,7 +268,7 @@ export const StudentMoreTab: React.FC<StudentMoreTabProps> = ({
             </Text>
           </View>
           <View style={styles.menuRight}>
-            <Text style={[styles.chevron, { color: '#C62828' }]}>&rsaquo;</Text>
+            <ChevronRight size={18} color="#C62828" />
           </View>
         </TouchableOpacity>
       </View>

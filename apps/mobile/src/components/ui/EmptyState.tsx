@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { themeTokens } from '@tuition/shared';
 import { MobileButton } from './MobileButton';
 
+import { Inbox } from 'lucide-react-native';
+
 export interface EmptyStateProps {
-  icon?: string;
+  icon?: React.ReactNode | string;
   title: string;
   description?: string;
   actionTitle?: string;
@@ -13,7 +15,7 @@ export interface EmptyStateProps {
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
-  icon = '📭',
+  icon,
   title,
   description,
   actionTitle,
@@ -23,7 +25,13 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   return (
     <View style={[styles.container, style]}>
       <View style={styles.iconCircle}>
-        <Text style={styles.icon}>{icon}</Text>
+        {typeof icon === 'string' ? (
+          <Text style={styles.icon}>{icon}</Text>
+        ) : icon ? (
+          icon
+        ) : (
+          <Inbox size={32} color={themeTokens.colors.taupe} />
+        )}
       </View>
       <Text style={styles.title}>{title}</Text>
       {description && <Text style={styles.description}>{description}</Text>}

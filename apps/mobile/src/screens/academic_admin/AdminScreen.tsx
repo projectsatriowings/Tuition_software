@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { GraduationCap, CheckCircle2, BookOpen, Trophy, Star, Calendar, AlertTriangle } from 'lucide-react-native';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -453,7 +455,7 @@ export const AdminScreen: React.FC = () => {
 
             {batches.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🏫</Text>
+                <GraduationCap size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Batches Found</Text>
                 <Text style={styles.emptySub}>
                   Click '+ New Batch' above to configure your academy's first class section.
@@ -743,12 +745,12 @@ export const AdminScreen: React.FC = () => {
 
             {/* Outstanding Receivables */}
             <Text style={[styles.sectionHeading, { marginTop: 16 }]}>
-              ⚠️ OUTSTANDING DUES BY STUDENT ({outstandingReport?.students?.length || 0})
+              OUTSTANDING DUES BY STUDENT ({outstandingReport?.students?.length || 0})
             </Text>
 
             {outstandingReport?.students?.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🎉</Text>
+                <CheckCircle2 size={42} color="#16A34A" />
                 <Text style={styles.emptyTitle}>All Student Fees Cleared</Text>
                 <Text style={styles.emptySub}>
                   No outstanding receivables currently recorded for this institute.
@@ -799,7 +801,7 @@ export const AdminScreen: React.FC = () => {
 
             {materials.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📚</Text>
+                <BookOpen size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Materials Found</Text>
                 <Text style={styles.emptySub}>
                   Faculty members have not uploaded batch study materials yet.
@@ -825,7 +827,7 @@ export const AdminScreen: React.FC = () => {
                     <Text style={styles.opsDesc}>{m.description}</Text>
                   ) : null}
                   <Text style={styles.itemDateText}>
-                    📅 Uploaded: {new Date(m.createdAt).toLocaleDateString('en-IN')}
+                    Uploaded: {new Date(m.createdAt).toLocaleDateString('en-IN')}
                   </Text>
                 </View>
               ))
@@ -851,7 +853,7 @@ export const AdminScreen: React.FC = () => {
 
             {exams.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🏆</Text>
+                <Trophy size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Scheduled Exams</Text>
                 <Text style={styles.emptySub}>
                   There are no examinations scheduled or published yet.
@@ -884,7 +886,7 @@ export const AdminScreen: React.FC = () => {
                     </View>
                   </View>
                   <Text style={styles.itemDateText}>
-                    📅 Exam Date: {new Date(ex.examDate).toLocaleDateString('en-IN')}
+                    Exam Date: {new Date(ex.examDate).toLocaleDateString('en-IN')}
                   </Text>
                 </View>
               ))
@@ -919,7 +921,7 @@ export const AdminScreen: React.FC = () => {
                     {b.batchSubjects.map((bs: any, idx: number) => (
                       <View key={idx} style={styles.timetableRow}>
                         <Text style={styles.timetableSubject}>
-                          📖 {bs.subject?.name || bs.name}
+                          {bs.subject?.name || bs.name}
                         </Text>
                         <Text style={styles.timetableSchedule}>
                           {bs.schedule || 'Scheduled session'}
@@ -994,7 +996,7 @@ export const AdminScreen: React.FC = () => {
                       </View>
                     </View>
                     <Text style={styles.itemDateText}>
-                      📅 {new Date(rev.createdAt).toLocaleDateString('en-IN')}
+                      {new Date(rev.createdAt).toLocaleDateString('en-IN')}
                     </Text>
                   </View>
 
@@ -1057,7 +1059,7 @@ export const AdminScreen: React.FC = () => {
               <View style={styles.profileRow}>
                 <Text style={styles.profileFieldLabel}>Security Isolation:</Text>
                 <Text style={[styles.profileFieldValue, { color: '#059669' }]}>
-                  Institute Scoped ✓
+                  Institute Scoped
                 </Text>
               </View>
             </View>

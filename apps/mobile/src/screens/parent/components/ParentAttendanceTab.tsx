@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { ChevronLeft, ChevronRight, ShieldCheck, Calendar, CheckCircle2, XCircle, Clock, User } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -119,9 +121,12 @@ export const ParentAttendanceTab: React.FC<ParentAttendanceTabProps> = ({
                 onPress={() => onSelectChild(child)}
                 style={[styles.childChip, isSel && styles.childChipActive]}
               >
-                <Text style={[styles.childChipText, isSel && styles.childChipTextActive]}>
-                  👦 {name}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <User size={12} color={isSel ? '#FFFFFF' : '#4E342E'} />
+                  <Text style={[styles.childChipText, isSel && styles.childChipTextActive]}>
+                    {name}
+                  </Text>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -130,12 +135,8 @@ export const ParentAttendanceTab: React.FC<ParentAttendanceTabProps> = ({
 
       {/* 2. Month Selector Bar */}
       <View style={styles.monthSelectorBar}>
-        <TouchableOpacity
-          onPress={handlePrevMonth}
-          style={styles.monthNavBtn}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.monthNavText}>◀</Text>
+        <TouchableOpacity onPress={handlePrevMonth} style={styles.monthNavBtn} activeOpacity={0.7}>
+          <ChevronLeft size={18} color="#4E342E" />
         </TouchableOpacity>
 
         <View style={styles.monthTitleBox}>
@@ -147,12 +148,8 @@ export const ParentAttendanceTab: React.FC<ParentAttendanceTabProps> = ({
           </Text>
         </View>
 
-        <TouchableOpacity
-          onPress={handleNextMonth}
-          style={styles.monthNavBtn}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.monthNavText}>▶</Text>
+        <TouchableOpacity onPress={handleNextMonth} style={styles.monthNavBtn} activeOpacity={0.7}>
+          <ChevronRight size={18} color="#4E342E" />
         </TouchableOpacity>
       </View>
 
@@ -213,7 +210,7 @@ export const ParentAttendanceTab: React.FC<ParentAttendanceTabProps> = ({
       {/* 4. Safety Guarantee Card */}
       <View style={styles.safetyCard}>
         <View style={styles.safetyIconBox}>
-          <Text style={styles.safetyIcon}>🛡️</Text>
+          <ShieldCheck size={20} color="#2E7D32" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.safetyTitle}>Live Gate Entry & Exit Protection</Text>
@@ -234,7 +231,7 @@ export const ParentAttendanceTab: React.FC<ParentAttendanceTabProps> = ({
           </View>
         ) : calendarDays.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>📅</Text>
+            <Calendar size={42} color={themeTokens.colors.primary} />
             <Text style={styles.emptyTitle}>No Daily Logs Found</Text>
             <Text style={styles.emptySub}>
               There are no attendance events logged for {monthNames[currentMonth - 1]} {currentYear}.

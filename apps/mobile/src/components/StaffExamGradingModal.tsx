@@ -12,6 +12,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { GraduationCap, X, FileText } from 'lucide-react-native';
 import { mobileApiFetch } from '../services/api';
 import { MobileButton, MobileInput, ProgressBar } from './ui';
 import { Badge } from './Badge';
@@ -232,7 +233,7 @@ export const StaffExamGradingModal: React.FC<StaffExamGradingModalProps> = ({
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={20} color={themeTokens.colors.textLight} />
             </TouchableOpacity>
 
             <View style={styles.headerCenter}>
@@ -294,7 +295,7 @@ export const StaffExamGradingModal: React.FC<StaffExamGradingModalProps> = ({
           <ScrollView contentContainerStyle={styles.rosterContainer}>
             {filteredRoster.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>📝</Text>
+                <FileText size={36} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Students Found</Text>
                 <Text style={styles.emptySubtitle}>
                   {searchQuery ? 'No students match your search filter.' : 'No active student enrollments for this exam batch.'}

@@ -12,6 +12,21 @@ import {
 } from 'react-native';
 import { mobileApiFetch } from '../services/api';
 import { themeTokens } from '@tuition/shared';
+import {
+  Bell,
+  X,
+  FileText,
+  BookOpen,
+  HelpCircle,
+  Trophy,
+  CreditCard,
+  MessageSquare,
+  BarChart2,
+  Info,
+  CheckCheck,
+  Inbox,
+  UserCheck,
+} from 'lucide-react-native';
 import { PressableScale } from '../theme/motion';
 
 export interface NotificationItem {
@@ -169,56 +184,80 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     if (eType === 'HOMEWORK') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#4338CA' }]}>✎ HOMEWORK</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <FileText size={11} color="#4338CA" />
+          <Text style={[styles.typeBadgeText, { color: '#4338CA' }]}>HOMEWORK</Text>
+        </View>
         </View>
       );
     }
     if (eType === 'MATERIAL') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#1D4ED8' }]}>📖 MATERIAL</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <BookOpen size={11} color="#1D4ED8" />
+          <Text style={[styles.typeBadgeText, { color: '#1D4ED8' }]}>MATERIAL</Text>
+        </View>
         </View>
       );
     }
     if (eType === 'QUIZ') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#FAF5FF', borderColor: '#E9D5FF' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#7E22CE' }]}>❓ QUIZ</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <HelpCircle size={11} color="#7E22CE" />
+          <Text style={[styles.typeBadgeText, { color: '#7E22CE' }]}>QUIZ</Text>
+        </View>
         </View>
       );
     }
     if (eType === 'EXAM' || eType === 'TEST_RESULT') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#FFF1F2', borderColor: '#FECDD3' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#BE123C' }]}>🏆 EXAM</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Trophy size={11} color="#BE123C" />
+          <Text style={[styles.typeBadgeText, { color: '#BE123C' }]}>EXAM</Text>
+        </View>
         </View>
       );
     }
     if (eType === 'FEE' || eType === 'FEE_DUE' || eType === 'FEE_PAID') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#047857' }]}>💳 FEE</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <CreditCard size={11} color="#047857" />
+          <Text style={[styles.typeBadgeText, { color: '#047857' }]}>FEE</Text>
+        </View>
         </View>
       );
     }
     if (eType === 'MESSAGE' || eType === 'NEW_MESSAGE') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#0369A1' }]}>💬 MESSAGE</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <MessageSquare size={11} color="#0369A1" />
+          <Text style={[styles.typeBadgeText, { color: '#0369A1' }]}>MESSAGE</Text>
+        </View>
         </View>
       );
     }
     if (eType === 'PROGRESS_REPORT') {
       return (
         <View style={[styles.typeBadge, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#B45309' }]}>📊 REPORT</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <BarChart2 size={11} color="#B45309" />
+          <Text style={[styles.typeBadgeText, { color: '#B45309' }]}>REPORT</Text>
+        </View>
         </View>
       );
     }
 
     return (
       <View style={[styles.typeBadge, styles.generalBadge]}>
-        <Text style={[styles.typeBadgeText, styles.generalBadgeText]}>ℹ ALERT</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Info size={11} color={themeTokens.colors.textMuted} />
+          <Text style={[styles.typeBadgeText, styles.generalBadgeText]}>ALERT</Text>
+        </View>
       </View>
     );
   };
@@ -229,7 +268,10 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTitleRow}>
-            <Text style={styles.headerTitle}>🔔 In-App Notifications</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Bell size={18} color={themeTokens.colors.textLight} />
+              <Text style={styles.headerTitle}>In-App Notifications</Text>
+            </View>
             {unreadCount > 0 && (
               <View style={styles.unreadPill}>
                 <Text style={styles.unreadPillText}>{unreadCount} unread</Text>
@@ -237,7 +279,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
             )}
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
+            <X size={20} color={themeTokens.colors.textLight} />
           </TouchableOpacity>
         </View>
 
@@ -264,7 +306,10 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
 
           {unreadCount > 0 && (
             <TouchableOpacity onPress={handleMarkAllAsRead} style={styles.markAllBtn}>
-              <Text style={styles.markAllBtnText}>Mark all read</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <CheckCheck size={13} color={themeTokens.colors.beige} />
+                <Text style={styles.markAllBtnText}>Mark all read</Text>
+              </View>
             </TouchableOpacity>
           )}
         </View>
@@ -282,7 +327,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
           >
             {notifications.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyIcon}>🔔</Text>
+                <Inbox size={42} color={themeTokens.colors.taupe} style={{ marginBottom: 12 }} />
                 <Text style={styles.emptyTitle}>No notifications</Text>
                 <Text style={styles.emptySubtitle}>
                   Attendance check-in, check-out, and academic updates will appear here.

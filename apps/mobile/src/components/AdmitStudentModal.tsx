@@ -13,6 +13,7 @@ import {
 import { api } from '../services/api';
 import { useMobileToast } from '../context/ToastContext';
 import { themeTokens } from '@tuition/shared';
+import { CheckCircle2, Eye, EyeOff, X } from 'lucide-react-native';
 
 interface AdmitStudentModalProps {
   visible: boolean;
@@ -176,13 +177,13 @@ export const AdmitStudentModal: React.FC<AdmitStudentModalProps> = ({
               <Text style={styles.sheetSub}>Enrolls student and creates parent credentials</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={20} color="#4E342E" />
             </TouchableOpacity>
           </View>
 
           {admittedResult ? (
             <View style={styles.successContainer}>
-              <Text style={styles.successIcon}>✓</Text>
+              <CheckCircle2 size={38} color="#059669" />
               <Text style={styles.successTitle}>Admission Completed</Text>
               <Text style={styles.successName}>{admittedResult.name}</Text>
 

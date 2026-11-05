@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { Check, CalendarCheck, BookOpen, FileText, Trophy, CreditCard, MessageSquare, BarChart2, Star, Users } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -166,12 +168,12 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={styles.greetingText}>
-            {getGreeting()}, {firstName} 👋
+            {getGreeting()}, {firstName}
           </Text>
           <View style={styles.contextPillRow}>
             <View style={styles.instituteBadge}>
               <Text style={styles.instituteBadgeText}>
-                🏛️ {institute?.name || 'TuitionOS Academy'}
+                {institute?.name || 'TuitionOS Academy'}
               </Text>
             </View>
             <Text style={styles.dateText}>{todayFormatted}</Text>
@@ -246,7 +248,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
                   </View>
                   {isSelected && (
                     <View style={styles.selectedCheckBadge}>
-                      <Text style={styles.selectedCheckText}>✓</Text>
+                      <Check size={12} color="#FFFFFF" />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -405,67 +407,43 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.quickActionPillsRow}
             >
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('attendance')}
-              >
-                <Text style={styles.quickActionIcon}>🛡️</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('attendance')}>
+                <CalendarCheck size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Attendance</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('learning')}
-              >
-                <Text style={styles.quickActionIcon}>📚</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('learning')}>
+                <BookOpen size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Study Files</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('homework')}
-              >
-                <Text style={styles.quickActionIcon}>📝</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('homework')}>
+                <FileText size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Homework</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('results')}
-              >
-                <Text style={styles.quickActionIcon}>🏆</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('results')}>
+                <Trophy size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Exam Marks</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('fees')}
-              >
-                <Text style={styles.quickActionIcon}>💳</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('fees')}>
+                <CreditCard size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Fee Receipts</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('messages')}
-              >
-                <Text style={styles.quickActionIcon}>💬</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('messages')}>
+                <MessageSquare size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Faculty Chat</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={() => onNavigateTab('progress')}
-              >
-                <Text style={styles.quickActionIcon}>📊</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('progress')}>
+                <BarChart2 size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Progress Report</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.quickActionPill}
-                onPress={onOpenReviewModal}
-              >
-                <Text style={styles.quickActionIcon}>⭐</Text>
+              <TouchableOpacity style={styles.quickActionPill} onPress={onOpenReviewModal}>
+                <Star size={14} color={themeTokens.colors.primary} />
                 <Text style={styles.quickActionText}>Write Review</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -475,7 +453,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
           <View style={styles.actionCard}>
             <View style={styles.actionCardHeader}>
               <View style={styles.actionCardIconBox}>
-                <Text style={styles.actionCardIcon}>🛡️</Text>
+                <CalendarCheck size={18} color={themeTokens.colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.actionCardTitle}>Campus Gate & Safety Alert</Text>
@@ -555,7 +533,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
           <View style={styles.actionCard}>
             <View style={styles.actionCardHeader}>
               <View style={[styles.actionCardIconBox, { backgroundColor: '#FFF7ED' }]}>
-                <Text style={styles.actionCardIcon}>📝</Text>
+                <FileText size={18} color="#EA580C" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.actionCardTitle}>Homework & Assignments</Text>
@@ -592,7 +570,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
                 </Text>
                 <View style={styles.hwHighlightFooter}>
                   <Text style={styles.hwHighlightDue}>
-                    📅 Due: {pendingHomework[0].dueDate ? new Date(pendingHomework[0].dueDate).toLocaleDateString('en-IN') : 'Open'}
+                    Due: {pendingHomework[0].dueDate ? new Date(pendingHomework[0].dueDate).toLocaleDateString('en-IN') : 'Open'}
                   </Text>
                   <Text style={styles.hwHighlightSubject}>
                     {pendingHomework[0].subject || pendingHomework[0].subject?.name || 'Class Subject'}
@@ -602,7 +580,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
             ) : (
               <View style={styles.emptyInlineBox}>
                 <Text style={styles.emptyInlineText}>
-                  🎉 No pending homework for {selectedChild.user?.fullName}. Great work!
+                  No pending homework for {selectedChild.user?.fullName}. Great work!
                 </Text>
               </View>
             )}
@@ -619,7 +597,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
           <View style={styles.actionCard}>
             <View style={styles.actionCardHeader}>
               <View style={[styles.actionCardIconBox, { backgroundColor: '#F0FDF4' }]}>
-                <Text style={styles.actionCardIcon}>🏆</Text>
+                <Trophy size={18} color="#16A34A" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.actionCardTitle}>Academic Performance</Text>
@@ -680,7 +658,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
           <View style={styles.actionCard}>
             <View style={styles.actionCardHeader}>
               <View style={[styles.actionCardIconBox, { backgroundColor: '#FEF2F2' }]}>
-                <Text style={styles.actionCardIcon}>💳</Text>
+                <CreditCard size={18} color="#DC2626" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.actionCardTitle}>Fee Balance & Receipts</Text>
@@ -743,7 +721,7 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
         </>
       ) : (
         <View style={styles.noChildrenCard}>
-          <Text style={styles.noChildrenIcon}>👨‍👩‍👧</Text>
+          <Users size={42} color={themeTokens.colors.primary} />
           <Text style={styles.noChildrenTitle}>No Linked Children Found</Text>
           <Text style={styles.noChildrenSub}>
             Your parent account is not currently linked to any enrolled student. Please contact the tuition academy administration to verify child enrollment.

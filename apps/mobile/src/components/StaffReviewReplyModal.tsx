@@ -12,6 +12,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { themeTokens } from '@tuition/shared';
+import { MessageSquare, X } from 'lucide-react-native';
 import { mobileApiFetch } from '../services/api';
 import { MobileButton } from './ui';
 import { Badge } from './Badge';
@@ -92,7 +93,7 @@ export const StaffReviewReplyModal: React.FC<StaffReviewReplyModalProps> = ({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
+            <X size={20} color={themeTokens.colors.textLight} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Parent Reviews & Feedback</Text>
@@ -155,7 +156,10 @@ export const StaffReviewReplyModal: React.FC<StaffReviewReplyModalProps> = ({
                         }}
                         style={styles.replyTriggerBtn}
                       >
-                        <Text style={styles.replyTriggerText}>💬 Write Faculty Reply</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <MessageSquare size={13} color="#4E342E" />
+                          <Text style={styles.replyTriggerText}>Write Faculty Reply</Text>
+                        </View>
                       </TouchableOpacity>
                     )}
 

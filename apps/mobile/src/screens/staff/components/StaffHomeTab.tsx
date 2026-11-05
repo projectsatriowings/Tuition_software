@@ -1,3 +1,4 @@
+import { ClipboardCheck, Users, FileText, BookOpen, ChevronRight, Tag, Trophy, MessageSquare, CheckCircle2, Clock } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -122,13 +123,13 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             <Text style={styles.greetingName} numberOfLines={1}>{staffName}</Text>
           </View>
           <View style={styles.dateBadge}>
-            <Text style={styles.dateBadgeText}>📅 {todayFormatted}</Text>
+            <Text style={styles.dateBadgeText}>{todayFormatted}</Text>
           </View>
         </View>
 
         <View style={styles.instituteContextRow}>
           <Text style={styles.instituteLabel}>
-            🏫 {institute?.name || institute?.code || 'TuitionOS'}
+            {institute?.name || institute?.code || 'TuitionOS'}
           </Text>
           <View style={styles.roleTag}>
             <Text style={styles.roleTagText}>FACULTY</Text>
@@ -150,7 +151,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             onPress={() => onNavigateTab('students')}
             activeOpacity={0.7}
           >
-            <Text style={styles.kpiIcon}>👨‍🎓</Text>
+            <Users size={16} color={themeTokens.colors.primary} />
             <Text style={styles.kpiValue}>{totalStudentsCount || students.length}</Text>
             <Text style={styles.kpiLabel}>Students</Text>
           </TouchableOpacity>
@@ -163,7 +164,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             onPress={() => onNavigateTab('students')}
             activeOpacity={0.7}
           >
-            <Text style={styles.kpiIcon}>🏷️</Text>
+            <Tag size={16} color={themeTokens.colors.primary} />
             <Text style={styles.kpiValue}>{batches.length}</Text>
             <Text style={styles.kpiLabel}>Batches</Text>
           </TouchableOpacity>
@@ -176,7 +177,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             onPress={() => onNavigateTab('attendance')}
             activeOpacity={0.7}
           >
-            <Text style={styles.kpiIcon}>📋</Text>
+            <ClipboardCheck size={16} color={themeTokens.colors.primary} />
             <Text style={styles.kpiValue}>
               {attendanceRate !== null ? `${attendanceRate}%` : `${checkedInStudents}`}
             </Text>
@@ -193,7 +194,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             onPress={() => onNavigateTab('homework')}
             activeOpacity={0.7}
           >
-            <Text style={styles.kpiIcon}>📝</Text>
+            <FileText size={16} color={themeTokens.colors.primary} />
             <Text style={styles.kpiValue}>{homeworkList.length}</Text>
             <Text style={styles.kpiLabel}>Homework</Text>
           </TouchableOpacity>
@@ -206,7 +207,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             onPress={() => onNavigateTab('exams')}
             activeOpacity={0.7}
           >
-            <Text style={styles.kpiIcon}>🏆</Text>
+            <Trophy size={16} color={themeTokens.colors.primary} />
             <Text style={styles.kpiValue}>{examsList.length}</Text>
             <Text style={styles.kpiLabel}>Exams</Text>
           </TouchableOpacity>
@@ -219,7 +220,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
             onPress={() => onNavigateTab('messages')}
             activeOpacity={0.7}
           >
-            <Text style={styles.kpiIcon}>💬</Text>
+            <MessageSquare size={16} color={themeTokens.colors.primary} />
             <Text
               style={[
                 styles.kpiValue,
@@ -257,7 +258,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
               accessibilityLabel="Mark Attendance"
             >
               <View style={[styles.quickActionIconWrap, { backgroundColor: '#EDE7F6' }]}>
-                <Text style={styles.quickActionIcon}>📋</Text>
+                <ClipboardCheck size={16} color="#6B21A8" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Mark Attendance</Text>
@@ -273,7 +274,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
               accessibilityLabel="Find Student"
             >
               <View style={[styles.quickActionIconWrap, { backgroundColor: '#E0F2FE' }]}>
-                <Text style={styles.quickActionIcon}>👨‍🎓</Text>
+                <Users size={16} color="#0284C7" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Find Student</Text>
@@ -291,7 +292,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
               accessibilityLabel="Add Homework"
             >
               <View style={[styles.quickActionIconWrap, { backgroundColor: '#FFF3E0' }]}>
-                <Text style={styles.quickActionIcon}>📝</Text>
+                <FileText size={16} color="#D97706" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Add Homework</Text>
@@ -307,7 +308,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
               accessibilityLabel="Share Material"
             >
               <View style={[styles.quickActionIconWrap, { backgroundColor: '#E8F5E9' }]}>
-                <Text style={styles.quickActionIcon}>📚</Text>
+                <BookOpen size={16} color="#16A34A" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Share Material</Text>
@@ -368,7 +369,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
           <View style={styles.attendanceStatusRow}>
             <View style={styles.attendanceStatusIconWrap}>
               <Text style={{ fontSize: 22 }}>
-                {checkedInStudents > 0 ? '✅' : '⏰'}
+                {checkedInStudents > 0 ? '✓' : '•'}
               </Text>
             </View>
             <View style={{ flex: 1 }}>
@@ -408,7 +409,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
 
         {homeworkList.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>📝</Text>
+            <FileText size={36} color={themeTokens.colors.primary} />
             <Text style={styles.emptyTitle}>No Active Homework</Text>
             <Text style={styles.emptyDesc}>Assign homework to track student submissions.</Text>
             <TouchableOpacity style={styles.emptyActionBtn} onPress={onOpenNewHomework}>
@@ -441,7 +442,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
                 onPress={() => onOpenReviewHw(hw)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.taskReviewLinkText}>Review Submissions & Grade ➔</Text>
+                <Text style={styles.taskReviewLinkText}>Review Submissions & Grade</Text>
               </TouchableOpacity>
             </Card>
           ))
@@ -459,7 +460,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
 
         {examsList.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>🏆</Text>
+            <Trophy size={36} color={themeTokens.colors.primary} />
             <Text style={styles.emptyTitle}>No Scheduled Exams</Text>
             <Text style={styles.emptyDesc}>Exams for your assigned batches will appear here.</Text>
           </Card>
@@ -510,7 +511,7 @@ export const StaffHomeTab: React.FC<StaffHomeTabProps> = ({
 
         {conversations.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>💬</Text>
+            <MessageSquare size={36} color={themeTokens.colors.primary} />
             <Text style={styles.emptyTitle}>No Active Conversations</Text>
             <Text style={styles.emptyDesc}>Direct messages from parents will appear here.</Text>
           </Card>

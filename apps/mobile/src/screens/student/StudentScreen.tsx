@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { BookOpen, FileText, Target, Trophy, BarChart2, Calendar, CreditCard } from 'lucide-react-native';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -504,7 +506,7 @@ export const StudentScreen: React.FC = () => {
 
             {filteredMaterials.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>📚</Text>
+                <BookOpen size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Study Materials Available</Text>
                 <Text style={styles.emptySubtitle}>
                   Notes, presentations and reference files uploaded by your faculty will appear here.
@@ -562,7 +564,7 @@ export const StudentScreen: React.FC = () => {
                     homeworkSubTab === 'assignments' && styles.subTabTextActive,
                   ]}
                 >
-                  📝 Assignments ({homeworkList.length})
+                  Assignments ({homeworkList.length})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -578,7 +580,7 @@ export const StudentScreen: React.FC = () => {
                     homeworkSubTab === 'quizzes' && styles.subTabTextActive,
                   ]}
                 >
-                  🎯 Quizzes ({quizzes.length})
+                  Quizzes ({quizzes.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -632,7 +634,7 @@ export const StudentScreen: React.FC = () => {
 
                   {filteredHomeworkList.length === 0 ? (
                     <View style={styles.emptyCard}>
-                      <Text style={styles.emptyEmoji}>📝</Text>
+                      <FileText size={42} color={themeTokens.colors.primary} />
                       <Text style={styles.emptyTitle}>No Homework Found</Text>
                       <Text style={styles.emptySubtitle}>
                         You have no homework matching the selected filter.
@@ -698,7 +700,7 @@ export const StudentScreen: React.FC = () => {
 
                           <View style={styles.hwCardFooter}>
                             <Text style={styles.dueDateText}>
-                              📅 Due:{' '}
+                              Due:{' '}
                               {hw.dueDate
                                 ? new Date(hw.dueDate).toLocaleDateString('en-IN')
                                 : 'Open'}
@@ -711,7 +713,7 @@ export const StudentScreen: React.FC = () => {
                                   activeOpacity={0.8}
                                 >
                                   <Text style={styles.completeBtnText}>
-                                    ✓ Complete
+                                    Complete
                                   </Text>
                                 </TouchableOpacity>
                               )}
@@ -736,7 +738,7 @@ export const StudentScreen: React.FC = () => {
                 <>
                   {quizzes.length === 0 ? (
                     <View style={styles.emptyCard}>
-                      <Text style={styles.emptyEmoji}>🎯</Text>
+                      <Target size={42} color={themeTokens.colors.primary} />
                       <Text style={styles.emptyTitle}>No Quizzes Scheduled</Text>
                       <Text style={styles.emptySubtitle}>
                         Interactive tests and assessments assigned by your teacher will appear here.
@@ -866,7 +868,7 @@ export const StudentScreen: React.FC = () => {
 
             {filteredExams.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>🏆</Text>
+                <Trophy size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Examinations Found</Text>
                 <Text style={styles.emptySubtitle}>
                   Exam schedules and evaluated results will be listed here.
@@ -917,7 +919,7 @@ export const StudentScreen: React.FC = () => {
                     </View>
 
                     <Text style={styles.examDateLine}>
-                      📅 Exam Date:{' '}
+                      Exam Date:{' '}
                       {exam.examDate
                         ? new Date(exam.examDate).toLocaleDateString('en-IN')
                         : 'Scheduled'}{' '}
@@ -1005,7 +1007,7 @@ export const StudentScreen: React.FC = () => {
 
             {progressFeedbacks.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>📊</Text>
+                <BarChart2 size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Progress Reports Yet</Text>
                 <Text style={styles.emptySubtitle}>
                   Formal progress evaluations and remarks from your teachers will appear here.
@@ -1074,21 +1076,21 @@ export const StudentScreen: React.FC = () => {
                   {fb.strengths ? (
                     <View style={styles.strengthBox}>
                       <Text style={styles.strengthText}>
-                        💪 STRENGTHS: {fb.strengths}
+                        STRENGTHS: {fb.strengths}
                       </Text>
                     </View>
                   ) : null}
                   {fb.improvements ? (
                     <View style={styles.growthBox}>
                       <Text style={styles.growthText}>
-                        📈 GROWTH AREAS: {fb.improvements}
+                        GROWTH AREAS: {fb.improvements}
                       </Text>
                     </View>
                   ) : null}
                   {fb.recommendations ? (
                     <View style={styles.actionBox}>
                       <Text style={styles.actionText}>
-                        🎯 ACTIONS: {fb.recommendations}
+                        ACTIONS: {fb.recommendations}
                       </Text>
                     </View>
                   ) : null}
@@ -1137,7 +1139,7 @@ export const StudentScreen: React.FC = () => {
                       <View key={bs.id} style={styles.subjectTeacherRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.subjectTeacherName}>
-                            📖 {bs.subject?.name || 'Subject'}
+                            {bs.subject?.name || 'Subject'}
                           </Text>
                           <Text style={styles.subjectTeacherFaculty}>
                             Faculty: {bs.staffProfile?.user?.fullName || 'Assigned Teacher'}
@@ -1161,7 +1163,7 @@ export const StudentScreen: React.FC = () => {
               ))
             ) : (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>📅</Text>
+                <Calendar size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Class Schedule Available</Text>
                 <Text style={styles.emptySubtitle}>
                   You are currently not enrolled in an active batch.
@@ -1220,7 +1222,7 @@ export const StudentScreen: React.FC = () => {
               ))
             ) : (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>💳</Text>
+                <CreditCard size={42} color={themeTokens.colors.primary} />
                 <Text style={styles.emptyTitle}>No Payment Receipts</Text>
                 <Text style={styles.emptySubtitle}>
                   Payment transactions and receipts issued by the administration will appear here.

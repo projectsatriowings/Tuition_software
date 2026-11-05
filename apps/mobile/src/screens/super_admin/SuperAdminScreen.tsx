@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { Key, Search, Mail, Settings } from 'lucide-react-native';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -190,7 +192,10 @@ export const SuperAdminScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>🔑 Admin Password Governance</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Key size={14} color="#8D6E63" />
+                <Text style={styles.infoTitle}>Admin Password Governance</Text>
+              </View>
               <Text style={styles.infoText}>
                 Super Admins can perform emergency credential resets for institute Academic Directors.
                 Select any registered tenant to assign a new secure passphrase.
@@ -198,7 +203,7 @@ export const SuperAdminScreen: React.FC = () => {
             </View>
 
             <View style={styles.subSearchBox}>
-              <Text style={styles.subSearchIcon}>🔍</Text>
+              <Search size={14} color="#8D6E63" />
               <TextInput
                 style={styles.subSearchInput}
                 placeholder="Search tenant by name or code..."
@@ -226,7 +231,7 @@ export const SuperAdminScreen: React.FC = () => {
                     </TouchableOpacity>
                   </View>
                   <Text style={styles.credInstEmail}>
-                    ✉️ {inst.email || 'No primary email registered'}
+                    {inst.email || 'No primary email registered'}
                   </Text>
                 </View>
               ))}
@@ -243,7 +248,7 @@ export const SuperAdminScreen: React.FC = () => {
           >
             <View style={styles.engineCard}>
               <View style={styles.engineHeader}>
-                <Text style={styles.engineIcon}>⚙️</Text>
+                <Settings size={22} color={themeTokens.colors.primary} />
                 <View style={styles.engineTitleGroup}>
                   <Text style={styles.engineTitle}>TuitionOS Core Engine</Text>
                   <Text style={styles.engineSub}>Cluster: ap-south-1 (Mumbai / Primary)</Text>

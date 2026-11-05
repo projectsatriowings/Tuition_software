@@ -14,6 +14,20 @@ import { useMobileAuth, MobileInstitute } from '../../context/AuthContext';
 import { AppConfig, normalizeApiUrl } from '../../config/index';
 import { checkServerConnection, HealthCheckResult } from '../../services/api';
 import { themeTokens } from '@tuition/shared';
+import {
+  Building2,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  LogIn,
+  ShieldCheck,
+  Settings,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react-native';
 import { FadeInView, SlideInView, PressableScale } from '../../theme/motion';
 
 interface LoginScreenProps {
@@ -112,7 +126,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
                 onPress={() => selectInstituteAndCompleteLogin(m.institute)}
               >
                 <View style={styles.instituteIconContainer}>
-                  <Text style={styles.instituteIconText}>🏛️</Text>
+                  <Building2 size={22} color={themeTokens.colors.espresso} />
                 </View>
                 <View style={styles.instituteInfo}>
                   <Text style={styles.instituteName}>{m.institute.name}</Text>
@@ -123,7 +137,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
                     <Text style={styles.instituteRole}>{m.role}</Text>
                   </View>
                 </View>
-                <Text style={styles.chevronText}>›</Text>
+                <ChevronRight size={18} color={themeTokens.colors.taupe} />
               </TouchableOpacity>
             ))}
 
@@ -158,7 +172,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
 
           {errorMsg ? (
             <View style={styles.errorBox}>
-              <Text style={styles.errorIcon}>⚠️</Text>
+              <AlertCircle size={16} color="#DC2626" style={{ marginRight: 6 }} />
               <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
           ) : null}
@@ -204,7 +218,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
                 style={styles.toggleBtn}
                 accessibilityLabel="Toggle password visibility"
               >
-                <Text style={styles.toggleBtnText}>{showPassword ? 'Hide' : 'Show'}</Text>
+                {showPassword ? <EyeOff size={18} color={themeTokens.colors.taupe} /> : <Eye size={18} color={themeTokens.colors.taupe} />}
               </TouchableOpacity>
             </View>
           </View>
@@ -219,15 +233,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
             {loading ? (
               <ActivityIndicator color={themeTokens.colors.textLight} size="small" />
             ) : (
-              <Text style={styles.primaryButtonText}>Sign In</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <LogIn size={16} color={themeTokens.colors.textLight} />
+                <Text style={styles.primaryButtonText}>Sign In</Text>
+              </View>
             )}
           </TouchableOpacity>
 
           {/* Security & Access Notice */}
           <View style={styles.securityNotice}>
-            <Text style={styles.securityNoticeText}>
-              🛡️ Protected by Enterprise Role-Based Tenant Isolation
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <ShieldCheck size={14} color={themeTokens.colors.taupe} />
+              <Text style={styles.securityNoticeText}>
+                Protected by Enterprise Role-Based Tenant Isolation
+              </Text>
+            </View>
           </View>
 
           {/* Host & Server Settings (Collapsible) */}
@@ -236,9 +256,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
               onPress={() => setShowHostConfig(!showHostConfig)}
               style={styles.serverSettingsToggle}
             >
-              <Text style={styles.serverSettingsToggleText}>
-                ⚙️ {showHostConfig ? 'Hide Server Configuration' : 'Server Connection Config'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Settings size={14} color={themeTokens.colors.taupe} />
+                <Text style={styles.serverSettingsToggleText}>
+                  {showHostConfig ? 'Hide Server Configuration' : 'Server Connection Config'}
+                </Text>
+                {showHostConfig ? (
+                  <ChevronUp size={14} color={themeTokens.colors.taupe} />
+                ) : (
+                  <ChevronDown size={14} color={themeTokens.colors.taupe} />
+                )}
+              </View>
             </TouchableOpacity>
 
             {showHostConfig ? (

@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { Search, X, GraduationCap, ChevronRight } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
   View,
@@ -75,7 +77,7 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
 
         {/* Search Input */}
         <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Search size={14} color="#8D6E63" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search student by name, roll, admission no..."
@@ -91,7 +93,7 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Clear search"
             >
-              <Text style={styles.clearSearchText}>✕</Text>
+              <X size={14} color="#8D6E63" />
             </PressableScale>
           )}
         </View>
@@ -149,7 +151,7 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
       >
         {filteredStudents.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>🎓</Text>
+            <GraduationCap size={42} color={themeTokens.colors.primary} />
             <Text style={styles.emptyTitle}>No Students Found</Text>
             <Text style={styles.emptySub}>
               {searchQuery
@@ -219,7 +221,7 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
 
                     {st.user?.phone && (
                       <Text style={styles.studentContact}>
-                        📞 {st.user.phone}
+                        {st.user.phone}
                       </Text>
                     )}
                   </View>
@@ -234,7 +236,8 @@ export const AdminStudentsTab: React.FC<AdminStudentsTabProps> = ({
                     accessibilityRole="button"
                     accessibilityLabel="View full profile"
                   >
-                    <Text style={styles.detailsBtnText}>View Full Profile ➔</Text>
+                    <Text style={styles.detailsBtnText}>View Full Profile</Text>
+                  <ChevronRight size={14} color={themeTokens.colors.primary} />
                   </PressableScale>
 
                   <View style={styles.lifecycleBtnRow}>

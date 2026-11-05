@@ -1,3 +1,5 @@
+import { themeTokens } from '@tuition/shared';
+import { CalendarCheck, FileText, BookOpen, Trophy, ClipboardCheck, Target, CreditCard } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -150,7 +152,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Text style={styles.greetingText}>
-            {getGreeting()}, {firstName} 👋
+            {getGreeting()}, {firstName}
           </Text>
           <View style={styles.contextPillRow}>
             {studentProfile?.batch?.name && (
@@ -194,7 +196,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
             onPress={() => onNavigateTab('progress')}
           >
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiEmoji}>📋</Text>
+              <ClipboardCheck size={16} color={themeTokens.colors.primary} />
               <Text style={styles.kpiLabel}>Attendance</Text>
             </View>
             <Text style={styles.kpiValue}>{attendanceRate}</Text>
@@ -208,7 +210,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
             onPress={() => onNavigateTab('homework')}
           >
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiEmoji}>📝</Text>
+              <FileText size={16} color={themeTokens.colors.primary} />
               <Text style={styles.kpiLabel}>Pending HW</Text>
             </View>
             <Text
@@ -231,7 +233,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
             onPress={() => onNavigateTab('homework')}
           >
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiEmoji}>🎯</Text>
+              <Target size={16} color={themeTokens.colors.primary} />
               <Text style={styles.kpiLabel}>Quizzes</Text>
             </View>
             <Text style={styles.kpiValue}>{availableQuizzesCount}</Text>
@@ -245,7 +247,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
             onPress={() => onNavigateTab('results')}
           >
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiEmoji}>🏆</Text>
+              <Trophy size={16} color={themeTokens.colors.primary} />
               <Text style={styles.kpiLabel}>Exam Results</Text>
             </View>
             <Text style={styles.kpiValue}>{publishedExamsCount}</Text>
@@ -259,7 +261,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
             onPress={() => onNavigateTab('learning')}
           >
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiEmoji}>📚</Text>
+              <BookOpen size={16} color={themeTokens.colors.primary} />
               <Text style={styles.kpiLabel}>Study Files</Text>
             </View>
             <Text style={styles.kpiValue}>{materials.length}</Text>
@@ -273,7 +275,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
             onPress={() => onNavigateTab('fees')}
           >
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiEmoji}>💳</Text>
+              <CreditCard size={16} color={themeTokens.colors.primary} />
               <Text style={styles.kpiLabel}>Fee Dues</Text>
             </View>
             <Text
@@ -316,7 +318,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
               accessibilityLabel="View Attendance"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#EDE7F6' }]}>
-                <Text style={styles.quickActionEmoji}>📋</Text>
+                <CalendarCheck size={16} color="#6B21A8" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>View Attendance</Text>
@@ -332,7 +334,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
               accessibilityLabel="Homework and Tasks"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#FFF3E0' }]}>
-                <Text style={styles.quickActionEmoji}>📝</Text>
+                <FileText size={16} color="#D97706" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Homework</Text>
@@ -350,7 +352,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
               accessibilityLabel="Learning Materials"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#E8F5E9' }]}>
-                <Text style={styles.quickActionEmoji}>📚</Text>
+                <BookOpen size={16} color="#16A34A" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Learning Files</Text>
@@ -366,7 +368,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
               accessibilityLabel="Exam Results"
             >
               <View style={[styles.quickActionIconBox, { backgroundColor: '#FCE4EC' }]}>
-                <Text style={styles.quickActionEmoji}>🏆</Text>
+                <Trophy size={16} color="#BE185D" />
               </View>
               <View style={styles.quickActionTextBox}>
                 <Text style={styles.quickActionTitle}>Exam Results</Text>
@@ -382,7 +384,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
         <View style={styles.actionCard}>
           <View style={styles.actionCardHeader}>
             <View style={styles.actionIconBadgeWarning}>
-              <Text style={styles.actionIconText}>📝</Text>
+              <FileText size={16} color="#B45309" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.actionCardTag}>ACTION REQUIRED</Text>
@@ -412,7 +414,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
         <View style={styles.actionCard}>
           <View style={styles.actionCardHeader}>
             <View style={styles.actionIconBadgeIndigo}>
-              <Text style={styles.actionIconText}>🎯</Text>
+              <Target size={16} color="#1D4ED8" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.actionCardTag}>NEW ASSESSMENT</Text>
@@ -511,7 +513,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
               </View>
             </View>
             <Text style={styles.examDateNotice}>
-              📅 Date:{' '}
+              Date: {' '}
               {new Date(upcomingExam.examDate).toLocaleDateString('en-IN')}{' '}
               {upcomingExam.startTime ? `(${upcomingExam.startTime})` : ''}
             </Text>
@@ -530,7 +532,7 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
 
         {recentMaterials.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyCardEmoji}>📚</Text>
+            <BookOpen size={36} color={themeTokens.colors.primary} />
             <Text style={styles.emptyCardTitle}>No materials assigned yet</Text>
             <Text style={styles.emptyCardSub}>
               Faculty study notes and lecture files will appear here.
