@@ -12,6 +12,8 @@ export interface MobileApiResponse<T = any> {
 
 export interface HealthCheckResult {
   reachable: boolean;
+  ok?: boolean;
+  resolvedUrl?: string;
   statusCode?: number;
   message: string;
   latencyMs?: number;
@@ -23,10 +25,6 @@ let activeBranchId: string | null = null;
 
 /**
  * Builds a clean, fully-qualified URL preventing missing or duplicate /api segments.
- * Example inputs:
- *   baseUrl: "http://192.168.1.5:5000", endpoint: "/auth/login" -> "http://192.168.1.5:5000/api/auth/login"
- *   baseUrl: "http://192.168.1.5:5000/api", endpoint: "/api/auth/login" -> "http://192.168.1.5:5000/api/auth/login"
- *   baseUrl: "http://192.168.1.5:5000/api", endpoint: "health" -> "http://192.168.1.5:5000/api/health"
  */
 export function buildApiUrl(base: string, endpoint: string): string {
   const normBase = normalizeApiUrl(base); // always ends with /api
@@ -135,6 +133,8 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
       }
       return {
         reachable: true,
+        ok: true,
+        resolvedUrl: healthUrl,
         statusCode: res.status,
         latencyMs: latency,
         serviceOnline: isOnline,
@@ -143,6 +143,8 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
     } else {
       return {
         reachable: true,
+        ok: false,
+        resolvedUrl: healthUrl,
         statusCode: res.status,
         latencyMs: latency,
         serviceOnline: false,
@@ -164,6 +166,8 @@ export async function checkServerConnection(candidateUrl?: string): Promise<Heal
 
     return {
       reachable: false,
+      ok: false,
+      resolvedUrl: healthUrl,
       latencyMs: latency,
       serviceOnline: false,
       message: diagnosticMsg,
@@ -392,6 +396,32 @@ export async function mobileApiFetch<T = any>(
     mobileInFlight.delete(cacheKey);
   }
 }
+
+/**
+ * Convenient REST wrapper providing .get, .post, .put, .patch, .delete returning { data: res }
+ */
+export const api = {
+  get: async <T = any>(endpoint: string, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'GET' });
+    return { data: res };
+  },
+  post: async <T = any>(endpoint: string, body?: any, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'POST', body });
+    return { data: res };
+  },
+  put: async <T = any>(endpoint: string, body?: any, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'PUT', body });
+    return { data: res };
+  },
+  patch: async <T = any>(endpoint: string, body?: any, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'PATCH', body });
+    return { data: res };
+  },
+  delete: async <T = any>(endpoint: string, options?: MobileRequestOptions) => {
+    const res = await mobileApiFetch<T>(endpoint, { ...(options || {}), method: 'DELETE' });
+    return { data: res };
+  },
+};
 
 export function generateIdempotencyKey(actionName: string): string {
   const rand = Math.random().toString(36).substring(2, 10);

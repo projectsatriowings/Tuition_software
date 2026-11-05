@@ -16,6 +16,7 @@ import {
 import { useMobileAuth } from '../../context/AuthContext';
 import { mobileApiFetch } from '../../services/api';
 import { Header } from '../../components/Header';
+import { Badge } from '../../components/Badge';
 import { PressableScale, AnimatedDialog, FadeInView } from '../../theme/motion';
 import { TouchableWithoutFeedback } from 'react-native';
 import { ReceiptModal } from '../../components/ReceiptModal';
@@ -1191,6 +1192,39 @@ export const StudentScreen: React.FC = () => {
                 {formatRupee(feeStatement?.summary?.totalFees || 0)}
               </Text>
             </View>
+
+            {/* Installment Schedules & Fee Terms */}
+            {feeStatement?.statementItems && feeStatement.statementItems.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={styles.sectionHeading}>FEE INSTALLMENTS & TERMS</Text>
+                {feeStatement.statementItems.map((term: any) => {
+                  const isPaid = term.calculatedStatus === 'PAID';
+                  const isPartial = term.calculatedStatus === 'PARTIALLY_PAID';
+                  return (
+                    <View key={term.id} style={styles.itemCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.itemTitle}>{term.feeStructure?.name || term.termLabel || 'Installment'}</Text>
+                          <Text style={styles.itemMeta}>
+                            Term: {term.termLabel} &bull; Due: {term.dueDate ? new Date(term.dueDate).toLocaleDateString('en-IN') : '—'}
+                          </Text>
+                        </View>
+                        <Badge
+                          label={term.calculatedStatus || 'PENDING'}
+                          variant={isPaid ? 'success' : isPartial ? 'warning' : 'danger'}
+                          size="sm"
+                        />
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#F5ECE8' }}>
+                        <Text style={{ fontSize: 11, color: '#8D6E63' }}>Total: <Text style={{ fontWeight: '700', color: '#2D1E18' }}>{formatRupee(term.finalAmount)}</Text></Text>
+                        <Text style={{ fontSize: 11, color: '#059669' }}>Paid: <Text style={{ fontWeight: '700', color: '#059669' }}>{formatRupee(term.netPaid)}</Text></Text>
+                        <Text style={{ fontSize: 11, color: '#DC2626' }}>Due: <Text style={{ fontWeight: '700', color: '#DC2626' }}>{formatRupee(term.remainingBalance)}</Text></Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
 
             {/* Payment History & Receipts */}
             <Text style={styles.sectionHeading}>OFFICIAL RECEIPTS</Text>

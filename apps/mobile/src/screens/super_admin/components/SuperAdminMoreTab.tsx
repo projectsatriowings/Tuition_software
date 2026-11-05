@@ -17,6 +17,7 @@ interface SuperAdminMoreTabProps {
   unreadCount?: number;
   onNavigateTab: (tab: SuperAdminActiveTab) => void;
   onOpenCreateModal: () => void;
+  onOpenBranches?: () => void;
   onSignOut: () => void;
 }
 
@@ -26,6 +27,7 @@ export const SuperAdminMoreTab: React.FC<SuperAdminMoreTabProps> = ({
   unreadCount = 0,
   onNavigateTab,
   onOpenCreateModal,
+  onOpenBranches,
   onSignOut,
 }) => {
   const adminName = user?.fullName || user?.email?.split('@')[0] || 'Super Admin';
@@ -72,6 +74,13 @@ export const SuperAdminMoreTab: React.FC<SuperAdminMoreTabProps> = ({
           icon: <Key size={20} color="#D97706" />,
           action: () => onNavigateTab('adminAccount'),
         },
+        ...(onOpenBranches ? [{
+          id: 'branches',
+          title: 'Physical Campuses & Branches',
+          desc: 'Configure physical campuses, shifts & GPS geofencing',
+          icon: <Building2 size={20} color="#0D9488" />,
+          action: onOpenBranches,
+        }] : []),
       ],
     },
     {

@@ -27,6 +27,7 @@ import { SuperAdminSecurityTab } from './components/SuperAdminSecurityTab';
 import { SuperAdminMoreTab } from './components/SuperAdminMoreTab';
 import { CreateInstituteModal } from './components/CreateInstituteModal';
 import { InstituteDetailsModal } from './components/InstituteDetailsModal';
+import { BranchManagementModal } from '../../components/BranchManagementModal';
 
 export const SuperAdminScreen: React.FC = () => {
   const { user, logout } = useMobileAuth();
@@ -43,6 +44,7 @@ export const SuperAdminScreen: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedInstitute, setSelectedInstitute] = useState<any | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showBranchModal, setShowBranchModal] = useState(false);
 
   // Sub-view filters & search
   const [credentialSearch, setCredentialSearch] = useState('');
@@ -180,6 +182,7 @@ export const SuperAdminScreen: React.FC = () => {
             institutesCount={institutes.length}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenCreateModal={() => setShowCreateModal(true)}
+            onOpenBranches={() => setShowBranchModal(true)}
             onSignOut={logout}
           />
         )}
@@ -337,6 +340,12 @@ export const SuperAdminScreen: React.FC = () => {
         onRefresh={() => {
           fetchSuperAdminData();
         }}
+      />
+
+      {/* Physical Campus & Branches Sheet */}
+      <BranchManagementModal
+        visible={showBranchModal}
+        onClose={() => setShowBranchModal(false)}
       />
     </View>
   );

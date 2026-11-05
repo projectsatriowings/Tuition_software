@@ -1313,6 +1313,57 @@ export const ParentScreen: React.FC = () => {
               </View>
             </View>
 
+            {/* Installment Schedules & Fee Terms */}
+            {childStatement?.statementItems && childStatement.statementItems.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={styles.sectionHeading}>FEE INSTALLMENTS & TERMS</Text>
+                {childStatement.statementItems.map((term: any) => {
+                  const isPaid = term.calculatedStatus === 'PAID';
+                  const isPartial = term.calculatedStatus === 'PARTIALLY_PAID';
+                  return (
+                    <View key={term.id} style={styles.itemCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.itemCardTitle}>{term.feeStructure?.name || term.termLabel || 'Installment'}</Text>
+                          <Text style={styles.itemCardSub}>
+                            Term: {term.termLabel} &bull; Due: {term.dueDate ? new Date(term.dueDate).toLocaleDateString('en-IN') : '—'}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            isPaid
+                              ? styles.badgeGreen
+                              : isPartial
+                              ? styles.badgeOrange
+                              : styles.badgeDanger,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              isPaid
+                                ? styles.badgeGreenText
+                                : isPartial
+                                ? styles.badgeOrangeText
+                                : styles.badgeDangerText,
+                            ]}
+                          >
+                            {term.calculatedStatus || 'PENDING'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#F5ECE8' }}>
+                        <Text style={{ fontSize: 11, color: '#8D6E63' }}>Total: <Text style={{ fontWeight: '700', color: '#2D1E18' }}>{formatRupee(term.finalAmount)}</Text></Text>
+                        <Text style={{ fontSize: 11, color: '#059669' }}>Paid: <Text style={{ fontWeight: '700', color: '#059669' }}>{formatRupee(term.netPaid)}</Text></Text>
+                        <Text style={{ fontSize: 11, color: '#DC2626' }}>Due: <Text style={{ fontWeight: '700', color: '#DC2626' }}>{formatRupee(term.remainingBalance)}</Text></Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Payment Receipts List */}
             <Text style={[styles.sectionHeading, { marginTop: 14 }]}>
               PAYMENT RECEIPTS

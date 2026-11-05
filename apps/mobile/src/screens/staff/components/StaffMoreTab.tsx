@@ -19,6 +19,8 @@ import {
   Bell,
   LogOut,
   ChevronRight,
+  MapPin,
+  Receipt,
 } from 'lucide-react-native';
 
 interface StaffMoreTabProps {
@@ -32,6 +34,8 @@ interface StaffMoreTabProps {
   onNavigateTab: (tab: StaffActiveTab) => void;
   onOpenReviewsModal: () => void;
   onOpenNotifications: () => void;
+  onOpenAttendanceModal?: () => void;
+  onOpenPayslipsModal?: () => void;
   onLogout: () => void;
 }
 
@@ -46,6 +50,8 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
   onNavigateTab,
   onOpenReviewsModal,
   onOpenNotifications,
+  onOpenAttendanceModal,
+  onOpenPayslipsModal,
   onLogout,
 }) => {
   const staffInitial = user?.fullName?.[0] || 'F';
@@ -170,6 +176,49 @@ export const StaffMoreTab: React.FC<StaffMoreTabProps> = ({
             <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
+      </View>
+
+      {/* 2.5 FACULTY ATTENDANCE & PAYROLL */}
+      <View style={styles.menuSection}>
+        <Text style={styles.sectionHeader}>Staff Attendance & Compensation</Text>
+
+        {onOpenAttendanceModal && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenAttendanceModal}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: '#ECFDF5' }]}>
+              <MapPin size={20} color="#059669" />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Faculty Shift & Geofence Punch</Text>
+              <Text style={styles.menuSubtitle}>GPS clock in/out, shift timers & WFH requests</Text>
+            </View>
+            <View style={styles.menuRight}>
+              <ChevronRight size={18} color="#BCAAA4" />
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {onOpenPayslipsModal && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenPayslipsModal}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: '#F0F9FF' }]}>
+              <Receipt size={20} color="#0284C7" />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>My Payslips & Salary Slips</Text>
+              <Text style={styles.menuSubtitle}>Monthly earnings, allowances & deductions</Text>
+            </View>
+            <View style={styles.menuRight}>
+              <ChevronRight size={18} color="#BCAAA4" />
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* 3. SYSTEM & ACCOUNT */}

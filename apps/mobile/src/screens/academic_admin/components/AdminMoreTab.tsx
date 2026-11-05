@@ -19,6 +19,8 @@ import {
   Settings,
   LogOut,
   ChevronRight,
+  Building2,
+  Layers,
 } from 'lucide-react-native';
 
 interface AdminMoreTabProps {
@@ -29,6 +31,8 @@ interface AdminMoreTabProps {
   outstandingReport: any;
   onNavigateTab: (tab: AdminActiveTab) => void;
   onOpenNotifications: () => void;
+  onOpenBranches?: () => void;
+  onOpenFeeStructures?: () => void;
   onSignOut: () => void;
 }
 
@@ -40,6 +44,8 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
   outstandingReport,
   onNavigateTab,
   onOpenNotifications,
+  onOpenBranches,
+  onOpenFeeStructures,
   onSignOut,
 }) => {
   const adminName = user?.fullName || 'Academic Director';
@@ -107,7 +113,31 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
         </View>
       </View>
 
-      {/* 2. Financial Management Section */}
+      {/* 2. Campus & Branch Governance Section */}
+      <View style={styles.menuSection}>
+        <Text style={styles.sectionTitle}>CAMPUS & GOVERNANCE</Text>
+
+        {onOpenBranches && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenBranches}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconBox, { backgroundColor: '#F5ECE8' }]}>
+              <Building2 size={20} color="#4E342E" />
+            </View>
+            <View style={styles.menuTextBox}>
+              <Text style={styles.menuItemTitle}>Physical Campuses & Branches</Text>
+              <Text style={styles.menuItemSub}>
+                Manage physical locations, geofences, shifts & student transfers
+              </Text>
+            </View>
+            <ChevronRight size={18} color="#BCAAA4" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* 3. Financial Management Section */}
       <View style={styles.menuSection}>
         <Text style={styles.sectionTitle}>FINANCE & TREASURY</Text>
 
@@ -138,9 +168,28 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
             <ChevronRight size={18} color="#BCAAA4" />
           </View>
         </TouchableOpacity>
+
+        {onOpenFeeStructures && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={onOpenFeeStructures}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIconBox, { backgroundColor: '#EFF6FF' }]}>
+              <Layers size={20} color="#2563EB" />
+            </View>
+            <View style={styles.menuTextBox}>
+              <Text style={styles.menuItemTitle}>Fee Structures (Class 1-12)</Text>
+              <Text style={styles.menuItemSub}>
+                Curriculum fee models, components & installment schedules
+              </Text>
+            </View>
+            <ChevronRight size={18} color="#BCAAA4" />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* 3. Academic Operations Section */}
+      {/* 4. Academic Operations Section */}
       <View style={styles.menuSection}>
         <Text style={styles.sectionTitle}>ACADEMIC OPERATIONS</Text>
 
@@ -213,7 +262,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* 4. Guardian Inquiries & Feedback Section */}
+      {/* 5. Guardian Inquiries & Feedback Section */}
       <View style={styles.menuSection}>
         <Text style={styles.sectionTitle}>GUARDIAN ENGAGEMENT</Text>
 
@@ -235,7 +284,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* 5. System, Settings & Logout Section */}
+      {/* 6. System, Settings & Logout Section */}
       <View style={styles.menuSection}>
         <Text style={styles.sectionTitle}>SYSTEM & SETTINGS</Text>
 
@@ -264,24 +313,7 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => onNavigateTab('settings')}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconBox, { backgroundColor: '#F3F4F6' }]}>
-            <Settings size={20} color="#4B5563" />
-          </View>
-          <View style={styles.menuTextBox}>
-            <Text style={styles.menuItemTitle}>Institute Context & Policies</Text>
-            <Text style={styles.menuItemSub}>
-              Campus details, isolation & academic year
-            </Text>
-          </View>
-          <ChevronRight size={18} color="#BCAAA4" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.menuItem, styles.signOutItem]}
+          style={[styles.menuItem, styles.logoutItem]}
           onPress={handleSignOutPress}
           activeOpacity={0.7}
         >
@@ -289,12 +321,14 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
             <LogOut size={20} color="#DC2626" />
           </View>
           <View style={styles.menuTextBox}>
-            <Text style={styles.signOutTitle}>Sign Out</Text>
-            <Text style={styles.signOutSub}>
-              End active director session on TuitionOS
+            <Text style={[styles.menuItemTitle, { color: '#DC2626' }]}>
+              Sign Out Session
+            </Text>
+            <Text style={styles.menuItemSub}>
+              Securely close current academic director session
             </Text>
           </View>
-          <ChevronRight size={14} color="#DC2626" />
+          <ChevronRight size={18} color="#DC2626" />
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -304,44 +338,42 @@ export const AdminMoreTab: React.FC<AdminMoreTabProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAF7F5',
+    backgroundColor: '#F7F2EF',
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 110,
+    paddingBottom: 90,
+    gap: 16,
   },
-
-  // 1. Profile Card
   profileCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#EFEBE9',
-    marginBottom: 18,
+    borderColor: '#D7CCC8',
     shadowColor: '#2D1E18',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 14,
+    paddingBottom: 14,
   },
   avatarCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#4E342E',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
   },
   avatarText: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
   },
   profileDetails: {
@@ -354,81 +386,77 @@ const styles = StyleSheet.create({
   },
   roleRow: {
     flexDirection: 'row',
-    marginTop: 3,
+    marginTop: 4,
   },
   rolePill: {
     backgroundColor: '#F5ECE8',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#D7CCC8',
   },
   rolePillText: {
-    fontSize: 9,
-    fontWeight: '800',
     color: '#4E342E',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   profileContact: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#8D6E63',
     marginTop: 4,
   },
-
-  // Institute Footer
   instituteFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F5ECE8',
+    borderTopColor: '#EFEBE9',
   },
   instituteLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#4E342E',
   },
   codeBadge: {
-    backgroundColor: '#F5ECE8',
-    borderRadius: 6,
+    backgroundColor: '#F7F2EF',
     paddingHorizontal: 8,
     paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#D7CCC8',
   },
   codeBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#4E342E',
+    color: '#6D4C41',
+    fontSize: 11,
+    fontWeight: '700',
   },
-
-  // Menu Section
   menuSection: {
-    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    gap: 8,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#8D6E63',
     letterSpacing: 0.8,
-    marginBottom: 8,
     marginLeft: 4,
+    marginBottom: 4,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#EFEBE9',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 2,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#FAF7F2',
+    gap: 12,
+  },
+  logoutItem: {
+    backgroundColor: '#FFF5F5',
   },
   menuIconBox: {
     width: 38,
@@ -436,29 +464,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-  },
-  menuIcon: {
-    fontSize: 18,
   },
   menuTextBox: {
     flex: 1,
   },
   menuItemTitle: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 13.5,
+    fontWeight: '700',
     color: '#2D1E18',
   },
   menuItemSub: {
     fontSize: 11,
     color: '#8D6E63',
     marginTop: 2,
-  },
-  menuArrow: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#D7CCC8',
-    marginLeft: 6,
+    lineHeight: 15,
   },
   trailingContainer: {
     flexDirection: 'row',
@@ -466,58 +485,36 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   feeDueBadge: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#FEE2E2',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
   },
   feeDueText: {
-    fontSize: 10,
-    fontWeight: '800',
     color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '800',
   },
   feeClearBadge: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#DCFCE7',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
   },
   feeClearText: {
-    fontSize: 10,
+    color: '#15803D',
+    fontSize: 11,
     fontWeight: '800',
-    color: '#059669',
   },
   notifBadge: {
     backgroundColor: '#DC2626',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
   },
   notifBadgeText: {
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '800',
   },
-  signOutItem: {
-    borderColor: '#FEE2E2',
-    marginTop: 4,
-  },
-  signOutTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#DC2626',
-  },
-  signOutSub: {
-    fontSize: 11,
-    color: '#EF4444',
-    marginTop: 2,
-  },
 });
-
