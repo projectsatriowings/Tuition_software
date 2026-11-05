@@ -165,11 +165,16 @@ export const StaffMyAttendance: React.FC = () => {
       setClassesLoading(true);
       const res = await apiFetch('/staff-attendance/wfh/online-classes');
       if (res.success && res.data) {
-        const classList = Array.isArray(res.data)
+        const rawList = Array.isArray(res.data)
           ? res.data
           : Array.isArray(res.data.classes)
           ? res.data.classes
           : [];
+        const classList = rawList.map((c: any, idx: number) => ({
+          ...c,
+          id: c.id || c.batchSubjectId || `online-class-${idx}`,
+          batchSubjectId: c.batchSubjectId || c.id,
+        }));
         setOnlineClasses(classList);
       } else {
         setOnlineClasses([]);
@@ -468,7 +473,8 @@ export const StaffMyAttendance: React.FC = () => {
 
     try {
       setClassActionSubmitting(true);
-      const res = await apiFetch(`/staff-attendance/wfh/online-classes/${classActionTarget.id}/status`, {
+      const targetId = classActionTarget.batchSubjectId || classActionTarget.id;
+      const res = await apiFetch(`/staff-attendance/wfh/online-classes/${targetId}/status`, {
         method: 'POST',
         body: JSON.stringify({
           status: classActionStatus,
@@ -954,12 +960,12 @@ export const StaffMyAttendance: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {(Array.isArray(onlineClasses) ? onlineClasses : []).map((c) => {
+            {(Array.isArray(onlineClasses) ? onlineClasses : []).map((c, idx) => {
               const log = c.todayLog;
               const deliveryStatus = log?.status || 'SCHEDULED';
               return (
                 <div
-                  key={c.id}
+                  key={c.batchSubjectId || c.id || `online-class-${idx}`}
                   className="p-4 rounded-xl border border-[#D7CCC8] bg-[#FAF8F5] flex flex-col md:flex-row md:items-center justify-between gap-3"
                 >
                   <div className="space-y-1">
