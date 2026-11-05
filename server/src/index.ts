@@ -24,6 +24,8 @@ import feesRoutes from './modules/fees/fees.routes.js';
 import questionGeneratorRoutes from './modules/question-generator/question-generator.routes.js';
 import feedbackRoutes from './modules/feedback/feedback.routes.js';
 import staffAttendanceRoutes from './modules/staff-attendance/staff-attendance.routes.js';
+import payrollRoutes from './modules/payroll/payroll.routes.js';
+import branchesRoutes from './modules/branches/branches.routes.js';
 import { NotificationService } from './modules/notifications/notification.service.js';
 import { demoModeMiddleware } from './middleware/demo-mode.middleware.js';
 
@@ -116,6 +118,8 @@ app.use('/api/fees', feesRoutes);
 app.use('/api/question-generator', questionGeneratorRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/staff-attendance', staffAttendanceRoutes);
+app.use('/api/payroll', payrollRoutes);
+app.use('/api/branches', branchesRoutes);
 
 // Root info endpoint & health check redirects
 app.get('/', (_req: Request, res: Response) => {

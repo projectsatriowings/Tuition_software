@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import {
   LayoutDashboard,
@@ -17,6 +17,8 @@ import {
   Bell,
   User,
   Compass,
+  Banknote,
+  Building2,
   X,
 } from 'lucide-react';
 
@@ -123,6 +125,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <Calendar className="w-4 h-4" /> Staff Attendance
               </button>
+              <button
+                onClick={() => handleItemClick('payroll')}
+                className={navItemClass('payroll')}
+              >
+                <Banknote className="w-4 h-4" /> Staff Payroll
+              </button>
+              <button
+                onClick={() => handleItemClick('branches')}
+                className={navItemClass('branches')}
+              >
+                <Building2 className="w-4 h-4" /> Multi-Branch Hub
+              </button>
             </>
           )}
 
@@ -197,6 +211,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={navItemClass('fees')}
               >
                 <CreditCard className="w-4 h-4" /> Fees & Finances
+              </button>
+
+              <button
+                onClick={() => handleItemClick('payroll')}
+                className={navItemClass('payroll')}
+              >
+                <Banknote className="w-4 h-4" /> Staff Payroll
+              </button>
+
+              <button
+                onClick={() => handleItemClick('branches')}
+                className={navItemClass('branches')}
+              >
+                <Building2 className="w-4 h-4" /> Multi-Branch Hub
               </button>
             </>
           )}

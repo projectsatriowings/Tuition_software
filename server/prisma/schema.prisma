@@ -1,6 +1,7 @@
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -44,7 +45,11 @@ enum AttendanceMethod {
 
 enum FeeFrequency {
   MONTHLY
+  QUARTERLY
   TERM_WISE
+  ANNUAL
+  COURSE_BASED
+  INSTALLMENT_BASED
   ONE_TIME
 }
 
@@ -173,6 +178,14 @@ model Institute {
   staffAttendanceSessions StaffAttendanceSession[]
   wfhAuthorizations       StaffWFHAuthorization[]
   onlineClassLogs         StaffOnlineClassLog[]
+  payrollPolicy           PayrollPolicy?
+  salaryStructures        SalaryStructure[]
+  staffSalaryAssignments  StaffSalaryAssignment[]
+  payrollRuns             PayrollRun[]
+  branches                Branch[]
+  branchStaffAssignments  BranchStaffAssignment[]
+  branchStudentEnrollments BranchStudentEnrollment[]
+  studentBranchTransfers  StudentBranchTransfer[]
 
   @@index([status])
   @@index([name])
@@ -219,6 +232,7 @@ model User {
   wfhRequestsApproved       StaffWFHAuthorization[]  @relation("WFHApprovedBy")
   wfhRequestsRejected       StaffWFHAuthorization[]  @relation("WFHRejectedBy")
   wfhRequestsRevoked        StaffWFHAuthorization[]  @relation("WFHRevokedBy")
+  authorizedTransfers       StudentBranchTransfer[]  @relation("TransferAuthorizer")
 
   @@index([role])
   @@index([email])
@@ -299,10 +313,13 @@ model StaffProfile {
   qualifications      StaffQualification[]
   experiences         StaffExperience[]
   documents           StaffDocument[]
+  salaryAssignments   StaffSalaryAssignment[]
+  payrollRecords      PayrollRecord[]
   attendanceSessions  StaffAttendanceSession[]
   wfhAuthorizations   StaffWFHAuthorization[]
   wfhGroupAssignments WFHAuthorizationStaff[]
   StaffOnlineClassLog StaffOnlineClassLog[]
+  branchAssignments   BranchStaffAssignment[]
 
   @@unique([instituteId, employeeCode])
   @@index([instituteId])
@@ -337,6 +354,7 @@ model StaffExperience {
   subjectsTaught  String?
   totalYears      Float?
   notes           String?
+  primaryBranchId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -401,6 +419,7 @@ model Student {
   photoUrl        String?
   createdByUserId String?
   notes           String?
+  primaryBranchId String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -423,6 +442,9 @@ model Student {
   notifications        Notification[]
   onlinePaymentOrders  OnlinePaymentOrder[]
   conversations        Conversation[]
+  primaryBranch        Branch?                 @relation("StudentPrimaryBranch", fields: [primaryBranchId], references: [id], onDelete: SetNull)
+  branchEnrollments    BranchStudentEnrollment[]
+  branchTransfers      StudentBranchTransfer[]
 
   @@unique([instituteId, admissionNumber])
   @@index([instituteId])
@@ -430,6 +452,7 @@ model Student {
   @@index([status])
   @@index([firstName, lastName])
   @@index([createdByUserId])
+  @@index([primaryBranchId])
 }
 
 model StudentParentRelation {
@@ -484,6 +507,7 @@ model Batch {
   endDate      DateTime?
   description  String?
   schedule     String? // Timing / schedule e.g., "Mon-Fri 4:00 PM - 6:00 PM"
+  branchId     String?
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -498,10 +522,12 @@ model Batch {
   quizzes           Quiz[]
   progressFeedbacks ProgressFeedback[]
   feeStructures     FeeStructure[]
+  branch            Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@unique([instituteId, name, academicYear])
   @@index([instituteId])
   @@index([instituteId, code])
+  @@index([branchId])
 }
 
 model BatchSubject {
@@ -574,6 +600,7 @@ model AttendanceEvent {
   idempotencyKey String?          @unique
   markedById     String
   remarks        String?
+  branchId       String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -583,11 +610,13 @@ model AttendanceEvent {
   markedBy         User              @relation("MarkedByStaff", fields: [markedById], references: [id])
   smsNotifications SmsNotification[]
   notifications    Notification[]
+  branch           Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@unique([studentId, eventDate, eventType, sessionNumber])
   @@index([instituteId, eventDate])
   @@index([batchId, eventDate])
   @@index([studentId, eventDate])
+  @@index([branchId, eventDate])
 }
 
 model SmsNotification {
@@ -916,24 +945,32 @@ model Message {
 // -------------------------------------------------------------
 
 model FeeStructure {
-  id           String       @id @default(uuid())
-  instituteId  String
-  batchId      String
-  name         String // e.g., "Monthly Tuition - Class 10"
-  description  String?
-  academicYear String?
-  frequency    FeeFrequency
-  amount       Decimal      @db.Decimal(10, 2)
-  dueDay       Int? // Day of month (1-31)
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id               String       @id @default(uuid())
+  instituteId      String
+  batchId          String?
+  classGrade       String? // e.g., "Class 10", "Grade 12"
+  courseName       String? // e.g., "Board Comprehensive", "NEET Repeater"
+  name             String // e.g., "Monthly Tuition - Class 10"
+  description      String?
+  academicYear     String?
+  branchId         String?
+  frequency        FeeFrequency
+  amount           Decimal      @db.Decimal(10, 2)
+  dueDay           Int? // Day of month (1-31)
+  componentsJson   Json? // Itemized fee components: [{ name: "Tuition", amount: 3500 }, ...]
+  installmentsJson Json? // Installment schedules: [{ installmentNo: 1, label: "Installment 1", amount: 5000, dueOffsetDays: 0 }, ...]
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   institute   Institute              @relation(fields: [instituteId], references: [id], onDelete: Cascade)
-  batch       Batch                  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batch       Batch?                 @relation(fields: [batchId], references: [id], onDelete: Cascade)
   assignments StudentFeeAssignment[]
+  branch      Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@index([instituteId])
+  @@index([instituteId, isActive])
+  @@index([batchId])
 }
 
 model StudentFeeAssignment {
@@ -944,9 +981,13 @@ model StudentFeeAssignment {
   academicYear   String?
   baseAmount     Decimal       @db.Decimal(10, 2)
   discountAmount Decimal       @default(0.00) @db.Decimal(10, 2)
+  discountReason String? // Justification for student discount/scholarship
   finalAmount    Decimal       @db.Decimal(10, 2)
   dueDate        DateTime      @db.Date
   status         PaymentStatus @default(PENDING)
+  componentsJson Json? // Itemized breakdown snapshot at assignment time
+  installmentNo  Int? // Installment index (1, 2, 3...)
+  branchId       String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -955,10 +996,12 @@ model StudentFeeAssignment {
   payments            Payment[]
   adjustments         PaymentAdjustment[]
   onlinePaymentOrders OnlinePaymentOrder[]
+  branch              Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@unique([studentId, feeStructureId, termLabel])
   @@index([status])
   @@index([studentId])
+  @@index([branchId])
 }
 
 model Payment {
@@ -975,6 +1018,7 @@ model Payment {
   paidAt               DateTime      @default(now())
   recordedById         String
   remarks              String?
+  branchId             String?
   createdAt            DateTime      @default(now())
 
   institute     Institute            @relation(fields: [instituteId], references: [id], onDelete: Cascade)
@@ -982,9 +1026,11 @@ model Payment {
   feeAssignment StudentFeeAssignment @relation(fields: [feeAssignmentId], references: [id], onDelete: Cascade)
   recordedBy    User                 @relation("RecordedByStaff", fields: [recordedById], references: [id])
   adjustments   PaymentAdjustment[]
+  branch        Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@index([instituteId, paidAt])
   @@index([studentId])
+  @@index([branchId])
 }
 
 model PaymentAdjustment {
@@ -1216,6 +1262,8 @@ model StaffAttendanceSession {
   correctedById       String?
   correctedAt         DateTime?
   notes               String?
+  branchId            String?
+  sessionNumber       Int                   @default(1)
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
 
@@ -1226,13 +1274,15 @@ model StaffAttendanceSession {
   wfhAuthorizationId String?
   wfhAuthorization   StaffWFHAuthorization? @relation(fields: [wfhAuthorizationId], references: [id], onDelete: SetNull)
   events             StaffAttendanceEvent[]
+  branch             Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
-  @@unique([instituteId, staffId, attendanceDate])
+  @@unique([instituteId, staffId, attendanceDate, sessionNumber])
   @@index([instituteId, attendanceDate])
   @@index([staffId])
   @@index([status])
   @@index([attendanceMode])
   @@index([instituteId, status, attendanceDate])
+  @@index([branchId, attendanceDate])
 }
 
 model StaffAttendanceEvent {
@@ -1251,6 +1301,7 @@ model StaffAttendanceEvent {
   deviceInfo         String?
   remarks            String?
   idempotencyKey     String?                  @unique
+  branchId           String?
   createdAt          DateTime                 @default(now())
 
   attendanceMode     StaffAttendanceMode?   @default(ON_SITE)
@@ -1261,6 +1312,7 @@ model StaffAttendanceEvent {
   @@index([sessionId])
   @@index([staffId])
   @@index([instituteId, serverTimestamp])
+  @@index([branchId])
 }
 
 model StaffWFHAuthorization {
@@ -1476,4 +1528,393 @@ model QuizAnswer {
 
   @@unique([attemptId, questionId])
   @@index([attemptId])
+}
+
+
+// -------------------------------------------------------------
+// STAFF PAYROLL MANAGEMENT MODELS
+// -------------------------------------------------------------
+
+enum PayrollCalculationBasis {
+  CALENDAR_DAYS
+  FIXED_30_DAYS
+  WORKING_DAYS_EXCL_SUNDAYS
+}
+
+enum LateDeductionPolicy {
+  NONE
+  AFTER_GRACE_PERIOD
+  FLAT_PER_OCCURRENCE
+}
+
+enum SalaryComponentType {
+  EARNING
+  DEDUCTION
+}
+
+enum SalaryComponentCalcType {
+  FLAT
+  PERCENTAGE_OF_BASIC
+  PERCENTAGE_OF_GROSS
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  CALCULATED
+  UNDER_REVIEW
+  APPROVED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PayrollPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum PayrollAdjustmentType {
+  EARNING
+  DEDUCTION
+}
+
+model PayrollPolicy {
+  id                     String                  @id @default(uuid())
+  instituteId            String                  @unique
+  calculationBasis       PayrollCalculationBasis @default(CALENDAR_DAYS)
+  unpaidLeaveDeduction   Boolean                 @default(true)
+  halfDayDeductionFactor Float                   @default(0.5)
+  lateDeductionPolicy    LateDeductionPolicy     @default(NONE)
+  lateGraceOccurrences   Int                     @default(3)
+  lateDeductionAmount    Float                   @default(0)
+  wfhSalaryTreatment     String                  @default("FULL_PAY")
+  prorationPolicy        String                  @default("CALENDAR_DAYS")
+  currency               String                  @default("INR")
+  salaryPaymentMethods   Json?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  institute Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+
+  @@index([instituteId])
+}
+
+model SalaryStructure {
+  id          String   @id @default(uuid())
+  instituteId String
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  institute   Institute               @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  components  SalaryComponent[]
+  assignments StaffSalaryAssignment[]
+
+  @@unique([instituteId, name])
+  @@index([instituteId])
+}
+
+model SalaryComponent {
+  id              String                  @id @default(uuid())
+  structureId     String
+  name            String
+  type            SalaryComponentType
+  calculationType SalaryComponentCalcType
+  amountOrPercent Float
+  isTaxable       Boolean                 @default(true)
+  isStatutory     Boolean                 @default(false)
+  displayOrder    Int                     @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  structure SalaryStructure @relation(fields: [structureId], references: [id], onDelete: Cascade)
+
+  @@index([structureId])
+}
+
+model StaffSalaryAssignment {
+  id                   String           @id @default(uuid())
+  instituteId          String
+  staffId              String
+  structureId          String?
+  baseMonthlySalary    Float
+  effectiveFrom        DateTime         @db.Date
+  effectiveTo          DateTime?        @db.Date
+  status               String           @default("ACTIVE")
+  customComponentsJson Json?
+  notes                String?
+  createdById          String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  institute Institute        @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  staff     StaffProfile     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  structure SalaryStructure? @relation(fields: [structureId], references: [id], onDelete: SetNull)
+
+  @@index([instituteId, staffId])
+  @@index([staffId, status])
+}
+
+model PayrollRun {
+  id              String           @id @default(uuid())
+  instituteId     String
+  year            Int
+  month           Int
+  title           String
+  status          PayrollRunStatus @default(DRAFT)
+  totalStaffCount Int              @default(0)
+  totalGross      Float            @default(0)
+  totalDeductions Float            @default(0)
+  totalNetPayable Float            @default(0)
+  totalPaid       Float            @default(0)
+  calculatedAt    DateTime?
+  approvedAt      DateTime?
+  approvedById    String?
+  processedById   String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  institute Institute       @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  records   PayrollRecord[]
+
+  @@unique([instituteId, year, month])
+  @@index([instituteId])
+  @@index([status])
+}
+
+model PayrollRecord {
+  id                       String               @id @default(uuid())
+  runId                    String
+  instituteId              String
+  staffId                  String
+  staffSalaryAssignmentId  String?
+  employeeCode             String?
+  staffName                String
+  designation              String?
+  department               String?
+  bankAccountNumber        String?
+  bankIfsc                 String?
+  panNumber                String?
+  calendarDays             Int                  @default(30)
+  workedDays               Float                @default(0)
+  onSiteDays               Int                  @default(0)
+  wfhDays                  Int                  @default(0)
+  paidLeaveDays            Float                @default(0)
+  unpaidLeaveDays          Float                @default(0)
+  halfDays                 Int                  @default(0)
+  lateDays                 Int                  @default(0)
+  weeklyOffDays            Int                  @default(0)
+  publicHolidays           Int                  @default(0)
+  missingAttendanceDays    Int                  @default(0)
+  baseMonthlyRate          Float                @default(0)
+  grossPay                 Float                @default(0)
+  totalDeductions          Float                @default(0)
+  netPayable               Float                @default(0)
+  paidAmount               Float                @default(0)
+  pendingAmount            Float                @default(0)
+  paymentStatus            PayrollPaymentStatus @default(UNPAID)
+  calculationBreakdownJson Json
+  warnings                 Json?
+  branchAllocationJson     Json?
+  status                   String               @default("ACTIVE")
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  payrollRun  PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  staff       StaffProfile        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  payments    SalaryPayment[]
+  adjustments PayrollAdjustment[]
+  payslip     Payslip?
+
+  @@unique([runId, staffId])
+  @@index([instituteId, staffId])
+  @@index([paymentStatus])
+}
+
+model PayrollAdjustment {
+  id          String                @id @default(uuid())
+  recordId    String
+  type        PayrollAdjustmentType
+  title       String
+  amount      Float
+  reason      String
+  createdById String?
+  createdAt   DateTime              @default(now())
+
+  record PayrollRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId])
+}
+
+model SalaryPayment {
+  id                   String   @id @default(uuid())
+  recordId             String
+  instituteId          String
+  amount               Float
+  paymentMethod        String
+  transactionReference String?
+  paymentDate          DateTime @default(now())
+  notes                String?
+  recordedById         String?
+  createdAt            DateTime @default(now())
+
+  record PayrollRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId])
+  @@index([instituteId, paymentDate])
+}
+
+model Payslip {
+  id            String   @id @default(uuid())
+  recordId      String   @unique
+  instituteId   String
+  staffId       String
+  payslipNumber String   @unique
+  month         Int
+  year          Int
+  issueDate     DateTime @default(now())
+  snapshotJson  Json
+  createdAt     DateTime @default(now())
+
+  record PayrollRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([instituteId, staffId])
+  @@index([instituteId, year, month])
+}
+
+
+// -------------------------------------------------------------
+// MULTI-BRANCH INSTITUTE MANAGEMENT MODELS
+// -------------------------------------------------------------
+
+model Branch {
+  id                      String    @id @default(uuid())
+  instituteId             String
+  name                    String
+  code                    String    // Unique per institute e.g. "NBK-01", "ANR-02"
+  isDefault               Boolean   @default(false)
+  isActive                Boolean   @default(true)
+
+  // Location & Contact
+  address                 String?
+  city                    String?
+  state                   String?
+  postalCode              String?
+  phone                   String?
+  email                   String?
+
+  // GPS Geofence & Working Hours
+  latitude                Float?
+  longitude               Float?
+  geofenceRadius          Float     @default(200) // in metres
+  locationVerified        Boolean   @default(false)
+  workingDays             String    @default("MON,TUE,WED,THU,FRI,SAT")
+  workStartTime           String    @default("09:00")
+  workEndTime             String    @default("18:00")
+  lateGraceMinutes        Int       @default(15)
+  gpsAccuracyThreshold    Float     @default(50)
+  requireCheckoutGeofence Boolean   @default(true)
+  allowStaffWfhRequests   Boolean   @default(true)
+  timezone                String    @default("Asia/Kolkata")
+
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  institute               Institute                 @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  staffAssignments        BranchStaffAssignment[]
+  studentEnrollments      BranchStudentEnrollment[]
+  studentTransfersFrom    StudentBranchTransfer[]   @relation("TransferSourceBranch")
+  studentTransfersTo      StudentBranchTransfer[]   @relation("TransferDestBranch")
+  batches                 Batch[]
+  attendanceSessions      StaffAttendanceSession[]
+  attendanceEvents        AttendanceEvent[]
+  feeStructures           FeeStructure[]
+  feeAssignments          StudentFeeAssignment[]
+  payments                Payment[]
+  primaryStudents         Student[]                 @relation("StudentPrimaryBranch")
+
+  @@unique([instituteId, code])
+  @@index([instituteId])
+  @@index([instituteId, isActive])
+  @@index([isDefault])
+}
+
+model BranchStaffAssignment {
+  id             String    @id @default(uuid())
+  instituteId    String
+  branchId       String
+  staffProfileId String
+  assignmentType String    @default("PRIMARY") // "PRIMARY", "ADDITIONAL", "TEMPORARY", "SUBSTITUTE"
+  role           String?   // "BRANCH_ADMIN", "TEACHER", "COORDINATOR", "ADMIN_ASSISTANT"
+  isPrimary      Boolean   @default(false)
+  effectiveFrom  DateTime  @default(now()) @db.Date
+  effectiveTo    DateTime? @db.Date
+  isActive       Boolean   @default(true)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  institute    Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, staffProfileId, assignmentType])
+  @@index([staffProfileId, isActive])
+  @@index([branchId, isActive])
+  @@index([instituteId])
+}
+
+model BranchStudentEnrollment {
+  id          String    @id @default(uuid())
+  instituteId String
+  branchId    String
+  studentId   String
+  isPrimary   Boolean   @default(true)
+  status      String    @default("ACTIVE") // "ACTIVE", "TRANSFERRED", "COMPLETED", "INACTIVE"
+  enrolledAt  DateTime  @default(now())
+  leftAt      DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  institute Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, studentId])
+  @@index([studentId, status])
+  @@index([branchId, status])
+  @@index([instituteId])
+}
+
+model StudentBranchTransfer {
+  id                 String   @id @default(uuid())
+  instituteId        String
+  studentId          String
+  fromBranchId       String
+  toBranchId         String
+  transferDate       DateTime @default(now())
+  effectiveDate      DateTime @db.Date
+  reason             String
+  status             String   @default("COMPLETED") // "PENDING", "APPROVED", "COMPLETED", "CANCELLED"
+  transferFeesPolicy String   @default("RETAIN_HISTORICAL")
+  authorizedById     String
+  notes              String?
+  createdAt          DateTime @default(now())
+
+  institute    Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromBranch   Branch    @relation("TransferSourceBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
+  toBranch     Branch    @relation("TransferDestBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
+  authorizedBy User      @relation("TransferAuthorizer", fields: [authorizedById], references: [id])
+
+  @@index([instituteId])
+  @@index([studentId])
+  @@index([fromBranchId])
+  @@index([toBranchId])
 }

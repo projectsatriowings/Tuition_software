@@ -1,9 +1,9 @@
 import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useEffect, useState, useRef } from 'react';
 import { AudioWavePlayer } from '../components/AudioWavePlayer';
-import { fixWebmDuration } from '@fix-webm-duration/fix';
+import { fixWebmDuration } from '../utils/fixWebmDuration';
 import { apiFetch } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import {
   MessageSquare,
   Send,

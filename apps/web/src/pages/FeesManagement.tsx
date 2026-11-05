@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import {
   CreditCard,
   Plus,
@@ -23,6 +23,15 @@ import {
   X,
   RefreshCw,
   Building2,
+  Edit2,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+  Sparkles,
+  BookOpen,
+  GraduationCap,
+  Check,
+  Info,
 } from 'lucide-react';
 
 export const FeesManagement: React.FC = () => {
@@ -38,9 +47,47 @@ export const FeesManagement: React.FC = () => {
   const [loadingDashboard, setLoadingDashboard] = useState<boolean>(true);
 
   // Fee Structures state
+  interface FeeComponentItem {
+    name: string;
+    amount: number;
+    category?: string;
+  }
+
+  interface InstallmentItem {
+    installmentNo: number;
+    label: string;
+    percentage?: number;
+    amount: number;
+    dueOffsetDays?: number;
+  }
+
   const [feeStructures, setFeeStructures] = useState<any[]>([]);
   const [loadingStructures, setLoadingStructures] = useState<boolean>(false);
   const [showCreateStructureModal, setShowCreateStructureModal] = useState<boolean>(false);
+  const [editingStructure, setEditingStructure] = useState<any | null>(null);
+  const [structureSearch, setStructureSearch] = useState<string>('');
+  const [structureFreqFilter, setStructureFreqFilter] = useState<string>('ALL');
+
+  const [structureForm, setStructureForm] = useState({
+    batchId: '',
+    classGrade: '',
+    courseName: '',
+    name: '',
+    description: '',
+    academicYear: '2026-2027',
+    frequency: 'MONTHLY',
+    amount: 4500,
+    dueDay: 10,
+    isActive: true,
+    components: [
+      { name: 'Tuition & Live Classes', amount: 3500, category: 'TUITION' },
+      { name: 'Study Material & Notes', amount: 500, category: 'MATERIALS' },
+      { name: 'Mock Test Series', amount: 500, category: 'EXAMINATION' },
+    ] as FeeComponentItem[],
+    installments: [] as InstallmentItem[],
+  });
+
+  const [selectedStructureForAssign, setSelectedStructureForAssign] = useState<any | null>(null);
 
   // Assignments state
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -74,23 +121,17 @@ export const FeesManagement: React.FC = () => {
   const [students, setStudents] = useState<any[]>([]);
 
   // Form states
-  const [newStructure, setNewStructure] = useState({
-    batchId: '',
-    name: '',
-    description: '',
-    academicYear: '2026-2027',
-    frequency: 'MONTHLY',
-    amount: 0,
-    dueDay: 10,
-  });
-
   const [newAssignment, setNewAssignment] = useState({
     studentId: '',
     feeStructureId: '',
     termLabel: '',
     academicYear: '2026-2027',
+    baseAmount: 0,
     discountAmount: 0,
+    discountReason: '',
     dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+    installmentNo: null as number | null,
+    components: [] as FeeComponentItem[],
   });
 
   const [newBatchAssignment, setNewBatchAssignment] = useState({
@@ -118,6 +159,7 @@ export const FeesManagement: React.FC = () => {
     loadDashboardData();
     loadBatches();
     loadStudents();
+    loadFeeStructures();
   }, [isAdmin]);
 
   useEffect(() => {
@@ -226,39 +268,178 @@ export const FeesManagement: React.FC = () => {
     }
   };
 
-  const handleCreateStructure = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setActionError(null);
+  const openCreateStructureModal = (initialBatchId?: string) => {
+    setEditingStructure(null);
+    setStructureForm({
+      batchId: initialBatchId || '',
+      classGrade: '',
+      courseName: '',
+      name: '',
+      description: '',
+      academicYear: '2026-2027',
+      frequency: 'MONTHLY',
+      amount: 4500,
+      dueDay: 10,
+      isActive: true,
+      components: [
+        { name: 'Tuition & Live Classes', amount: 3500, category: 'TUITION' },
+        { name: 'Study Material & Worksheets', amount: 500, category: 'MATERIALS' },
+        { name: 'Monthly Mock Test Series', amount: 500, category: 'EXAMINATION' },
+      ],
+      installments: [],
+    });
+    setShowCreateStructureModal(true);
+  };
+
+  const openEditStructureModal = (fs: any) => {
+    setEditingStructure(fs);
+    setStructureForm({
+      batchId: fs.batchId || '',
+      classGrade: fs.classGrade || '',
+      courseName: fs.courseName || '',
+      name: fs.name || '',
+      description: fs.description || '',
+      academicYear: fs.academicYear || '2026-2027',
+      frequency: fs.frequency || 'MONTHLY',
+      amount: Number(fs.amount) || 0,
+      dueDay: fs.dueDay || 10,
+      isActive: fs.isActive !== false,
+      components: Array.isArray(fs.componentsJson) && fs.componentsJson.length > 0
+        ? fs.componentsJson
+        : [{ name: 'Tuition Fee', amount: Number(fs.amount) || 0, category: 'TUITION' }],
+      installments: Array.isArray(fs.installmentsJson) ? fs.installmentsJson : [],
+    });
+    setShowCreateStructureModal(true);
+  };
+
+  const handleToggleStructureActive = async (fs: any) => {
     try {
-      const res = await apiFetch('/fees/structures', {
-        method: 'POST',
-        body: JSON.stringify(newStructure),
+      setActionError(null);
+      const res = await apiFetch(`/fees/structures/${fs.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !fs.isActive }),
       });
       if (res.success) {
-        setActionSuccess('Fee structure created successfully.');
+        setActionSuccess(`Fee structure "${fs.name}" ${!fs.isActive ? 'activated' : 'deactivated'} successfully.`);
+        loadFeeStructures();
+      } else {
+        setActionError(res.error || 'Failed to update fee structure status');
+      }
+    } catch (err: any) {
+      setActionError(err.message || 'Error updating status');
+    }
+  };
+
+  const handleSaveStructure = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionError(null);
+
+    // Calculate total from components if components exist
+    let totalAmount = structureForm.amount;
+    if (structureForm.components && structureForm.components.length > 0) {
+      const componentSum = structureForm.components.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+      if (componentSum > 0) {
+        totalAmount = componentSum;
+      }
+    }
+
+    const payload: any = {
+      ...structureForm,
+      amount: totalAmount,
+      batchId: structureForm.batchId ? structureForm.batchId : null,
+      classGrade: structureForm.classGrade.trim() || null,
+      courseName: structureForm.courseName.trim() || null,
+      components: structureForm.components.filter(c => c.name.trim() && Number(c.amount) > 0),
+      installments: structureForm.installments.filter(i => i.label.trim() && Number(i.amount) > 0),
+    };
+
+    try {
+      const url = editingStructure ? `/fees/structures/${editingStructure.id}` : '/fees/structures';
+      const method = editingStructure ? 'PATCH' : 'POST';
+
+      const res = await apiFetch(url, {
+        method,
+        body: JSON.stringify(payload),
+      });
+
+      if (res.success) {
+        setActionSuccess(editingStructure ? 'Fee structure updated successfully.' : 'Fee structure created successfully.');
         setShowCreateStructureModal(false);
-        setNewStructure({
-          batchId: '',
-          name: '',
-          description: '',
-          academicYear: '2026-2027',
-          frequency: 'MONTHLY',
-          amount: 0,
-          dueDay: 10,
-        });
+        setEditingStructure(null);
         loadFeeStructures();
         loadDashboardData();
       } else {
-        setActionError(res.error || 'Failed to create fee structure');
+        setActionError(res.error || 'Failed to save fee structure');
       }
     } catch (err: any) {
-      setActionError(err.message || 'Error creating fee structure');
+      setActionError(err.message || 'Error saving fee structure');
+    }
+  };
+
+  const onSelectStructureForAssign = (fsId: string) => {
+    const fs = feeStructures.find(f => f.id === fsId);
+    setSelectedStructureForAssign(fs || null);
+
+    if (fs) {
+      const baseAmt = Number(fs.amount) || 0;
+      let defaultTerm = 'Term 1';
+      const now = new Date();
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const curMonth = monthNames[now.getMonth()];
+      const curYear = now.getFullYear();
+
+      if (fs.frequency === 'MONTHLY') {
+        defaultTerm = `${curMonth} ${curYear}`;
+      } else if (fs.frequency === 'QUARTERLY') {
+        const q = Math.floor(now.getMonth() / 3) + 1;
+        defaultTerm = `Q${q} (${curYear})`;
+      } else if (fs.frequency === 'TERM_WISE') {
+        defaultTerm = 'Term 1';
+      } else if (fs.frequency === 'ANNUAL') {
+        defaultTerm = `Annual Fee ${fs.academicYear || curYear}`;
+      } else if (fs.frequency === 'INSTALLMENT_BASED') {
+        defaultTerm = 'Installment 1';
+      } else if (fs.frequency === 'ONE_TIME') {
+        defaultTerm = 'Admission & Registration Fee';
+      }
+
+      // Calculate reasonable due date
+      const dueDay = fs.dueDay || 10;
+      const targetDate = new Date();
+      if (targetDate.getDate() > dueDay) {
+        targetDate.setMonth(targetDate.getMonth() + 1);
+      }
+      targetDate.setDate(dueDay);
+      const dueDateStr = targetDate.toISOString().split('T')[0];
+
+      setNewAssignment(prev => ({
+        ...prev,
+        feeStructureId: fsId,
+        termLabel: defaultTerm,
+        academicYear: fs.academicYear || '2026-2027',
+        baseAmount: baseAmt,
+        dueDate: dueDateStr,
+        components: Array.isArray(fs.componentsJson) ? fs.componentsJson : [{ name: 'Tuition Fee', amount: baseAmt }],
+      }));
+    } else {
+      setNewAssignment(prev => ({
+        ...prev,
+        feeStructureId: '',
+        baseAmount: 0,
+        components: [],
+      }));
     }
   };
 
   const handleAssignIndividual = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionError(null);
+
+    if (newAssignment.discountAmount > 0 && !newAssignment.discountReason.trim()) {
+      setActionError('A clear justification / reason is mandatory when granting a concession or discount.');
+      return;
+    }
+
     try {
       const res = await apiFetch('/fees/assignments', {
         method: 'POST',
@@ -267,13 +448,18 @@ export const FeesManagement: React.FC = () => {
       if (res.success) {
         setActionSuccess('Fee assigned successfully to student.');
         setShowAssignModal(false);
+        setSelectedStructureForAssign(null);
         setNewAssignment({
           studentId: '',
           feeStructureId: '',
           termLabel: '',
           academicYear: '2026-2027',
+          baseAmount: 0,
           discountAmount: 0,
+          discountReason: '',
           dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+          installmentNo: null,
+          components: [],
         });
         loadAssignments();
         loadDashboardData();
@@ -435,7 +621,7 @@ export const FeesManagement: React.FC = () => {
             <button
               onClick={() => {
                 setActionError(null);
-                setShowCreateStructureModal(true);
+                openCreateStructureModal();
               }}
               className="px-3 py-2 rounded-xl text-xs font-semibold bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] flex items-center gap-1.5 transition-all shadow-sm"
             >
@@ -908,47 +1094,221 @@ export const FeesManagement: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === 'structures' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-[#2D1E18] uppercase tracking-wider">Institute Fee Configurations</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-[#2D1E18] uppercase tracking-wider flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-[#6D4C41]" /> Institute Fee Configurations & Templates
+              </h3>
+              <p className="text-xs text-[#8D6E63] mt-0.5">
+                Standard reusable fee plans, itemized breakdowns, installment schedules, and billing cycles.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openCreateStructureModal()}
+                className="px-3 py-2 rounded-xl text-xs font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm flex items-center gap-1.5 transition-all"
+              >
+                <Plus className="w-4 h-4" /> Add Fee Structure
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Frequency Filter Bar */}
+          <div className="p-3 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-[#8D6E63] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search structures by name, class, or course..."
+                value={structureSearch}
+                onChange={(e) => setStructureSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[#6D4C41] font-semibold text-[11px]">Frequency:</span>
+              <select
+                value={structureFreqFilter}
+                onChange={(e) => setStructureFreqFilter(e.target.value)}
+                className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-2.5 py-1.5 text-[#2D1E18] text-xs focus:ring-2 focus:ring-[#8D6E63]"
+              >
+                <option value="ALL">All Frequencies</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="QUARTERLY">Quarterly</option>
+                <option value="TERM_WISE">Term-wise</option>
+                <option value="ANNUAL">Annual</option>
+                <option value="COURSE_BASED">Course-based</option>
+                <option value="INSTALLMENT_BASED">Installment-based</option>
+                <option value="ONE_TIME">One-time</option>
+              </select>
+            </div>
           </div>
 
           {loadingStructures ? (
-            <div className="p-12 text-center text-[#8D6E63] text-sm">Loading fee structures...</div>
+            <div className="p-12 text-center text-[#8D6E63] text-sm animate-pulse">Loading fee structures...</div>
           ) : feeStructures.length === 0 ? (
-            <div className="p-12 text-center rounded-3xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm">
-              No fee structures configured. Click "New Fee Structure" above.
+            <div className="p-12 text-center rounded-3xl bg-white border border-[#D7CCC8] text-[#8D6E63] text-sm shadow-sm space-y-3">
+              <div className="w-12 h-12 rounded-full bg-[#F7F2EF] mx-auto flex items-center justify-center text-[#6D4C41]">
+                <Layers className="w-6 h-6" />
+              </div>
+              <h4 className="font-bold text-[#2D1E18]">No Fee Structures Configured Yet</h4>
+              <p className="text-xs max-w-md mx-auto text-[#6D4C41]">
+                Define reusable fee templates with itemized components (tuition, materials, exams) for monthly, term, or installment billing.
+              </p>
+              <button
+                onClick={() => openCreateStructureModal()}
+                className="mt-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Create First Fee Structure
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {feeStructures.map((fs) => (
-                <div key={fs.id} className="p-5 rounded-3xl bg-white border border-[#D7CCC8] shadow-sm space-y-3 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4] uppercase">
-                        {fs.frequency}
-                      </span>
-                      <h4 className="text-base font-bold text-[#2D1E18] mt-1.5">{fs.name}</h4>
-                      <p className="text-xs text-[#6D4C41]">{fs.batch?.name || 'All Batches'} &bull; {fs.academicYear}</p>
+              {feeStructures
+                .filter((fs) => {
+                  if (structureFreqFilter !== 'ALL' && fs.frequency !== structureFreqFilter) return false;
+                  if (structureSearch) {
+                    const q = structureSearch.toLowerCase();
+                    const matchName = fs.name?.toLowerCase().includes(q);
+                    const matchGrade = fs.classGrade?.toLowerCase().includes(q);
+                    const matchCourse = fs.courseName?.toLowerCase().includes(q);
+                    const matchBatch = fs.batch?.name?.toLowerCase().includes(q);
+                    return matchName || matchGrade || matchCourse || matchBatch;
+                  }
+                  return true;
+                })
+                .map((fs) => {
+                  const comps = Array.isArray(fs.componentsJson) ? fs.componentsJson : [];
+                  const installments = Array.isArray(fs.installmentsJson) ? fs.installmentsJson : [];
+
+                  return (
+                    <div
+                      key={fs.id}
+                      className={`p-5 rounded-3xl bg-white border shadow-sm space-y-3 transition-all flex flex-col justify-between hover:shadow-md ${
+                        fs.isActive ? 'border-[#D7CCC8]' : 'border-gray-200 opacity-70 bg-gray-50/50'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#D7CCC8]/40 text-[#4E342E] border border-[#BCAAA4] uppercase">
+                                {fs.frequency?.replace('_', ' ')}
+                              </span>
+                              {fs.classGrade && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                  {fs.classGrade}
+                                </span>
+                              )}
+                              {fs.courseName && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-800 border border-purple-200">
+                                  {fs.courseName}
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-base font-bold text-[#2D1E18] leading-tight pt-1">{fs.name}</h4>
+                            <p className="text-xs text-[#6D4C41]">
+                              {fs.batch?.name ? (
+                                <span>Batch: <strong>{fs.batch.name}</strong></span>
+                              ) : (
+                                <span className="text-emerald-800 font-medium">Institute-Wide (All Batches)</span>
+                              )}
+                              {' • '}{fs.academicYear}
+                            </p>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="text-lg font-black text-emerald-800 block">{formatCurrency(fs.amount)}</span>
+                            {fs.dueDay && (
+                              <span className="text-[10px] text-[#8D6E63] block">Due Day: {fs.dueDay}th</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {fs.description && (
+                          <p className="text-xs text-[#6D4C41] pt-2 border-t border-[#EFEBE9]">{fs.description}</p>
+                        )}
+
+                        {/* Component Breakdown Pills */}
+                        {comps.length > 0 && (
+                          <div className="pt-2 border-t border-[#EFEBE9] space-y-1.5">
+                            <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wider block">
+                              Fee Components ({comps.length}):
+                            </span>
+                            <div className="space-y-1">
+                              {comps.map((c: any, cIdx: number) => (
+                                <div key={cIdx} className="flex items-center justify-between text-xs text-[#4E342E] bg-[#F7F2EF]/60 px-2 py-1 rounded-lg">
+                                  <span className="truncate pr-2">{c.name}</span>
+                                  <span className="font-semibold shrink-0">{formatCurrency(c.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Installments Schedule Preview */}
+                        {installments.length > 0 && (
+                          <div className="pt-2 border-t border-[#EFEBE9] space-y-1">
+                            <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wider block">
+                              Installments Schedule ({installments.length}):
+                            </span>
+                            <div className="grid grid-cols-2 gap-1 text-[11px]">
+                              {installments.map((inst: any, iIdx: number) => (
+                                <div key={iIdx} className="p-1.5 rounded-lg bg-amber-50/60 border border-amber-200/70 text-amber-900">
+                                  <div className="font-semibold truncate">{inst.label}</div>
+                                  <div className="font-bold text-amber-800">{formatCurrency(inst.amount)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Footer Actions */}
+                      <div className="pt-3 border-t border-[#EFEBE9] flex items-center justify-between text-xs mt-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-[#8D6E63]">
+                            {fs._count?.assignments || 0} active assignments
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleToggleStructureActive(fs)}
+                            className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1 ${
+                              fs.isActive
+                                ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                            }`}
+                            title={fs.isActive ? 'Deactivate this template' : 'Activate this template'}
+                          >
+                            {fs.isActive ? <ToggleRight className="w-3.5 h-3.5 text-emerald-700" /> : <ToggleLeft className="w-3.5 h-3.5 text-gray-500" />}
+                            {fs.isActive ? 'Active' : 'Inactive'}
+                          </button>
+
+                          <button
+                            onClick={() => openEditStructureModal(fs)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] transition-all flex items-center gap-1"
+                          >
+                            <Edit2 className="w-3 h-3" /> Edit
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              onSelectStructureForAssign(fs.id);
+                              setShowAssignModal(true);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-xs transition-all flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Assign
+                          </button>
+                        </div>
+                      </div>
                     </div>
-
-                    <div className="text-right">
-                      <span className="text-lg font-black text-emerald-800">{formatCurrency(fs.amount)}</span>
-                      {fs.dueDay && (
-                        <span className="block text-[10px] text-[#8D6E63]">Due Day: {fs.dueDay}th</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {fs.description && (
-                    <p className="text-xs text-[#6D4C41] pt-2 border-t border-[#EFEBE9]">{fs.description}</p>
-                  )}
-
-                  <div className="pt-2 flex items-center justify-between text-[11px] text-[#6D4C41]">
-                    <span>{fs._count?.assignments || 0} active assignments</span>
-                    <span className="text-emerald-800 font-semibold">{fs.isActive ? 'Active' : 'Archived'}</span>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
             </div>
           )}
         </div>
@@ -1282,89 +1642,119 @@ export const FeesManagement: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: CREATE FEE STRUCTURE */}
+      {/* MODAL 3: CREATE / EDIT FEE STRUCTURE */}
       {/* ========================================================================= */}
       {showCreateStructureModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-2xl p-6 space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-              <h3 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#6D4C41]" /> Create Fee Structure
-              </h3>
+              <div>
+                <h3 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#6D4C41]" />
+                  {editingStructure ? 'Edit Fee Structure' : 'Create New Fee Structure'}
+                </h3>
+                <p className="text-xs text-[#8D6E63]">
+                  Configure reusable tuition plans, itemized components, installment schedules, and billing cycles.
+                </p>
+              </div>
               <button
-                onClick={() => setShowCreateStructureModal(false)}
+                onClick={() => {
+                  setShowCreateStructureModal(false);
+                  setEditingStructure(null);
+                }}
                 className="text-[#8D6E63] hover:text-[#2D1E18]"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateStructure} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Applicable Batch</label>
-                <select
-                  required
-                  value={newStructure.batchId}
-                  onChange={(e) => setNewStructure({ ...newStructure, batchId: e.target.value })}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                >
-                  <option value="">Select Batch...</option>
-                  {batches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.academicYear})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Fee Structure Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., Monthly Tuition - Class 10"
-                  value={newStructure.name}
-                  onChange={(e) => setNewStructure({ ...newStructure, name: e.target.value })}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[#4E342E] font-medium mb-1">Frequency</label>
-                  <select
-                    value={newStructure.frequency}
-                    onChange={(e) => setNewStructure({ ...newStructure, frequency: e.target.value })}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                  >
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="TERM_WISE">Term-wise</option>
-                    <option value="ONE_TIME">One-time</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[#4E342E] font-medium mb-1">Amount (₹)</label>
+            <form onSubmit={handleSaveStructure} className="space-y-4 text-xs">
+              {/* Structure Name & Academic Year */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <label className="block text-[#4E342E] font-medium mb-1">
+                    Fee Structure Name <span className="text-rose-600">*</span>
+                  </label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="1"
+                    type="text"
                     required
-                    value={newStructure.amount}
-                    onChange={(e) => setNewStructure({ ...newStructure, amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-bold focus:ring-2 focus:ring-[#8D6E63]"
+                    placeholder="e.g., Class 10 Board Comprehensive Package"
+                    value={structureForm.name}
+                    onChange={(e) => setStructureForm({ ...structureForm, name: e.target.value })}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-medium focus:ring-2 focus:ring-[#8D6E63]"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[#4E342E] font-medium mb-1">Academic Year</label>
                   <input
                     type="text"
-                    value={newStructure.academicYear}
-                    onChange={(e) => setNewStructure({ ...newStructure, academicYear: e.target.value })}
+                    required
+                    placeholder="2026-2027"
+                    value={structureForm.academicYear}
+                    onChange={(e) => setStructureForm({ ...structureForm, academicYear: e.target.value })}
                     className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
                   />
+                </div>
+              </div>
+
+              {/* Class/Grade, Course, Batch Association */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[#4E342E] font-medium mb-1">Class / Grade</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Class 10, Grade 12"
+                    value={structureForm.classGrade}
+                    onChange={(e) => setStructureForm({ ...structureForm, classGrade: e.target.value })}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#4E342E] font-medium mb-1">Course / Stream</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Science & Math, NEET Target"
+                    value={structureForm.courseName}
+                    onChange={(e) => setStructureForm({ ...structureForm, courseName: e.target.value })}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#4E342E] font-medium mb-1">Applicable Batch</label>
+                  <select
+                    value={structureForm.batchId}
+                    onChange={(e) => setStructureForm({ ...structureForm, batchId: e.target.value })}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="">Institute-Wide (All Batches)</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.academicYear})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Frequency & Due Day */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#4E342E] font-medium mb-1">
+                    Billing Frequency <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    value={structureForm.frequency}
+                    onChange={(e) => setStructureForm({ ...structureForm, frequency: e.target.value })}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-semibold focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="MONTHLY">Monthly (Recurring every month)</option>
+                    <option value="QUARTERLY">Quarterly (Every 3 months)</option>
+                    <option value="TERM_WISE">Term-wise (Semester / Term intervals)</option>
+                    <option value="ANNUAL">Annual (Once per academic year)</option>
+                    <option value="COURSE_BASED">Course-based (Full syllabus package)</option>
+                    <option value="INSTALLMENT_BASED">Installment-based (Multi-part scheduled)</option>
+                    <option value="ONE_TIME">One-time (Admission / Registration)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[#4E342E] font-medium mb-1">Default Due Day of Month</label>
@@ -1372,37 +1762,301 @@ export const FeesManagement: React.FC = () => {
                     type="number"
                     min="1"
                     max="31"
-                    value={newStructure.dueDay}
-                    onChange={(e) => setNewStructure({ ...newStructure, dueDay: parseInt(e.target.value) || 10 })}
+                    placeholder="10"
+                    value={structureForm.dueDay}
+                    onChange={(e) => setStructureForm({ ...structureForm, dueDay: parseInt(e.target.value) || 10 })}
                     className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
                   />
                 </div>
               </div>
 
+              {/* Configurable Fee Components Builder */}
+              <div className="p-4 rounded-2xl bg-[#F7F2EF]/70 border border-[#D7CCC8] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-[#2D1E18] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-[#6D4C41]" /> Configurable Fee Components
+                    </h4>
+                    <p className="text-[11px] text-[#6D4C41]">
+                      Breakdown shown on receipts and fee cards (Tuition, Books, Exams, Admission).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStructureForm({
+                        ...structureForm,
+                        components: [
+                          ...structureForm.components,
+                          { name: 'Special Coaching', amount: 1000, category: 'OTHER' },
+                        ],
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#4E342E]/10 hover:bg-[#4E342E] text-[#4E342E] hover:text-white border border-[#D7CCC8] transition-all flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Component
+                  </button>
+                </div>
+
+                {/* Quick Preset Buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                  <span className="text-[#8D6E63] font-medium">Quick Presets:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!structureForm.components.some(c => c.name.includes('Tuition'))) {
+                        setStructureForm({
+                          ...structureForm,
+                          components: [...structureForm.components, { name: 'Tuition & Lectures', amount: 3000, category: 'TUITION' }],
+                        });
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-white border border-[#D7CCC8] text-[#4E342E] hover:bg-[#D7CCC8]/40 transition-colors"
+                  >
+                    + Tuition
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!structureForm.components.some(c => c.name.includes('Material') || c.name.includes('Book'))) {
+                        setStructureForm({
+                          ...structureForm,
+                          components: [...structureForm.components, { name: 'Study Materials & Books', amount: 500, category: 'MATERIALS' }],
+                        });
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-white border border-[#D7CCC8] text-[#4E342E] hover:bg-[#D7CCC8]/40 transition-colors"
+                  >
+                    + Study Materials
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!structureForm.components.some(c => c.name.includes('Test') || c.name.includes('Exam'))) {
+                        setStructureForm({
+                          ...structureForm,
+                          components: [...structureForm.components, { name: 'Test Series & Exams', amount: 500, category: 'EXAMINATION' }],
+                        });
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-white border border-[#D7CCC8] text-[#4E342E] hover:bg-[#D7CCC8]/40 transition-colors"
+                  >
+                    + Test Series
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!structureForm.components.some(c => c.name.includes('Admission') || c.name.includes('Registration'))) {
+                        setStructureForm({
+                          ...structureForm,
+                          components: [...structureForm.components, { name: 'Registration & Kit', amount: 1000, category: 'ADMISSION' }],
+                        });
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-white border border-[#D7CCC8] text-[#4E342E] hover:bg-[#D7CCC8]/40 transition-colors"
+                  >
+                    + Admission / Registration
+                  </button>
+                </div>
+
+                {/* Components Table */}
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {structureForm.components.map((comp, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded-xl border border-[#D7CCC8]">
+                      <input
+                        type="text"
+                        placeholder="Component Name (e.g., Tuition)"
+                        value={comp.name}
+                        onChange={(e) => {
+                          const updated = [...structureForm.components];
+                          updated[idx].name = e.target.value;
+                          setStructureForm({ ...structureForm, components: updated });
+                        }}
+                        className="flex-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1 text-xs text-[#2D1E18]"
+                      />
+                      <select
+                        value={comp.category || 'OTHER'}
+                        onChange={(e) => {
+                          const updated = [...structureForm.components];
+                          updated[idx].category = e.target.value;
+                          setStructureForm({ ...structureForm, components: updated });
+                        }}
+                        className="bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2 py-1 text-[11px] text-[#2D1E18]"
+                      >
+                        <option value="TUITION">Tuition</option>
+                        <option value="MATERIALS">Study Materials</option>
+                        <option value="EXAMINATION">Examinations</option>
+                        <option value="ADMISSION">Admission</option>
+                        <option value="LAB">Lab / Tech</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                      <div className="relative w-28">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#8D6E63] font-bold">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Amount"
+                          value={comp.amount}
+                          onChange={(e) => {
+                            const updated = [...structureForm.components];
+                            updated[idx].amount = parseFloat(e.target.value) || 0;
+                            const newTotal = updated.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+                            setStructureForm({ ...structureForm, components: updated, amount: newTotal });
+                          }}
+                          className="w-full pl-6 pr-2 py-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg text-xs font-bold text-[#2D1E18]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = structureForm.components.filter((_, i) => i !== idx);
+                          const newTotal = updated.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+                          setStructureForm({ ...structureForm, components: updated, amount: newTotal });
+                        }}
+                        className="p-1 rounded-lg text-rose-600 hover:bg-rose-50"
+                        title="Remove component"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Auto Calculated Sum */}
+                <div className="pt-2 border-t border-[#D7CCC8] flex items-center justify-between text-xs font-bold text-[#2D1E18]">
+                  <span>Total Calculated Fee Amount:</span>
+                  <span className="text-base font-black text-emerald-800">
+                    {formatCurrency(
+                      structureForm.components.reduce((sum, c) => sum + (Number(c.amount) || 0), 0) || structureForm.amount
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Installment Schedules Builder (if Installment-based or Term-wise) */}
+              {(structureForm.frequency === 'INSTALLMENT_BASED' || structureForm.frequency === 'TERM_WISE') && (
+                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-amber-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-amber-800" /> Installment Schedules
+                      </h4>
+                      <p className="text-[11px] text-amber-800">
+                        Define scheduled payments (e.g. 2 terms or 3 milestone installments).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextNo = structureForm.installments.length + 1;
+                        setStructureForm({
+                          ...structureForm,
+                          installments: [
+                            ...structureForm.installments,
+                            {
+                              installmentNo: nextNo,
+                              label: `Installment ${nextNo}`,
+                              amount: Math.round(structureForm.amount / (nextNo || 1)),
+                              dueOffsetDays: (nextNo - 1) * 90,
+                            },
+                          ],
+                        });
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-200/60 hover:bg-amber-300 text-amber-900 border border-amber-300 transition-all flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Installment
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {structureForm.installments.map((inst, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded-xl border border-amber-200">
+                        <span className="font-bold text-amber-900 w-6">#{inst.installmentNo}</span>
+                        <input
+                          type="text"
+                          placeholder="Label (e.g., 1st Term at Admission)"
+                          value={inst.label}
+                          onChange={(e) => {
+                            const updated = [...structureForm.installments];
+                            updated[idx].label = e.target.value;
+                            setStructureForm({ ...structureForm, installments: updated });
+                          }}
+                          className="flex-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2.5 py-1 text-xs text-[#2D1E18]"
+                        />
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#8D6E63] font-bold">₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Amount"
+                            value={inst.amount}
+                            onChange={(e) => {
+                              const updated = [...structureForm.installments];
+                              updated[idx].amount = parseFloat(e.target.value) || 0;
+                              setStructureForm({ ...structureForm, installments: updated });
+                            }}
+                            className="w-full pl-6 pr-2 py-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg text-xs font-bold text-[#2D1E18]"
+                          />
+                        </div>
+                        <input
+                          type="number"
+                          placeholder="Offset (Days)"
+                          title="Days after admission"
+                          value={inst.dueOffsetDays || 0}
+                          onChange={(e) => {
+                            const updated = [...structureForm.installments];
+                            updated[idx].dueOffsetDays = parseInt(e.target.value) || 0;
+                            setStructureForm({ ...structureForm, installments: updated });
+                          }}
+                          className="w-20 bg-[#F7F2EF] border border-[#D7CCC8] rounded-lg px-2 py-1 text-xs text-center text-[#2D1E18]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = structureForm.installments.filter((_, i) => i !== idx);
+                            setStructureForm({ ...structureForm, installments: updated });
+                          }}
+                          className="p-1 rounded-lg text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
               <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Description (Optional)</label>
+                <label className="block text-[#4E342E] font-medium mb-1">Description & Academy Notes</label>
                 <textarea
                   rows={2}
-                  placeholder="Includes lab access, monthly mock exams, etc."
-                  value={newStructure.description}
-                  onChange={(e) => setNewStructure({ ...newStructure, description: e.target.value })}
+                  placeholder="Includes laboratory access, mock exam evaluations, and doubt clearing sessions..."
+                  value={structureForm.description}
+                  onChange={(e) => setStructureForm({ ...structureForm, description: e.target.value })}
                   className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#EFEBE9]">
+              {/* Modal Actions */}
+              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#EFEBE9]">
                 <button
                   type="button"
-                  onClick={() => setShowCreateStructureModal(false)}
+                  onClick={() => {
+                    setShowCreateStructureModal(false);
+                    setEditingStructure(null);
+                  }}
                   className="px-4 py-2 rounded-xl text-[#6D4C41] hover:bg-[#F7F2EF]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm"
+                  className="px-5 py-2.5 rounded-xl font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm flex items-center gap-1.5 transition-all"
                 >
-                  Save Fee Structure
+                  <Check className="w-4 h-4" />
+                  {editingStructure ? 'Update Fee Structure' : 'Save Fee Structure'}
                 </button>
               </div>
             </form>
@@ -1414,25 +2068,39 @@ export const FeesManagement: React.FC = () => {
       {/* MODAL 4: ASSIGN FEE TO INDIVIDUAL STUDENT */}
       {/* ========================================================================= */}
       {showAssignModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
-              <h3 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#6D4C41]" /> Assign Fee to Student
-              </h3>
-              <button onClick={() => setShowAssignModal(false)} className="text-[#8D6E63] hover:text-[#2D1E18]">
+              <div>
+                <h3 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
+                  <Plus className="w-5 h-5 text-[#6D4C41]" /> Assign Fee to Student
+                </h3>
+                <p className="text-xs text-[#8D6E63]">
+                  Generate tuition fee obligations with live component breakdown, scholarships & concessions.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setSelectedStructureForAssign(null);
+                }}
+                className="text-[#8D6E63] hover:text-[#2D1E18]"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleAssignIndividual} className="space-y-4 text-xs">
+              {/* Select Student */}
               <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Select Student</label>
+                <label className="block text-[#4E342E] font-medium mb-1">
+                  Select Student <span className="text-rose-600">*</span>
+                </label>
                 <select
                   required
                   value={newAssignment.studentId}
                   onChange={(e) => setNewAssignment({ ...newAssignment, studentId: e.target.value })}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-medium focus:ring-2 focus:ring-[#8D6E63]"
                 >
                   <option value="">Select Student...</option>
                   {students.map((s) => (
@@ -1443,26 +2111,148 @@ export const FeesManagement: React.FC = () => {
                 </select>
               </div>
 
+              {/* Select Fee Structure with Empty State Protection */}
               <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Fee Structure</label>
-                <select
-                  required
-                  value={newAssignment.feeStructureId}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, feeStructureId: e.target.value })}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                >
-                  <option value="">Select Fee Structure...</option>
-                  {feeStructures.map((fs) => (
-                    <option key={fs.id} value={fs.id}>
-                      {fs.name} - ₹{fs.amount} ({fs.frequency})
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-[#4E342E] font-medium mb-1">
+                  Fee Structure Template <span className="text-rose-600">*</span>
+                </label>
+
+                {loadingStructures ? (
+                  <div className="p-3 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl text-center text-[#8D6E63] animate-pulse">
+                    Loading fee structures...
+                  </div>
+                ) : feeStructures.length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-amber-800">
+                      <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                      No Fee Structures Configured Yet
+                    </div>
+                    <p className="text-[#6D4C41]">
+                      There are currently no active fee structure templates in this institute. You need to create at least one fee structure before assigning fees.
+                    </p>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAssignModal(false);
+                          openCreateStructureModal();
+                        }}
+                        className="mt-1 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm inline-flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Create Fee Structure Now ↗
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      required
+                      value={newAssignment.feeStructureId}
+                      onChange={(e) => onSelectStructureForAssign(e.target.value)}
+                      className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-semibold focus:ring-2 focus:ring-[#8D6E63]"
+                    >
+                      <option value="">Select Fee Structure...</option>
+                      {feeStructures
+                        .filter((fs) => fs.isActive)
+                        .map((fs) => (
+                          <option key={fs.id} value={fs.id}>
+                            {fs.classGrade ? `[${fs.classGrade}] ` : ''}{fs.name} — ₹{fs.amount} ({fs.frequency?.replace('_', ' ')}) {fs.batch ? '• ' + fs.batch.name : '• Institute-wide'}
+                          </option>
+                        ))}
+                    </select>
+
+                    <div className="flex items-center justify-between mt-1.5 text-[11px] text-[#8D6E63]">
+                      <span>Fee for a different class (e.g. Class 6, 7, 8)?</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAssignModal(false);
+                          openCreateStructureModal();
+                        }}
+                        className="text-[#4E342E] font-bold hover:underline inline-flex items-center gap-0.5"
+                      >
+                        + Create Structure for Class ↗
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
+              {/* Dynamic Component Breakdown & Installment Selector when Structure is Selected */}
+              {selectedStructureForAssign && (
+                <div className="space-y-3">
+                  {/* Itemized Component Table */}
+                  <div className="rounded-2xl bg-[#F7F2EF] border border-[#D7CCC8] p-3.5 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-[#2D1E18]">
+                      <span>Itemized Fee Components</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#D7CCC8]/50 text-[#4E342E] font-semibold uppercase">
+                        {selectedStructureForAssign.frequency?.replace('_', ' ')}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 divide-y divide-[#EFEBE9] pt-1">
+                      {newAssignment.components.map((comp, idx) => (
+                        <div key={idx} className="pt-1.5 flex items-center justify-between text-xs text-[#4E342E]">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#8D6E63]"></span>
+                            {comp.name}
+                          </span>
+                          <span className="font-semibold">{formatCurrency(comp.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-2 border-t border-[#D7CCC8] flex items-center justify-between font-bold text-xs text-[#2D1E18]">
+                      <span>Base Template Fee:</span>
+                      <span className="text-emerald-800">{formatCurrency(newAssignment.baseAmount)}</span>
+                    </div>
+                  </div>
+
+                  {/* Installment Selector if Structure has Installments */}
+                  {Array.isArray(selectedStructureForAssign.installmentsJson) && selectedStructureForAssign.installmentsJson.length > 0 && (
+                    <div>
+                      <label className="block text-[#4E342E] font-medium mb-1">Select Scheduled Installment</label>
+                      <select
+                        value={newAssignment.installmentNo || ''}
+                        onChange={(e) => {
+                          const val = e.target.value ? parseInt(e.target.value) : null;
+                          const inst = selectedStructureForAssign.installmentsJson.find((i: any) => i.installmentNo === val);
+                          if (inst) {
+                            setNewAssignment({
+                              ...newAssignment,
+                              installmentNo: val,
+                              termLabel: inst.label,
+                              baseAmount: Number(inst.amount) || newAssignment.baseAmount,
+                            });
+                          } else {
+                            setNewAssignment({
+                              ...newAssignment,
+                              installmentNo: null,
+                              termLabel: 'Full Course Package',
+                              baseAmount: Number(selectedStructureForAssign.amount),
+                            });
+                          }
+                        }}
+                        className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                      >
+                        <option value="">Full Course Fee (All Installments Combined)</option>
+                        {selectedStructureForAssign.installmentsJson.map((inst: any) => (
+                          <option key={inst.installmentNo} value={inst.installmentNo}>
+                            Installment #{inst.installmentNo}: {inst.label} — ₹{inst.amount}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Term Label & Academic Year */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[#4E342E] font-medium mb-1">Term Label</label>
+                  <label className="block text-[#4E342E] font-medium mb-1">
+                    Term / Invoice Label <span className="text-rose-600">*</span>
+                  </label>
                   <input
                     type="text"
                     required
@@ -1473,42 +2263,90 @@ export const FeesManagement: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[#4E342E] font-medium mb-1">Concession / Discount (₹)</label>
+                  <label className="block text-[#4E342E] font-medium mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={newAssignment.dueDate}
+                    onChange={(e) => setNewAssignment({ ...newAssignment, dueDate: e.target.value })}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+              </div>
+
+              {/* Student Concession / Scholarship & Mandatory Reason */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#4E342E] font-medium mb-1">
+                    Concession / Scholarship (₹)
+                  </label>
                   <input
                     type="number"
                     min="0"
+                    max={newAssignment.baseAmount || 999999}
                     step="0.01"
                     value={newAssignment.discountAmount}
                     onChange={(e) => setNewAssignment({ ...newAssignment, discountAmount: parseFloat(e.target.value) || 0 })}
                     className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
                   />
                 </div>
+                <div>
+                  <label className="block text-[#4E342E] font-medium mb-1">
+                    Discount Reason {newAssignment.discountAmount > 0 ? <span className="text-rose-600 font-bold">* (Required)</span> : '(Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    required={newAssignment.discountAmount > 0}
+                    placeholder={newAssignment.discountAmount > 0 ? "e.g., Merit scholarship, Sibling discount" : "Reason if discount applied"}
+                    value={newAssignment.discountReason}
+                    onChange={(e) => setNewAssignment({ ...newAssignment, discountReason: e.target.value })}
+                    className={`w-full bg-[#F7F2EF] border rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63] ${
+                      newAssignment.discountAmount > 0 && !newAssignment.discountReason.trim()
+                        ? 'border-rose-400 bg-rose-50/30'
+                        : 'border-[#D7CCC8]'
+                    }`}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Due Date</label>
-                <input
-                  type="date"
-                  required
-                  value={newAssignment.dueDate}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, dueDate: e.target.value })}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                />
-              </div>
+              {/* Live Net Payable Obligation Summary Card */}
+              {newAssignment.feeStructureId && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between shadow-xs">
+                  <div>
+                    <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider block">
+                      Total Net Payable Obligation
+                    </span>
+                    <span className="text-[10px] text-emerald-800">
+                      Base Fee {formatCurrency(newAssignment.baseAmount)}
+                      {newAssignment.discountAmount > 0 && ` − Concession ${formatCurrency(newAssignment.discountAmount)}`}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xl font-black text-emerald-950">
+                      {formatCurrency(Math.max(0, newAssignment.baseAmount - newAssignment.discountAmount))}
+                    </span>
+                  </div>
+                </div>
+              )}
 
+              {/* Modal Actions */}
               <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#EFEBE9]">
                 <button
                   type="button"
-                  onClick={() => setShowAssignModal(false)}
+                  onClick={() => {
+                    setShowAssignModal(false);
+                    setSelectedStructureForAssign(null);
+                  }}
                   className="px-4 py-2 rounded-xl text-[#6D4C41] hover:bg-[#F7F2EF]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm"
+                  disabled={!newAssignment.feeStructureId || !newAssignment.studentId}
+                  className="px-5 py-2.5 rounded-xl font-bold bg-[#4E342E] hover:bg-[#3E2723] text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  Assign Fee
+                  <Check className="w-4 h-4" /> Confirm & Assign Fee
                 </button>
               </div>
             </form>
@@ -1554,20 +2392,43 @@ export const FeesManagement: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[#4E342E] font-medium mb-1">Fee Structure</label>
-                <select
-                  required
-                  value={newBatchAssignment.feeStructureId}
-                  onChange={(e) => setNewBatchAssignment({ ...newBatchAssignment, feeStructureId: e.target.value })}
-                  className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] focus:ring-2 focus:ring-[#8D6E63]"
-                >
-                  <option value="">Select Fee Structure...</option>
-                  {feeStructures.map((fs) => (
-                    <option key={fs.id} value={fs.id}>
-                      {fs.name} - ₹{fs.amount}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-[#4E342E] font-medium mb-1">
+                  Fee Structure <span className="text-rose-600">*</span>
+                </label>
+                {feeStructures.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                    No fee structures available. Please create a fee structure first.
+                  </div>
+                ) : (
+                  <select
+                    required
+                    value={newBatchAssignment.feeStructureId}
+                    onChange={(e) => {
+                      const fsId = e.target.value;
+                      const fs = feeStructures.find((f) => f.id === fsId);
+                      let defaultTerm = newBatchAssignment.termLabel;
+                      if (fs && !defaultTerm) {
+                        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                        defaultTerm = fs.frequency === 'MONTHLY' ? `${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}` : 'Term 1';
+                      }
+                      setNewBatchAssignment({
+                        ...newBatchAssignment,
+                        feeStructureId: fsId,
+                        termLabel: defaultTerm,
+                      });
+                    }}
+                    className="w-full bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-3 py-2 text-[#2D1E18] font-semibold focus:ring-2 focus:ring-[#8D6E63]"
+                  >
+                    <option value="">Select Fee Structure...</option>
+                    {feeStructures
+                      .filter((fs) => fs.isActive)
+                      .map((fs) => (
+                        <option key={fs.id} value={fs.id}>
+                          {fs.classGrade ? `[${fs.classGrade}] ` : ''}{fs.name} — ₹{fs.amount} ({fs.frequency?.replace('_', ' ')}) {fs.batch ? '• ' + fs.batch.name : '• Institute-wide'}
+                        </option>
+                      ))}
+                  </select>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

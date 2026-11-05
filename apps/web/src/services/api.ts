@@ -59,6 +59,22 @@ export function getActiveInstituteId(): string | null {
   return instituteId || null;
 }
 
+export function getActiveBranchId(): string | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  return localStorage.getItem('tuition_active_branch_id') || null;
+}
+
+export function setActiveBranchId(branchId: string | null) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  if (branchId) {
+    localStorage.setItem('tuition_active_branch_id', branchId);
+  } else {
+    localStorage.removeItem('tuition_active_branch_id');
+  }
+  // Invalidate cache so fresh branch data loads
+  invalidateApiCache();
+}
+
 // In-memory request cache and in-flight promise deduplicator
 const inFlightRequests = new Map<string, Promise<any>>();
 const apiCache = new Map<string, { data: any; expiry: number }>();
@@ -128,6 +144,11 @@ export async function apiFetch<T = any>(endpoint: string, options: ApiFetchOptio
 
     if (instituteId) {
       headers['x-institute-id'] = instituteId;
+    }
+
+    const branchId = getActiveBranchId();
+    if (branchId && branchId !== 'all') {
+      headers['x-branch-id'] = branchId;
     }
 
     let response: Response;

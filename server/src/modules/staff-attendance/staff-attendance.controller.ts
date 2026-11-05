@@ -79,6 +79,7 @@ const updateConfigSchema = z.object({
 });
 
 const checkInSchema = z.object({
+  branchId: z.string().uuid().optional().nullable(),
   mode: z.enum(['ON_SITE', 'WFH']).default('ON_SITE'),
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
@@ -302,16 +303,16 @@ export async function getStaffTodayStatus(req: AuthenticatedRequest, res: Respon
     const timezone = institute?.timezone || 'Asia/Kolkata';
     const today = getLocalDateForInstitute(new Date(), timezone);
 
-    // Find session for today
-    const session = await prisma.staffAttendanceSession.findUnique({
+    // Find session for today (latest session if multiple shifts)
+    const session = await prisma.staffAttendanceSession.findFirst({
       where: {
-        instituteId_staffId_attendanceDate: {
-          instituteId,
-          staffId: staff.id,
-          attendanceDate: today,
-        },
+        instituteId,
+        staffId: staff.id,
+        attendanceDate: today,
       },
+      orderBy: { sessionNumber: 'desc' },
       include: {
+        branch: { select: { id: true, name: true, code: true } },
         events: {
           orderBy: { serverTimestamp: 'desc' },
           take: 5,
@@ -366,7 +367,7 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const { mode = 'ON_SITE', latitude, longitude, accuracy, deviceInfo, idempotencyKey } = parsed.data;
+    const { branchId: reqBranchId, mode = 'ON_SITE', latitude, longitude, accuracy, deviceInfo, idempotencyKey } = parsed.data;
 
     // Check staff profile
     const staff = await prisma.staffProfile.findFirst({
@@ -394,8 +395,34 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
+    // Resolve target branch: passed in body, or request header, or staff's primary branch assignment
+    let targetBranch: any = null;
+    const branchCandidateId = reqBranchId || req.branchId;
+    if (branchCandidateId) {
+      targetBranch = await prisma.branch.findFirst({
+        where: { id: branchCandidateId, instituteId, isActive: true },
+      });
+    }
+    if (!targetBranch) {
+      const primaryAssignment = await prisma.branchStaffAssignment.findFirst({
+        where: { staffProfileId: staff.id, instituteId, isActive: true, isPrimary: true },
+        include: { branch: true },
+      });
+      targetBranch = primaryAssignment?.branch || await prisma.branch.findFirst({
+        where: { instituteId, isDefault: true, isActive: true },
+      });
+    }
+
+    const branchLat = targetBranch?.latitude != null ? targetBranch.latitude : institute.latitude;
+    const branchLng = targetBranch?.longitude != null ? targetBranch.longitude : institute.longitude;
+    const branchRadius = targetBranch?.geofenceRadius ?? institute.geofenceRadius ?? 200;
+    const branchGpsAccuracy = targetBranch?.gpsAccuracyThreshold ?? institute.gpsAccuracyThreshold ?? 50;
+    const branchWorkStart = targetBranch?.workStartTime || institute.workStartTime || '09:00';
+    const branchGrace = targetBranch?.lateGraceMinutes ?? institute.lateGraceMinutes ?? 15;
+    const branchTz = targetBranch?.timezone || institute.timezone || 'Asia/Kolkata';
+
     const serverNow = new Date();
-    const today = getLocalDateForInstitute(serverNow, institute.timezone);
+    const today = getLocalDateForInstitute(serverNow, branchTz);
 
     let validationOutcome = 'VERIFIED_INSIDE_GEOFENCE';
     let distanceMetres: number | null = null;
@@ -437,9 +464,9 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
 
       const validation = validateStaffLocation({
         staffCoords: { latitude, longitude, accuracy },
-        instituteCoords: { latitude: institute.latitude, longitude: institute.longitude },
-        geofenceRadius: institute.geofenceRadius,
-        gpsAccuracyThreshold: institute.gpsAccuracyThreshold,
+        instituteCoords: { latitude: branchLat, longitude: branchLng },
+        geofenceRadius: branchRadius,
+        gpsAccuracyThreshold: branchGpsAccuracy,
       });
 
       if (!validation.isValid) {
@@ -448,7 +475,7 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
           message: validation.reason,
           code: validation.code,
           distanceMetres: validation.distanceMetres,
-          permittedRadius: institute.geofenceRadius,
+          permittedRadius: branchRadius,
           reportedAccuracy: accuracy,
         });
         return;
@@ -459,57 +486,47 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
       isWithinGeofence = true;
     }
 
-    // Check if session already exists
-    const existingSession = await prisma.staffAttendanceSession.findUnique({
+    // Check existing sessions for today (supports multiple shifts / cross-branch attendance)
+    const existingSessions = await prisma.staffAttendanceSession.findMany({
       where: {
-        instituteId_staffId_attendanceDate: {
-          instituteId,
-          staffId: staff.id,
-          attendanceDate: today,
-        },
+        instituteId,
+        staffId: staff.id,
+        attendanceDate: today,
       },
+      orderBy: { sessionNumber: 'desc' },
     });
 
-    if (existingSession && existingSession.checkInTime) {
+    const openSession = existingSessions.find((s) => s.checkInTime && !s.checkOutTime);
+    if (openSession) {
       res.status(409).json({
         success: false,
-        message: 'You have already checked in for today',
-        session: existingSession,
+        message: 'You currently have an active checked-in session. Please check out before starting a new session or switching branches.',
+        session: openSession,
       });
       return;
     }
 
+    const nextSessionNumber = (existingSessions[0]?.sessionNumber || 0) + 1;
+
     // Determine lateness
     const isLate = isCheckInLate({
       checkInTime: serverNow,
-      workStartTimeStr: institute.workStartTime || '09:00',
-      lateGraceMinutes: institute.lateGraceMinutes ?? 15,
-      timezone: institute.timezone || 'Asia/Kolkata',
+      workStartTimeStr: branchWorkStart,
+      lateGraceMinutes: branchGrace,
+      timezone: branchTz,
     });
 
     const status: StaffAttendanceStatus = isLate ? 'LATE' : 'CHECKED_IN';
 
     // Execute atomic transaction
     const result = await prisma.$transaction(async (tx) => {
-      const session = await tx.staffAttendanceSession.upsert({
-        where: {
-          instituteId_staffId_attendanceDate: {
-            instituteId,
-            staffId: staff.id,
-            attendanceDate: today,
-          },
-        },
-        create: {
+      const session = await tx.staffAttendanceSession.create({
+        data: {
           instituteId,
           staffId: staff.id,
+          branchId: targetBranch?.id || null,
+          sessionNumber: nextSessionNumber,
           attendanceDate: today,
-          status,
-          checkInTime: serverNow,
-          isLate,
-          attendanceMode: mode,
-          wfhAuthorizationId,
-        },
-        update: {
           status,
           checkInTime: serverNow,
           isLate,
@@ -523,6 +540,7 @@ export async function staffCheckIn(req: AuthenticatedRequest, res: Response): Pr
           sessionId: session.id,
           instituteId,
           staffId: staff.id,
+          branchId: targetBranch?.id || null,
           eventType: 'CHECK_IN',
           serverTimestamp: serverNow,
           latitude: latitude ?? null,
@@ -606,17 +624,30 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
     const today = getLocalDateForInstitute(serverNow, institute.timezone);
 
     // Find active session
-    const session = await prisma.staffAttendanceSession.findUnique({
+    const session = await prisma.staffAttendanceSession.findFirst({
       where: {
-        instituteId_staffId_attendanceDate: {
-          instituteId,
-          staffId: staff.id,
-          attendanceDate: today,
-        },
+        instituteId,
+        staffId: staff.id,
+        attendanceDate: today,
+        checkInTime: { not: null },
+        checkOutTime: null,
       },
+      orderBy: { sessionNumber: 'desc' },
+      include: { branch: true },
     });
 
     if (!session || !session.checkInTime) {
+      const alreadyCheckedOut = await prisma.staffAttendanceSession.findFirst({
+        where: { instituteId, staffId: staff.id, attendanceDate: today, checkOutTime: { not: null } },
+      });
+      if (alreadyCheckedOut) {
+        res.status(409).json({
+          success: false,
+          message: 'You have already checked out for today.',
+          session: alreadyCheckedOut,
+        });
+        return;
+      }
       res.status(400).json({
         success: false,
         message: 'No active check-in found for today. You cannot check out without checking in first.',
@@ -639,6 +670,11 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
     let distanceMetres: number | null = null;
     let isWithin = true;
 
+    const branchLat = session.branch?.latitude != null ? session.branch.latitude : institute.latitude;
+    const branchLng = session.branch?.longitude != null ? session.branch.longitude : institute.longitude;
+    const branchRadius = session.branch?.geofenceRadius ?? institute.geofenceRadius ?? 200;
+    const branchGpsAccuracy = session.branch?.gpsAccuracyThreshold ?? institute.gpsAccuracyThreshold ?? 50;
+
     if (!isWfhSession && institute.requireCheckoutGeofence) {
       if (latitude == null || longitude == null) {
         res.status(400).json({
@@ -650,9 +686,9 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
 
       const validation = validateStaffLocation({
         staffCoords: { latitude, longitude, accuracy },
-        instituteCoords: { latitude: institute.latitude, longitude: institute.longitude },
-        geofenceRadius: institute.geofenceRadius,
-        gpsAccuracyThreshold: institute.gpsAccuracyThreshold,
+        instituteCoords: { latitude: branchLat, longitude: branchLng },
+        geofenceRadius: branchRadius,
+        gpsAccuracyThreshold: branchGpsAccuracy,
       });
 
       if (!validation.isValid) {
@@ -667,9 +703,9 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
 
       distanceMetres = validation.distanceMetres;
       isWithin = validation.isWithinRadius;
-    } else if (!isWfhSession && latitude != null && longitude != null && institute.latitude != null && institute.longitude != null) {
-      distanceMetres = calculateHaversineDistance(institute.latitude, institute.longitude, latitude, longitude);
-      isWithin = distanceMetres <= institute.geofenceRadius;
+    } else if (!isWfhSession && latitude != null && longitude != null && branchLat != null && branchLng != null) {
+      distanceMetres = calculateHaversineDistance(branchLat, branchLng, latitude, longitude);
+      isWithin = distanceMetres <= branchRadius;
     }
 
     // Calculate duration in minutes from server timestamps
@@ -691,6 +727,7 @@ export async function staffCheckOut(req: AuthenticatedRequest, res: Response): P
           sessionId: session.id,
           instituteId,
           staffId: staff.id,
+          branchId: session.branchId || null,
           eventType: 'CHECK_OUT',
           serverTimestamp: serverNow,
           latitude: latitude ?? null,
@@ -1116,38 +1153,54 @@ export async function manualCorrection(req: AuthenticatedRequest, res: Response)
     const serverNow = new Date();
 
     const result = await prisma.$transaction(async (tx) => {
-      const session = await tx.staffAttendanceSession.upsert({
-        where: {
-          instituteId_staffId_attendanceDate: {
-            instituteId,
-            staffId: targetStaffId!,
-            attendanceDate,
-          },
-        },
-        create: {
-          instituteId,
-          staffId: targetStaffId!,
-          attendanceDate,
-          status,
-          checkInTime: inTime,
-          checkOutTime: outTime,
-          workDurationMinutes: durationMinutes,
-          isManuallyCorrected: true,
-          correctionReason: reason,
-          correctedById: adminUserId,
-          correctedAt: serverNow,
-        },
-        update: {
-          status,
-          checkInTime: inTime,
-          checkOutTime: outTime,
-          workDurationMinutes: durationMinutes,
-          isManuallyCorrected: true,
-          correctionReason: reason,
-          correctedById: adminUserId,
-          correctedAt: serverNow,
-        },
-      });
+      const session = targetSessionId
+        ? await tx.staffAttendanceSession.update({
+            where: { id: targetSessionId },
+            data: {
+              status,
+              checkInTime: inTime,
+              checkOutTime: outTime,
+              workDurationMinutes: durationMinutes,
+              isManuallyCorrected: true,
+              correctionReason: reason,
+              correctedById: adminUserId,
+              correctedAt: serverNow,
+            },
+          })
+        : await tx.staffAttendanceSession.upsert({
+            where: {
+              instituteId_staffId_attendanceDate_sessionNumber: {
+                instituteId,
+                staffId: targetStaffId!,
+                attendanceDate,
+                sessionNumber: 1,
+              },
+            },
+            create: {
+              instituteId,
+              staffId: targetStaffId!,
+              attendanceDate,
+              sessionNumber: 1,
+              status,
+              checkInTime: inTime,
+              checkOutTime: outTime,
+              workDurationMinutes: durationMinutes,
+              isManuallyCorrected: true,
+              correctionReason: reason,
+              correctedById: adminUserId,
+              correctedAt: serverNow,
+            },
+            update: {
+              status,
+              checkInTime: inTime,
+              checkOutTime: outTime,
+              workDurationMinutes: durationMinutes,
+              isManuallyCorrected: true,
+              correctionReason: reason,
+              correctedById: adminUserId,
+              correctedAt: serverNow,
+            },
+          });
 
       // Add audit event
       await tx.staffAttendanceEvent.create({

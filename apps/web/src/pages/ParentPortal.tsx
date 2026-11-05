@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { ParentDashboardView } from './parent/ParentDashboardView';
 import { ParentAttendanceView } from './parent/ParentAttendanceView';
 import { ParentCommunicationView } from './parent/ParentCommunicationView';
