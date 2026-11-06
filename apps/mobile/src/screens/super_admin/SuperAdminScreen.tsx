@@ -115,6 +115,8 @@ export const SuperAdminScreen: React.FC = () => {
         title="Super Admin Console"
         subtitle="TuitionOS Multi-Tenant Governance"
         onRefresh={onRefresh}
+        refreshing={refreshing}
+        onNavigateTab={(tab) => setActiveTab(tab as any)}
       />
 
       {/* Sub-view Breadcrumb Header when in secondary view */}

@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import { PressableScale } from '../../../theme/motion';
 import { ParentActiveTab } from './ParentBottomNav';
 
 interface ParentHomeTabProps {
@@ -399,54 +400,89 @@ export const ParentHomeTab: React.FC<ParentHomeTabProps> = ({
             </View>
           </View>
 
-          {/* 4. Prioritized Quick Action Pills */}
+          {/* 4. Prioritized Quick Action Shortcuts (Compact 2x2 Grid) */}
           <View style={styles.quickActionsSection}>
-            <Text style={styles.sectionHeaderTitle}>QUICK ACTIONS</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickActionPillsRow}
-            >
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('attendance')}>
-                <CalendarCheck size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Attendance</Text>
-              </TouchableOpacity>
+            <View style={styles.quickActionsHeaderRow}>
+              <Text style={styles.sectionHeaderTitle}>QUICK ACTIONS</Text>
+              <PressableScale
+                onPress={() => onNavigateTab('more')}
+                activeScale={0.95}
+                accessibilityRole="button"
+                accessibilityLabel="More parent actions"
+              >
+                <Text style={styles.moreActionsLink}>All Actions →</Text>
+              </PressableScale>
+            </View>
 
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('learning')}>
-                <BookOpen size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Study Files</Text>
-              </TouchableOpacity>
+            <View style={styles.quickActionGrid}>
+              <View style={styles.quickActionRow}>
+                <PressableScale
+                  style={styles.quickActionCard}
+                  onPress={() => onNavigateTab('attendance')}
+                  activeScale={0.96}
+                  accessibilityRole="button"
+                  accessibilityLabel="Child Attendance"
+                >
+                  <View style={[styles.quickActionIconBox, { backgroundColor: '#EDE7F6' }]}>
+                    <CalendarCheck size={16} color="#6B21A8" />
+                  </View>
+                  <View style={styles.quickActionTextBox}>
+                    <Text style={styles.quickActionTitle}>Attendance</Text>
+                    <Text style={styles.quickActionSub}>Daily gate logs</Text>
+                  </View>
+                </PressableScale>
 
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('homework')}>
-                <FileText size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Homework</Text>
-              </TouchableOpacity>
+                <PressableScale
+                  style={styles.quickActionCard}
+                  onPress={() => onNavigateTab('homework')}
+                  activeScale={0.96}
+                  accessibilityRole="button"
+                  accessibilityLabel="Homework and Tasks"
+                >
+                  <View style={[styles.quickActionIconBox, { backgroundColor: '#FFF3E0' }]}>
+                    <FileText size={16} color="#C2410C" />
+                  </View>
+                  <View style={styles.quickActionTextBox}>
+                    <Text style={styles.quickActionTitle}>Homework</Text>
+                    <Text style={styles.quickActionSub}>{homeworkList.length} assignments</Text>
+                  </View>
+                </PressableScale>
+              </View>
 
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('results')}>
-                <Trophy size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Exam Marks</Text>
-              </TouchableOpacity>
+              <View style={styles.quickActionRow}>
+                <PressableScale
+                  style={styles.quickActionCard}
+                  onPress={() => onNavigateTab('learning')}
+                  activeScale={0.96}
+                  accessibilityRole="button"
+                  accessibilityLabel="Study Materials"
+                >
+                  <View style={[styles.quickActionIconBox, { backgroundColor: '#E8F5E9' }]}>
+                    <BookOpen size={16} color="#15803D" />
+                  </View>
+                  <View style={styles.quickActionTextBox}>
+                    <Text style={styles.quickActionTitle}>Study Files</Text>
+                    <Text style={styles.quickActionSub}>{materials.length} resources</Text>
+                  </View>
+                </PressableScale>
 
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('fees')}>
-                <CreditCard size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Fee Receipts</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('messages')}>
-                <MessageSquare size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Faculty Chat</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickActionPill} onPress={() => onNavigateTab('progress')}>
-                <BarChart2 size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Progress Report</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickActionPill} onPress={onOpenReviewModal}>
-                <Star size={14} color={themeTokens.colors.primary} />
-                <Text style={styles.quickActionText}>Write Review</Text>
-              </TouchableOpacity>
-            </ScrollView>
+                <PressableScale
+                  style={styles.quickActionCard}
+                  onPress={() => onNavigateTab('messages')}
+                  activeScale={0.96}
+                  accessibilityRole="button"
+                  accessibilityLabel="Teacher Messages"
+                >
+                  <View style={[styles.quickActionIconBox, { backgroundColor: '#EFF6FF' }]}>
+                    <MessageSquare size={16} color="#1D4ED8" />
+                  </View>
+                  <View style={styles.quickActionTextBox}>
+                    <Text style={styles.quickActionTitle}>Teacher Chat</Text>
+                    <Text style={styles.quickActionSub}>{conversations.length} active threads</Text>
+                  </View>
+                </PressableScale>
+              </View>
+            </View>
           </View>
 
           {/* 5. Actionable Item 1: Campus Attendance & Gate Log */}
@@ -984,6 +1020,61 @@ const styles = StyleSheet.create({
   // 4. Quick Actions
   quickActionsSection: {
     marginBottom: 16,
+  },
+  quickActionsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  moreActionsLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  quickActionGrid: {
+    gap: 8,
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickActionCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    gap: 8,
+    shadowColor: '#2D1E18',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  quickActionIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickActionTextBox: {
+    flex: 1,
+  },
+  quickActionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
+  quickActionSub: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 1,
   },
   sectionHeaderTitle: {
     fontSize: 11,

@@ -400,8 +400,10 @@ export const StudentScreen: React.FC = () => {
             : user?.fullName || 'Academic Portal'
         }
         onRefresh={onRefresh}
+        refreshing={refreshing}
         onOpenNotifications={() => setShowNotificationModal(true)}
         unreadNotificationsCount={unreadNotifCount}
+        onNavigateTab={(tab) => setActiveTab(tab as any)}
       />
 
       {/* Secondary Sub-View Navigation Breadcrumb */}

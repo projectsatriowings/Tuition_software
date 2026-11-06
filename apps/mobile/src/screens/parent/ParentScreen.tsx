@@ -460,8 +460,10 @@ export const ParentScreen: React.FC = () => {
             : 'Family Dashboard'
         }
         onRefresh={onRefresh}
+        refreshing={refreshing}
         onOpenNotifications={() => setShowNotificationModal(true)}
         unreadNotificationsCount={unreadNotifCount}
+        onNavigateTab={(tab) => setActiveTab(tab as any)}
       />
 
       {/* Sub-view Breadcrumb Bar */}

@@ -95,17 +95,21 @@ async function run() {
     const staffUser = await prisma.user.findFirst({ where: { email: 'teacher@apex.example.com' } });
     const adminUser = await prisma.user.findFirst({ where: { email: 'admin@apex.example.com' } });
     
-    // Sharika is assigned to Anita Verma's batch
-    const assignedStudent = await prisma.student.findFirst({
-      where: {
-        enrollments: {
-          some: {
-            batchId: 'e519b639-fbdb-41e9-98f8-c636cda46120',
-            subjectId: '7ea0898b-696a-41cf-8c6d-b8ae9c748a31',
-          },
-        },
-      },
+    // Look up assigned student for Anita Verma's batch dynamically
+    const staffProfile = await prisma.staffProfile.findFirst({
+      where: { user: { email: 'teacher@apex.example.com' } },
+      include: { assignments: true },
     });
+    const teacherBatchId = staffProfile?.assignments?.[0]?.batchId;
+    const assignedStudent = teacherBatchId
+      ? await prisma.student.findFirst({
+          where: {
+            enrollments: {
+              some: { batchId: teacherBatchId },
+            },
+          },
+        })
+      : await prisma.student.findFirst();
 
     const assignedParentRel = assignedStudent ? await prisma.studentParentRelation.findFirst({
       where: { studentId: assignedStudent.id },
@@ -258,10 +262,13 @@ async function run() {
     });
     const adminToken = adminLoginRes.data?.data?.accessToken;
 
+    const instHeader = staffProfile?.instituteId ? { 'x-institute-id': staffProfile.instituteId } : {};
+
     if (assignedStudent) {
       const resetStudentRes = await request(`/students/${assignedStudent.id}/reset-password`, {
         method: 'POST',
         token: staffToken,
+        headers: instHeader,
         body: { newPassword: 'Password#123' },
       });
       assert(
@@ -278,6 +285,7 @@ async function run() {
       const resetParentRes = await request(`/parents/${assignedParentRel.parent.id}/reset-password`, {
         method: 'POST',
         token: staffToken,
+        headers: instHeader,
         body: { newPassword: 'Password#123' },
       });
       assert(
@@ -295,6 +303,7 @@ async function run() {
       const adminResetRes = await request(`/students/${assignedStudent.id}/reset-password`, {
         method: 'POST',
         token: adminToken,
+        headers: instHeader,
         body: { newPassword: 'Password#123' },
       });
       assert(
