@@ -189,16 +189,18 @@ export const BranchManagement: React.FC = () => {
   const fetchBranches = async () => {
     try {
       setLoading(true);
-      const [branchRes, summaryRes] = await Promise.all([
-        apiFetch('/branches'),
-        apiFetch('/branches/consolidated-summary'),
-      ]);
-
-      if (branchRes.success) {
+      const branchRes = await apiFetch('/branches');
+      if (branchRes.success && Array.isArray(branchRes.data)) {
         setBranches(branchRes.data);
       }
-      if (summaryRes.success) {
-        setConsolidated(summaryRes.data);
+
+      try {
+        const summaryRes = await apiFetch('/branches/consolidated-summary');
+        if (summaryRes.success && summaryRes.data) {
+          setConsolidated(summaryRes.data);
+        }
+      } catch (sumErr) {
+        console.warn('[fetchSummary warning]', sumErr);
       }
     } catch (err: any) {
       console.error('[fetchBranches error]', err);

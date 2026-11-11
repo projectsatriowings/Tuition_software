@@ -23,11 +23,13 @@ router.use(requireInstituteContext);
 
 // 1. Consolidated summary overview
 router.get('/summary', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getConsolidatedSummary);
+router.get('/consolidated-summary', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getConsolidatedSummary);
 
 // 2. Schedule conflict checker
 router.get('/staff/:staffProfileId/schedule-conflict', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), checkScheduleConflict);
 
 // 3. Student branch transfer
+router.post('/transfer-student', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), transferStudent);
 router.post('/students/transfer', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), transferStudent);
 
 // 4. Staff branch assignment management
@@ -38,6 +40,7 @@ router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listBranc
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), createBranch);
 
 router.get('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getBranchDetails);
+router.patch('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), updateBranch);
 router.put('/:id', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), updateBranch);
 
 router.get('/:id/deactivation-safety', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN'), checkDeactivationSafety);

@@ -81,7 +81,7 @@ export const StaffAvatar: React.FC<StaffAvatarProps> = ({
       baseEndpoint = avatarUrl;
     } else if (avatarUrl) {
       baseEndpoint = `/api/staff/photo-raw/${encodeURIComponent(avatarUrl)}`;
-    } else if (staffId) {
+    } else if (staffId && avatarUrl === undefined) {
       baseEndpoint = `/api/staff/${staffId}/photo`;
     }
 
