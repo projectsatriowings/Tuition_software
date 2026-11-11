@@ -347,8 +347,14 @@ export const AdminScreen: React.FC = () => {
         title="Institute Director Portal"
         subtitle={institute?.name || 'TuitionOS Academy'}
         onRefresh={onRefresh}
+        refreshing={refreshing}
         onOpenNotifications={() => setShowNotificationModal(true)}
         unreadNotificationsCount={unreadNotifCount}
+        onNavigateTab={(tab) => setActiveTab(tab as any)}
+        onOpenBranchModal={() => setShowBranchModal(true)}
+        onOpenFeeStructures={() => setShowFeeStructuresModal(true)}
+        onOpenPayroll={() => setShowPayrollModal(true)}
+        onOpenAIQuestionGen={() => setShowQuestionGeneratorModal(true)}
       />
 
       {/* Sub-view Breadcrumb Header */}

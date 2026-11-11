@@ -659,8 +659,13 @@ export const StaffScreen: React.FC = () => {
         title={headerInfo.title}
         subtitle={headerInfo.subtitle}
         onRefresh={onRefresh}
+        refreshing={refreshing}
         onOpenNotifications={() => setShowNotificationModal(true)}
         unreadNotificationsCount={unreadNotifCount}
+        onNavigateTab={(tab) => setActiveTab(tab as any)}
+        onOpenMyAttendance={() => setShowStaffAttendanceModal(true)}
+        onOpenMyPayslips={() => setShowStaffPayslipsModal(true)}
+        onOpenAIQuestionGen={() => setShowQuestionGenModal(true)}
       />
 
       {/* Subview Back Breadcrumb (For Secondary Views accessed via More or Quick Actions) */}

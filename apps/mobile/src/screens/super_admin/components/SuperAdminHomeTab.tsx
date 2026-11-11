@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import { PressableScale } from '../../../theme/motion';
 import { SuperAdminActiveTab } from './SuperAdminBottomNav';
 
 interface SuperAdminHomeTabProps {
@@ -197,46 +198,89 @@ export const SuperAdminHomeTab: React.FC<SuperAdminHomeTabProps> = ({
         </View>
       </View>
 
-      {/* 3. Quick Action Shortcuts */}
+      {/* 3. Quick Action Shortcuts (Compact 2x2 Grid) */}
       <View style={styles.quickActionsSection}>
-        <Text style={styles.sectionHeaderTitle}>QUICK ACTIONS</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickActionPillsRow}
-        >
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={onOpenCreateModal}
+        <View style={styles.quickActionsHeaderRow}>
+          <Text style={styles.sectionHeaderTitle}>QUICK ACTIONS</Text>
+          <PressableScale
+            onPress={() => onNavigateTab('more')}
+            activeScale={0.95}
+            accessibilityRole="button"
+            accessibilityLabel="More platform actions"
           >
-            <Building2 size={16} color="#FFFFFF" />
-            <Text style={styles.quickActionText}>Provision Institute</Text>
-          </TouchableOpacity>
+            <Text style={styles.moreActionsLink}>All Actions →</Text>
+          </PressableScale>
+        </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('institutes')}
-          >
-            <ClipboardList size={16} color="#FFFFFF" />
-            <Text style={styles.quickActionText}>Manage Tenants</Text>
-          </TouchableOpacity>
+        <View style={styles.quickActionGrid}>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={onOpenCreateModal}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Provision Institute"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#F0FDF4' }]}>
+                <Building2 size={16} color="#15803D" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>+ Provision Academy</Text>
+                <Text style={styles.quickActionSub}>Create tenant</Text>
+              </View>
+            </PressableScale>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('security')}
-          >
-            <ShieldCheck size={16} color="#FFFFFF" />
-            <Text style={styles.quickActionText}>Security Audit</Text>
-          </TouchableOpacity>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('institutes')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Manage Tenants"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#EFF6FF' }]}>
+                <ClipboardList size={16} color="#1D4ED8" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Manage Tenants</Text>
+                <Text style={styles.quickActionSub}>{institutes.length} registered</Text>
+              </View>
+            </PressableScale>
+          </View>
 
-          <TouchableOpacity
-            style={styles.quickActionPill}
-            onPress={() => onNavigateTab('adminAccount')}
-          >
-            <Key size={16} color="#FFFFFF" />
-            <Text style={styles.quickActionText}>Admin Credentials</Text>
-          </TouchableOpacity>
-        </ScrollView>
+          <View style={styles.quickActionRow}>
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('security')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Platform Security"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#EDE7F6' }]}>
+                <ShieldCheck size={16} color="#6B21A8" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Platform Security</Text>
+                <Text style={styles.quickActionSub}>Audit & isolation</Text>
+              </View>
+            </PressableScale>
+
+            <PressableScale
+              style={styles.quickActionCard}
+              onPress={() => onNavigateTab('adminAccount')}
+              activeScale={0.96}
+              accessibilityRole="button"
+              accessibilityLabel="Admin Credentials"
+            >
+              <View style={[styles.quickActionIconBox, { backgroundColor: '#FEF3C7' }]}>
+                <Key size={16} color="#B45309" />
+              </View>
+              <View style={styles.quickActionTextBox}>
+                <Text style={styles.quickActionTitle}>Credentials</Text>
+                <Text style={styles.quickActionSub}>Admin secrets</Text>
+              </View>
+            </PressableScale>
+          </View>
+        </View>
       </View>
 
       {/* 4. Action Card: Multi-Tenant Platform Status */}
@@ -500,6 +544,61 @@ const styles = StyleSheet.create({
   // 3. Quick Actions
   quickActionsSection: {
     marginBottom: 16,
+  },
+  quickActionsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  moreActionsLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6D4C41',
+  },
+  quickActionGrid: {
+    gap: 8,
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickActionCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#EFEBE9',
+    gap: 8,
+    shadowColor: '#2D1E18',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  quickActionIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickActionTextBox: {
+    flex: 1,
+  },
+  quickActionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2D1E18',
+  },
+  quickActionSub: {
+    fontSize: 10,
+    color: '#8D6E63',
+    marginTop: 1,
   },
   sectionHeaderTitle: {
     fontSize: 11,
