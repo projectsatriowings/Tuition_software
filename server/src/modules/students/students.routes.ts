@@ -17,6 +17,7 @@ import {
   assignStudentBatch,
   lookupExistingStudent,
   enrollExistingStudent,
+  getMyStudentAttendance,
 } from './students.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 import { fileUpload, photoUpload } from '../../utils/storage.js';
@@ -47,6 +48,7 @@ router.use(requireInstituteContext);
 router.get('/admission-prefix', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), getAdmissionPrefixInfo);
 router.get('/lookup', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), lookupExistingStudent);
 router.get('/lookup-parent', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), lookupParent);
+router.get('/my/attendance', requireRole('STUDENT'), getMyStudentAttendance);
 router.get('/my/profile', requireRole('STUDENT'), getMyStudentProfile);
 router.get('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), listStudents);
 router.post('/', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), admitStudent);

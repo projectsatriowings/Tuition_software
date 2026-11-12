@@ -16,6 +16,7 @@ import { PressableScale } from '../../../theme/motion';
 interface StudentHomeTabProps {
   user: any;
   studentProfile: any;
+  studentAttendance?: any;
   materials: any[];
   homeworkList: any[];
   quizzes: any[];
@@ -35,6 +36,7 @@ interface StudentHomeTabProps {
 export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
   user,
   studentProfile,
+  studentAttendance,
   materials,
   homeworkList,
   quizzes,
@@ -96,11 +98,11 @@ export const StudentHomeTab: React.FC<StudentHomeTabProps> = ({
   const latestFeedback = progressFeedbacks[0];
   const attendanceRate =
     latestFeedback?.attendanceRate !== null &&
-    latestFeedback?.attendanceRate !== undefined
+      latestFeedback?.attendanceRate !== undefined
       ? `${Number(latestFeedback.attendanceRate)}%`
       : studentProfile?.attendanceEvents?.length > 0
-      ? 'Active'
-      : 'Enrolled';
+        ? 'Active'
+        : 'Enrolled';
 
   const outstandingBalance = feeStatement?.summary?.outstandingBalance || 0;
 

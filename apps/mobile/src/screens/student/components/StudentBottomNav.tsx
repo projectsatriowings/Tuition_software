@@ -5,6 +5,7 @@ import { RoleBottomNav, RoleNavItem } from '../../../components/navigation/RoleB
 export type StudentPrimaryTab = 'home' | 'learning' | 'homework' | 'results' | 'more';
 export type StudentActiveTab =
   | StudentPrimaryTab
+  | 'attendance'
   | 'progress'
   | 'timetable'
   | 'fees'

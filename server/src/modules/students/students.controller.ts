@@ -33,7 +33,7 @@ export function formatStudentResponse<T extends { id: string; photoUrl?: string 
       cleanNotes = parsed.userNotes || null;
       credentialsOnRecord.studentPassword = parsed.studentPassword || null;
       credentialsOnRecord.parentPassword = parsed.parentPassword || null;
-    } catch {}
+    } catch { }
   }
 
   return {
@@ -325,7 +325,44 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
         }
       }
     }
-    // Check if likely existing student already exists in this institute (by phone, email, or admissionNumber)
+    // 1. Check if student already exists by explicit admission number
+    const cleanAdmissionNum = data.admissionNumber?.trim() || null;
+    if (cleanAdmissionNum) {
+      const existingByAdm = await prisma.student.findFirst({
+        where: { instituteId, admissionNumber: cleanAdmissionNum },
+        include: {
+          enrollments: {
+            where: { isActive: true },
+            include: { batch: true, subject: true },
+          },
+        },
+      });
+
+      if (existingByAdm) {
+        const errorMsg = 'Student already exists. Please check the existing student record.';
+        return res.status(409).json({
+          success: false,
+          isExistingStudent: true,
+          error: errorMsg,
+          message: errorMsg,
+          existingStudent: {
+            id: existingByAdm.id,
+            admissionNumber: existingByAdm.admissionNumber,
+            firstName: existingByAdm.firstName,
+            lastName: existingByAdm.lastName,
+            phone: existingByAdm.phone,
+            enrollments: existingByAdm.enrollments.map((e) => ({
+              batchId: e.batchId,
+              batchName: e.batch?.name,
+              subjectId: e.subjectId,
+              subjectName: e.subject?.name,
+            })),
+          },
+        });
+      }
+    }
+
+    // 2. Check if student already exists by student phone or email
     const cleanPhone = data.studentPhone?.trim() || data.phone?.trim() || null;
     const cleanEmail = data.studentEmail?.trim().toLowerCase() || data.email?.trim().toLowerCase() || null;
 
@@ -348,7 +385,7 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
       });
 
       if (existingStudent) {
-        const errorMsg = `A student profile already exists in this institute (${existingStudent.firstName} ${existingStudent.lastName}, Admission: ${existingStudent.admissionNumber}). Please use 'Enroll Existing Student' to enroll them into another batch or subject without duplicating the account.`;
+        const errorMsg = 'Student already exists. Please check the existing student record.';
         return res.status(409).json({
           success: false,
           isExistingStudent: true,
@@ -361,6 +398,56 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
             lastName: existingStudent.lastName,
             phone: existingStudent.phone,
             enrollments: existingStudent.enrollments.map((e) => ({
+              batchId: e.batchId,
+              batchName: e.batch?.name,
+              subjectId: e.subjectId,
+              subjectName: e.subject?.name,
+            })),
+          },
+        });
+      }
+    }
+
+    // 3. Check if student already exists under the same parent within this institute
+    const cleanParentPhone = data.parentPhone?.trim() || null;
+    if (cleanParentPhone) {
+      const existingUnderParent = await prisma.student.findFirst({
+        where: {
+          instituteId,
+          firstName: { equals: data.firstName.trim(), mode: 'insensitive' },
+          lastName: { equals: data.lastName.trim(), mode: 'insensitive' },
+          parentRelations: {
+            some: {
+              parent: {
+                user: {
+                  phone: cleanParentPhone,
+                },
+              },
+            },
+          },
+        },
+        include: {
+          enrollments: {
+            where: { isActive: true },
+            include: { batch: true, subject: true },
+          },
+        },
+      });
+
+      if (existingUnderParent) {
+        const errorMsg = 'Student already exists. Please check the existing student record.';
+        return res.status(409).json({
+          success: false,
+          isExistingStudent: true,
+          error: errorMsg,
+          message: errorMsg,
+          existingStudent: {
+            id: existingUnderParent.id,
+            admissionNumber: existingUnderParent.admissionNumber,
+            firstName: existingUnderParent.firstName,
+            lastName: existingUnderParent.lastName,
+            phone: existingUnderParent.phone,
+            enrollments: existingUnderParent.enrollments.map((e) => ({
               batchId: e.batchId,
               batchName: e.batch?.name,
               subjectId: e.subjectId,
@@ -865,6 +952,9 @@ export async function getMyStudentProfile(req: AuthenticatedRequest, res: Respon
         userId: req.user.userId,
       },
       include: {
+        user: {
+          select: { id: true, fullName: true, phone: true, email: true },
+        },
         institute: {
           select: { id: true, name: true, code: true, address: true, phone: true },
         },
@@ -912,12 +1002,264 @@ export async function getMyStudentProfile(req: AuthenticatedRequest, res: Respon
       return res.status(404).json({ success: false, error: 'No student record associated with this account' });
     }
 
+    // Real-time attendance computation for student dashboard
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999));
+    const batchId = student.enrollments[0]?.batchId;
+
+    let totalWorkingDays = 0;
+    if (batchId) {
+      const distinctBatchDays = await prisma.attendanceEvent.findMany({
+        where: {
+          batchId,
+          eventDate: { gte: monthStart, lte: monthEnd },
+        },
+        distinct: ['eventDate'],
+        select: { eventDate: true },
+      });
+      totalWorkingDays = distinctBatchDays.length;
+    }
+
+    const studentMonthEvents = await prisma.attendanceEvent.findMany({
+      where: {
+        studentId: student.id,
+        eventType: 'CHECK_IN',
+        eventDate: { gte: monthStart, lte: monthEnd },
+      },
+      select: { eventDate: true, isLate: true },
+    });
+
+    const presentDays = studentMonthEvents.length;
+    const lateDays = studentMonthEvents.filter((e) => e.isLate).length;
+    const absentDays = Math.max(0, totalWorkingDays - presentDays);
+    const attendancePercentage = totalWorkingDays > 0
+      ? Math.round((presentDays / totalWorkingDays) * 100)
+      : (presentDays > 0 ? 100 : 100);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const todayEvents = await prisma.attendanceEvent.findMany({
+      where: {
+        studentId: student.id,
+        eventDate: { gte: todayStart, lte: todayEnd },
+      },
+      orderBy: { eventTime: 'asc' },
+    });
+
+    const checkIn = todayEvents.find((e) => e.eventType === 'CHECK_IN');
+    const checkOut = todayEvents.find((e) => e.eventType === 'CHECK_OUT');
+
+    let todayStatus: 'CHECKED_IN' | 'CHECKED_OUT' | 'NOT_MARKED' | 'LATE' = 'NOT_MARKED';
+    if (checkOut) {
+      todayStatus = 'CHECKED_OUT';
+    } else if (checkIn) {
+      todayStatus = checkIn.isLate ? 'LATE' : 'CHECKED_IN';
+    }
+
+    const attendanceSummary = {
+      attendancePercentage,
+      presentDays,
+      absentDays,
+      lateDays,
+      totalWorkingDays,
+      todayStatus,
+      checkInTime: checkIn?.eventTime || null,
+      checkOutTime: checkOut?.eventTime || null,
+    };
+
     return res.json({
       success: true,
-      data: { student: formatStudentResponse(student) },
+      data: {
+        student: {
+          ...formatStudentResponse(student),
+          attendanceSummary,
+        },
+      },
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to fetch student profile' });
+  }
+}
+
+/**
+ * Get logged-in student's complete monthly attendance breakdown and calendar
+ */
+export async function getMyStudentAttendance(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (!req.user || req.user.role !== 'STUDENT') {
+      return res.status(403).json({ success: false, error: 'Only student accounts can access student attendance' });
+    }
+
+    const student = await prisma.student.findFirst({
+      where: { userId: req.user.userId },
+      include: {
+        enrollments: {
+          where: { isActive: true },
+          include: { batch: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'No student record associated with this account' });
+    }
+
+    const now = new Date();
+    const month = parseInt((req.query.month as string) || String(now.getMonth() + 1), 10);
+    const year = parseInt((req.query.year as string) || String(now.getFullYear()), 10);
+
+    if (month < 1 || month > 12 || year < 2000 || year > 2100) {
+      return res.status(400).json({ success: false, error: 'Invalid month or year parameter' });
+    }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toKolkataDateKey = (d: Date) =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startDate = new Date(`${year}-${pad(month)}-01T00:00:00.000Z`);
+    const endDate = new Date(`${year}-${pad(month)}-${pad(daysInMonth)}T23:59:59.999Z`);
+
+    const batchId = student.enrollments[0]?.batch?.id;
+
+    // Fetch all attendance events for this student in this month
+    const studentEvents = await prisma.attendanceEvent.findMany({
+      where: {
+        studentId: student.id,
+        eventDate: { gte: startDate, lte: endDate },
+      },
+      orderBy: { eventTime: 'asc' },
+    });
+
+    // Determine batch working days in this month
+    let distinctWorkingDates: string[] = [];
+    if (batchId) {
+      const batchEvents = await prisma.attendanceEvent.findMany({
+        where: {
+          batchId,
+          eventDate: { gte: startDate, lte: endDate },
+        },
+        distinct: ['eventDate'],
+        select: { eventDate: true },
+      });
+      distinctWorkingDates = batchEvents.map((e) => toKolkataDateKey(e.eventDate));
+    }
+
+    // Map student events by date string YYYY-MM-DD
+    const dailyRecords: Record<string, any> = {};
+    for (const ev of studentEvents) {
+      const dateKey = toKolkataDateKey(ev.eventDate);
+      if (!dailyRecords[dateKey]) {
+        dailyRecords[dateKey] = {
+          date: dateKey,
+          checkIn: null,
+          checkOut: null,
+          isLate: false,
+          remarks: null,
+          status: 'PRESENT',
+        };
+      }
+
+      if (ev.eventType === 'CHECK_IN') {
+        dailyRecords[dateKey].checkIn = ev.eventTime;
+        dailyRecords[dateKey].isLate = ev.isLate;
+        dailyRecords[dateKey].remarks = ev.remarks;
+        if (ev.isLate) dailyRecords[dateKey].status = 'LATE';
+      } else if (ev.eventType === 'CHECK_OUT') {
+        dailyRecords[dateKey].checkOut = ev.eventTime;
+      }
+    }
+
+    let presentDaysCount = 0;
+    let lateDaysCount = 0;
+    let absentDaysCount = 0;
+
+    const calendarDays = [];
+    const todayStr = toKolkataDateKey(now);
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateKey = `${year}-${pad(month)}-${pad(day)}`;
+      const isPastOrToday = dateKey <= todayStr;
+      const isBatchWorkingDay = distinctWorkingDates.includes(dateKey);
+
+      const record = dailyRecords[dateKey];
+
+      if (record) {
+        presentDaysCount++;
+        if (record.isLate) lateDaysCount++;
+        calendarDays.push({
+          date: dateKey,
+          day,
+          status: record.isLate ? 'LATE' : 'PRESENT',
+          checkIn: record.checkIn,
+          checkOut: record.checkOut,
+          isLate: record.isLate,
+          remarks: record.remarks,
+        });
+      } else if (isBatchWorkingDay && isPastOrToday) {
+        absentDaysCount++;
+        calendarDays.push({
+          date: dateKey,
+          day,
+          status: 'ABSENT',
+          checkIn: null,
+          checkOut: null,
+          isLate: false,
+          remarks: 'Marked Absent',
+        });
+      } else {
+        calendarDays.push({
+          date: dateKey,
+          day,
+          status: 'HOLIDAY_OR_NO_SESSION',
+          checkIn: null,
+          checkOut: null,
+          isLate: false,
+          remarks: null,
+        });
+      }
+    }
+
+    const totalWorkingDays = presentDaysCount + absentDaysCount;
+    const attendancePercentage = totalWorkingDays > 0
+      ? Math.round((presentDaysCount / totalWorkingDays) * 100)
+      : 100;
+
+    return res.json({
+      success: true,
+      data: {
+        month,
+        year,
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          admissionNumber: student.admissionNumber,
+          batchName: student.enrollments[0]?.batch?.name || 'Class',
+        },
+        metrics: {
+          totalWorkingDays,
+          presentDays: presentDaysCount,
+          absentDays: absentDaysCount,
+          lateDays: lateDaysCount,
+          attendancePercentage,
+        },
+        calendarDays,
+        recentEvents: studentEvents.slice(0, 10),
+      },
+    });
+  } catch (err: any) {
+    console.error('[Get My Student Attendance Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch student attendance' });
   }
 }
 

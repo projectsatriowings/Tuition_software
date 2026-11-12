@@ -11,7 +11,8 @@ const prisma = new PrismaClient();
 
 function request(path, options = {}) {
   return new Promise((resolve, reject) => {
-    const url = new URL(`http://localhost:5000/api${path}`);
+    const base = process.env.TEST_API_URL || 'http://localhost:5001/api';
+    const url = new URL(`${base}${path}`);
     const reqOptions = {
       method: options.method || 'GET',
       hostname: url.hostname,
@@ -94,21 +95,21 @@ async function run() {
     const parentUser = await prisma.user.findFirst({ where: { email: 'parent@apex.example.com' } });
     const staffUser = await prisma.user.findFirst({ where: { email: 'teacher@apex.example.com' } });
     const adminUser = await prisma.user.findFirst({ where: { email: 'admin@apex.example.com' } });
-    
+
     // Look up assigned student for Anita Verma's batch dynamically
     const staffProfile = await prisma.staffProfile.findFirst({
       where: { user: { email: 'teacher@apex.example.com' } },
-      include: { assignments: true },
+      include: { assignments: true, batchSubjects: true },
     });
-    const teacherBatchId = staffProfile?.assignments?.[0]?.batchId;
+    const teacherBatchId = staffProfile?.assignments?.[0]?.batchId || staffProfile?.batchSubjects?.[0]?.batchId;
     const assignedStudent = teacherBatchId
       ? await prisma.student.findFirst({
-          where: {
-            enrollments: {
-              some: { batchId: teacherBatchId },
-            },
+        where: {
+          enrollments: {
+            some: { batchId: teacherBatchId },
           },
-        })
+        },
+      })
       : await prisma.student.findFirst();
 
     const assignedParentRel = assignedStudent ? await prisma.studentParentRelation.findFirst({
