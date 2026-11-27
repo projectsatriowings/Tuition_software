@@ -57,8 +57,13 @@ app.use(
       // In production, validate against configured whitelist
       const allowedOrigins = config.corsOrigins.length > 0
         ? config.corsOrigins
-        : ['https://app.tuitionos.com', 'https://admin.tuitionos.com'];
-      if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app") || origin.includes("localhost")) {
+        : ['https://academic.atriowings.in', 'https://app.tuitionos.com', 'https://admin.tuitionos.com'];
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.atriowings.in') ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost')
+      ) {
         return callback(null, true);
       }
       return callback(new Error(`CORS blocked for origin: ${origin}`));

@@ -415,7 +415,7 @@ export const StaffAttendanceAdmin: React.FC<StaffAttendanceAdminProps> = () => {
       setDownloadingCsv(true);
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `http://localhost:5000/api/staff-attendance/admin/monthly-report?year=${reportYear}&month=${reportMonth}&format=csv`,
+        `/api/staff-attendance/admin/monthly-report?year=${reportYear}&month=${reportMonth}&format=csv`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
