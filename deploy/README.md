@@ -21,7 +21,7 @@ This document details how to deploy the Tuition Management System on a **Hosting
                 │                  ▼
         ┌───────▼───────────┐    ┌───────────────────────────┐
         │  Vite React Web   │    │  Express Node.js Server   │
-        │  apps/web/dist    │    │  (PM2 Process: Port 5000) │
+        │  apps/web/dist    │    │  (PM2 Process: Port 5022) │
         └───────────────────┘    └─────────────┬─────────────┘
                                                │
                                                ▼
@@ -129,7 +129,7 @@ pm2 startup
 
 Verify the backend is healthy:
 ```bash
-curl http://127.0.0.1:5000/api/health
+curl http://127.0.0.1:5022/api/health
 ```
 *(Should return status: healthy and connected: true).*
 
