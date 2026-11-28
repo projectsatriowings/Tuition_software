@@ -41,14 +41,6 @@ export async function listUserConversations(req: AuthenticatedRequest, res: Resp
     const currentUserId = req.user!.userId;
     const userRole = req.user!.role;
 
-    // Students are not permitted to access staff-parent private communication
-    if (userRole === 'STUDENT') {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden: Students are not authorized to view parent-teacher communications.',
-      });
-    }
-
     const search = (req.query.search as string || '').trim();
     const filter = (req.query.filter as string || 'ALL').toUpperCase(); // ALL, UNREAD, READ
 
@@ -59,7 +51,16 @@ export async function listUserConversations(req: AuthenticatedRequest, res: Resp
     };
 
     // Role-specific scoping:
-    if (userRole === 'STAFF') {
+    if (userRole === 'STUDENT') {
+      const studentProfile = await prisma.student.findFirst({
+        where: { userId: currentUserId, instituteId },
+        select: { id: true },
+      });
+      whereClause.OR = [
+        ...(studentProfile ? [{ studentId: studentProfile.id }] : []),
+        { studentId: null },
+      ];
+    } else if (userRole === 'STAFF') {
       const scope = await getAuthorizedStudentScope(req, prisma);
       whereClause.OR = [
         // Conversations associated with a student in staff's scope
@@ -239,13 +240,6 @@ export async function getOrCreateConversation(req: AuthenticatedRequest, res: Re
     const currentUserId = req.user!.userId;
     const userRole = req.user!.role;
 
-    if (userRole === 'STUDENT') {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden: Students cannot create parent-staff conversations.',
-      });
-    }
-
     const parse = startConversationSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ success: false, error: 'Validation failed', details: parse.error.errors });
@@ -269,7 +263,28 @@ export async function getOrCreateConversation(req: AuthenticatedRequest, res: Re
     // Authorization checks based on roles and student
     let verifiedStudentId: string | null = null;
 
-    if (studentId) {
+    if (userRole === 'STUDENT') {
+      const ownStudent = await prisma.student.findFirst({
+        where: { userId: currentUserId, instituteId },
+        select: { id: true },
+      });
+      if (!ownStudent) {
+        return res.status(403).json({ success: false, error: 'Student profile not found in this institute' });
+      }
+      if (studentId && studentId !== ownStudent.id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: You can only start conversations regarding your own enrollment.',
+        });
+      }
+      if (!['STAFF', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'].includes(recipientUser.role)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: Students can only message teachers or institute administrators.',
+        });
+      }
+      verifiedStudentId = ownStudent.id;
+    } else if (studentId) {
       const student = await prisma.student.findFirst({
         where: { id: studentId, instituteId },
         include: {
@@ -408,10 +423,6 @@ export async function getConversationMessages(req: AuthenticatedRequest, res: Re
     const currentUserId = req.user!.userId;
     const userRole = req.user!.role;
 
-    if (userRole === 'STUDENT') {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
-
     // Verify user is a member of this conversation in this institute
     const member = await prisma.conversationMember.findUnique({
       where: {
@@ -496,10 +507,6 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response) {
     const { id: conversationId } = req.params;
     const currentUserId = req.user!.userId;
     const userRole = req.user!.role;
-
-    if (userRole === 'STUDENT') {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
 
     const parse = sendMessageSchema.safeParse(req.body);
     if (!parse.success) {
@@ -668,14 +675,30 @@ export async function uploadChatAttachment(req: AuthenticatedRequest, res: Respo
   }
 }
 
+const ATTACHMENT_MIME_MAP: Record<string, string> = {
+  '.webm': 'audio/webm',
+  '.ogg': 'audio/ogg',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.pdf': 'application/pdf',
+};
+
 /**
- * Download or stream an attachment securely
+ * Download or stream an attachment securely with Range support for audio/media
  */
 export async function getAttachmentFile(req: AuthenticatedRequest, res: Response) {
   try {
     const instituteId = req.instituteId;
     const { id: conversationId, filename } = req.params;
     const currentUserId = req.user!.userId;
+    const userRole = req.user!.role;
 
     // Verify membership
     const member = await prisma.conversationMember.findUnique({
@@ -688,11 +711,12 @@ export async function getAttachmentFile(req: AuthenticatedRequest, res: Response
       include: { conversation: true },
     });
 
-    if (!member || member.conversation.instituteId !== instituteId) {
+    if (!member || (userRole !== 'SUPER_ADMIN' && member.conversation.instituteId !== instituteId)) {
       return res.status(403).json({ success: false, error: 'Forbidden: You cannot view this attachment' });
     }
 
-    const safeKey = `${instituteId}/${filename}`;
+    const effectiveInstituteId = member.conversation.instituteId;
+    const safeKey = `${effectiveInstituteId}/${filename}`;
     const absPath = resolveAbsolutePath(safeKey);
 
     if (!absPath || !fs.existsSync(absPath)) {
@@ -704,7 +728,35 @@ export async function getAttachmentFile(req: AuthenticatedRequest, res: Response
       return res.download(absPath, filename);
     }
 
-    return res.sendFile(absPath);
+    const stat = fs.statSync(absPath);
+    const fileSize = stat.size;
+    const ext = path.extname(filename).toLowerCase();
+    const contentType = ATTACHMENT_MIME_MAP[ext] || 'application/octet-stream';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (isNaN(start) || isNaN(end) || start >= fileSize || end >= fileSize || start > end) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).end();
+      }
+
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Content-Length', chunkSize);
+      return fs.createReadStream(absPath, { start, end }).pipe(res);
+    }
+
+    res.setHeader('Content-Length', fileSize);
+    return fs.createReadStream(absPath).pipe(res);
   } catch (err: any) {
     console.error('[Get Attachment Error]', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve attachment' });
@@ -723,7 +775,94 @@ export async function getEligibleContacts(req: AuthenticatedRequest, res: Respon
     const userRole = req.user!.role;
 
     if (userRole === 'STUDENT') {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
+      const student = await prisma.student.findFirst({
+        where: { userId: currentUserId, instituteId, status: 'ACTIVE' },
+        include: {
+          enrollments: {
+            where: { isActive: true },
+            include: {
+              batch: {
+                include: {
+                  staffAssignments: {
+                    include: {
+                      staffProfile: {
+                        include: {
+                          user: { select: { id: true, fullName: true, role: true, email: true, isActive: true } },
+                        },
+                      },
+                    },
+                  },
+                  batchSubjects: {
+                    include: {
+                      subject: { select: { id: true, name: true } },
+                      staffProfile: {
+                        include: {
+                          user: { select: { id: true, fullName: true, role: true, email: true, isActive: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!student) {
+        return res.json({ success: true, data: { contacts: [] } });
+      }
+
+      const teachersMap = new Map<string, any>();
+      const studentFullName = `${student.firstName} ${student.lastName}`.trim();
+
+      for (const enrollment of student.enrollments) {
+        const batch = enrollment.batch;
+        for (const sa of batch.staffAssignments) {
+          const u = sa.staffProfile?.user;
+          if (!u || !u.isActive) continue;
+          if (!teachersMap.has(u.id)) {
+            teachersMap.set(u.id, {
+              contactType: 'TEACHER',
+              studentId: student.id,
+              studentName: studentFullName,
+              admissionNumber: student.admissionNumber,
+              teacherUserId: u.id,
+              teacherName: u.fullName,
+              designation: sa.staffProfile.designation || 'Faculty',
+              role: u.role,
+              batchName: batch.name,
+              subjects: [] as string[],
+            });
+          }
+        }
+
+        for (const bs of batch.batchSubjects) {
+          const u = bs.staffProfile?.user;
+          if (!u || !u.isActive) continue;
+          if (teachersMap.has(u.id)) {
+            const existing = teachersMap.get(u.id);
+            if (bs.subject?.name && !existing.subjects.includes(bs.subject.name)) {
+              existing.subjects.push(bs.subject.name);
+            }
+          } else {
+            teachersMap.set(u.id, {
+              contactType: 'TEACHER',
+              studentId: student.id,
+              studentName: studentFullName,
+              admissionNumber: student.admissionNumber,
+              teacherUserId: u.id,
+              teacherName: u.fullName,
+              designation: bs.staffProfile?.designation || 'Faculty',
+              role: u.role,
+              batchName: batch.name,
+              subjects: bs.subject?.name ? [bs.subject.name] : [],
+            });
+          }
+        }
+      }
+
+      return res.json({ success: true, data: { contacts: Array.from(teachersMap.values()) } });
     }
 
     if (userRole === 'STAFF' || userRole === 'ACADEMIC_ADMIN' || userRole === 'SUPER_ADMIN') {
@@ -759,20 +898,21 @@ export async function getEligibleContacts(req: AuthenticatedRequest, res: Respon
       });
 
       const contacts = students
-        .filter((s) => s.parentRelations.some((pr) => pr.parent?.user?.isActive))
+        .filter((s) => s.parentRelations.some((pr) => pr.parent?.user?.isActive) || Boolean(s.userId))
         .map((s) => {
           const primaryRel = s.parentRelations.find((pr) => pr.isPrimaryContact) || s.parentRelations[0];
-          const parentUser = primaryRel.parent.user;
+          const parentUser = primaryRel?.parent?.user || null;
           return {
             studentId: s.id,
+            studentUserId: s.userId || null,
             studentName: `${s.firstName} ${s.lastName}`.trim(),
             admissionNumber: s.admissionNumber,
             batchName: s.enrollments[0]?.batch?.name || 'Unassigned',
-            parentUserId: parentUser.id,
-            parentName: parentUser.fullName,
-            parentPhone: parentUser.phone,
-            parentEmail: parentUser.email,
-            relation: primaryRel.relation,
+            parentUserId: parentUser?.id || null,
+            parentName: parentUser?.fullName || null,
+            parentPhone: parentUser?.phone || null,
+            parentEmail: parentUser?.email || null,
+            relation: primaryRel?.relation || 'GUARDIAN',
           };
         });
 

@@ -269,20 +269,40 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
     const data = parse.data;
     const email = data.email.trim().toLowerCase();
 
-    // Check unique email
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Check unique email & existing staff profile
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        staffProfile: true,
+      },
+    });
+
     if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        error: `User with email '${email}' already exists in the system`,
-      });
+      if (existingUser.staffProfile) {
+        if (existingUser.staffProfile.instituteId === instituteId) {
+          return res.status(409).json({
+            success: false,
+            error: `Staff profile for '${email}' already exists in this institute`,
+          });
+        }
+        return res.status(409).json({
+          success: false,
+          error: `User with email '${email}' is already registered as staff in another institute`,
+        });
+      }
+      if (existingUser.role !== 'STAFF' && existingUser.role !== 'ACADEMIC_ADMIN') {
+        return res.status(409).json({
+          success: false,
+          error: `User with email '${email}' already exists with role '${existingUser.role}'`,
+        });
+      }
     }
 
-    // Check unique phone if provided
+    // Check unique phone if provided (only conflict if belonging to a different user)
     const phone = data.phone?.trim() || null;
     if (phone) {
       const existingPhone = await prisma.user.findUnique({ where: { phone } });
-      if (existingPhone) {
+      if (existingPhone && (!existingUser || existingPhone.id !== existingUser.id)) {
         return res.status(409).json({
           success: false,
           error: `Phone number '${phone}' is already registered with another user (${existingPhone.fullName})`,
@@ -294,6 +314,17 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
     let employeeCode = data.employeeCode?.trim() || '';
     if (!employeeCode) {
       employeeCode = await generateNextEmployeeCode(prisma, instituteId);
+      // Ensure generated code does not collide
+      let suffixAttempt = 0;
+      while (
+        await prisma.staffProfile.findUnique({
+          where: { instituteId_employeeCode: { instituteId, employeeCode } },
+          select: { id: true },
+        })
+      ) {
+        suffixAttempt += 1;
+        employeeCode = `${employeeCode}-${suffixAttempt}`;
+      }
     } else {
       // Check employee code uniqueness within institute
       const existingCode = await prisma.staffProfile.findUnique({
@@ -325,22 +356,38 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
     const permCountry = sameAsCurrent ? (data.currentCountry || 'India') : (data.permanentCountry || 'India');
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create User
-      const user = await tx.user.create({
-        data: {
-          email,
-          phone: data.phone?.trim() || null,
-          fullName: data.fullName.trim(),
-          passwordHash,
-          role: 'STAFF',
-          isActive: true,
-          mustChangePassword: false,
-        },
-      });
+      // 1. Create or reuse orphaned User
+      const user = existingUser
+        ? await tx.user.update({
+            where: { id: existingUser.id },
+            data: {
+              fullName: data.fullName.trim(),
+              ...(phone ? { phone } : {}),
+              isActive: true,
+            },
+          })
+        : await tx.user.create({
+            data: {
+              email,
+              phone,
+              fullName: data.fullName.trim(),
+              passwordHash,
+              role: 'STAFF',
+              isActive: true,
+              mustChangePassword: false,
+            },
+          });
 
-      // 2. Create Institute Membership
-      await tx.instituteMembership.create({
-        data: {
+      // 2. Ensure Institute Membership
+      await tx.instituteMembership.upsert({
+        where: {
+          instituteId_userId: {
+            instituteId,
+            userId: user.id,
+          },
+        },
+        update: { isActive: true },
+        create: {
           instituteId,
           userId: user.id,
           role: 'STAFF',
@@ -517,6 +564,8 @@ export async function createStaff(req: AuthenticatedRequest, res: Response) {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Get staff profile by ID with all relations
  */
@@ -525,10 +574,14 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
     const instituteId = req.instituteId;
     const { id } = req.params;
 
+    if (!id || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid staff identifier format' });
+    }
+
     const staff = await prisma.staffProfile.findFirst({
       where: {
-        id,
-        instituteId, // strict institute isolation
+        OR: [{ id }, { userId: id }],
+        ...(instituteId ? { instituteId } : {}),
       },
       include: {
         user: {
@@ -578,9 +631,18 @@ export async function getStaffById(req: AuthenticatedRequest, res: Response) {
       return res.status(404).json({ success: false, error: 'Staff member not found in this institute' });
     }
 
+    const safeStaff = {
+      ...staff,
+      assignments: (staff.assignments || []).filter((a) => a && a.batch),
+      batchSubjects: (staff.batchSubjects || []).filter((bs) => bs && bs.batch && bs.subject),
+      qualifications: staff.qualifications || [],
+      experiences: staff.experiences || [],
+      documents: staff.documents || [],
+    };
+
     return res.json({
       success: true,
-      data: { staff },
+      data: { staff: safeStaff },
     });
   } catch (err: any) {
     console.error('[getStaffById Error]', err);

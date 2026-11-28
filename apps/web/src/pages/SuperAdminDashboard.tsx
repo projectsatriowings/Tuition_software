@@ -33,6 +33,7 @@ import {
 
 interface AcademicAdminAccount extends User {
   createdAt?: string;
+  passwordOnRecord?: string | null;
 }
 
 interface InstituteDetailData {
@@ -157,6 +158,14 @@ export const SuperAdminDashboard: React.FC = () => {
   const [showCustomPassword, setShowCustomPassword] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [copiedCredKey, setCopiedCredKey] = useState<string | null>(null);
+  const [showDrawerAdminPassword, setShowDrawerAdminPassword] = useState(false);
+
+  const copyCredentialField = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCredKey(key);
+    setTimeout(() => setCopiedCredKey(null), 2000);
+  };
 
   // One-time Temporary Password Display State
   const [oneTimePasswordData, setOneTimePasswordData] = useState<{
@@ -1249,11 +1258,36 @@ export const SuperAdminDashboard: React.FC = () => {
 
                   {/* SECTION 2: ACADEMIC ADMIN ACCOUNT */}
                   <div className="p-5 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#EFEBE9]">
                       <div className="text-xs font-bold uppercase tracking-wider text-[#4E342E] flex items-center gap-1.5">
                         <ShieldCheck className="w-4 h-4 text-[#8D6E63]" /> Academic Admin Account
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {detailData.adminAccount && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const admin = detailData.adminAccount;
+                              if (!admin) return;
+                              const passText = admin.passwordOnRecord
+                                ? `\nPassword: ${admin.passwordOnRecord}`
+                                : '';
+                              const block = `TuitionOS Academic Admin Credentials (${detailData.institute?.name})\nInstitute Code: ${detailData.institute?.code}\nLogin Email: ${admin.email}${passText}`;
+                              copyCredentialField(block, 'all-creds');
+                            }}
+                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#F7F2EF] border border-[#D7CCC8] text-[#4E342E] hover:bg-[#EFEBE9] transition cursor-pointer"
+                          >
+                            {copiedCredKey === 'all-creds' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" /> Copy Credentials
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={handleOpenEditAdminModal}
                           disabled={!detailData.adminAccount}
@@ -1282,15 +1316,43 @@ export const SuperAdminDashboard: React.FC = () => {
 
                         <div>
                           <span className="text-[#6D4C41] block mb-0.5">Login Email / Username</span>
-                          <div className="font-mono text-[#2D1E18] font-medium">
-                            {detailData.adminAccount.email}
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[#2D1E18] font-medium select-all truncate">
+                              {detailData.adminAccount.email}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyCredentialField(detailData.adminAccount?.email || '', 'admin-email')}
+                              className="p-1 rounded-md bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-[#4E342E] transition shrink-0 cursor-pointer"
+                              title="Copy login email"
+                            >
+                              {copiedCredKey === 'admin-email' ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
                           </div>
                         </div>
 
                         <div>
                           <span className="text-[#6D4C41] block mb-0.5">Phone Number</span>
-                          <div className="text-[#2D1E18]">
-                            {detailData.adminAccount.phone || '—'}
+                          <div className="flex items-center gap-2 text-[#2D1E18]">
+                            <span>{detailData.adminAccount.phone || '—'}</span>
+                            {detailData.adminAccount.phone && (
+                              <button
+                                type="button"
+                                onClick={() => copyCredentialField(detailData.adminAccount?.phone || '', 'admin-phone')}
+                                className="p-1 rounded-md bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-[#4E342E] transition shrink-0 cursor-pointer"
+                                title="Copy phone number"
+                              >
+                                {copiedCredKey === 'admin-phone' ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1310,18 +1372,58 @@ export const SuperAdminDashboard: React.FC = () => {
                         </div>
 
                         <div>
-                          <span className="text-[#6D4C41] block mb-0.5">Password Status</span>
-                          <div>
-                            {detailData.adminAccount.mustChangePassword ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300">
-                                <Clock className="w-3 h-3 text-amber-600" /> Pending Change on Next Login
+                          <span className="text-[#6D4C41] block mb-0.5">Login Password</span>
+                          {detailData.adminAccount.passwordOnRecord ? (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="font-mono text-[#2D1E18] font-semibold bg-[#F7F2EF] px-2 py-1 rounded-lg border border-[#D7CCC8] select-all">
+                                {showDrawerAdminPassword
+                                  ? detailData.adminAccount.passwordOnRecord
+                                  : '••••••••••'}
                               </span>
-                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setShowDrawerAdminPassword((v) => !v)}
+                                className="p-1 rounded-md bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-[#4E342E] transition cursor-pointer"
+                                title={showDrawerAdminPassword ? 'Hide password' : 'Show password'}
+                              >
+                                {showDrawerAdminPassword ? (
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyCredentialField(
+                                    detailData.adminAccount?.passwordOnRecord || '',
+                                    'admin-pass'
+                                  )
+                                }
+                                className="p-1 rounded-md bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-[#4E342E] transition cursor-pointer"
+                                title="Copy password"
+                              >
+                                {copiedCredKey === 'admin-pass' ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 mt-0.5">
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-300">
                                 <Check className="w-3 h-3 text-emerald-600" /> Active Password Set
                               </span>
-                            )}
-                          </div>
+                              <button
+                                type="button"
+                                onClick={handleOpenResetPasswordModal}
+                                className="text-[11px] font-semibold text-[#4E342E] underline hover:text-[#2D1E18] cursor-pointer"
+                              >
+                                Reset to view/copy
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -1562,7 +1664,7 @@ export const SuperAdminDashboard: React.FC = () => {
               )}
 
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
-                <strong>Important:</strong> The administrator will be required to create their own new password upon signing in.
+                <strong>Note:</strong> The new password takes effect immediately and will be saved on record for Super Admin viewing and copying.
               </div>
 
               <div className="pt-3 flex justify-end gap-3 border-t border-[#EFEBE9]">
@@ -1652,12 +1754,30 @@ export const SuperAdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-[11px] leading-relaxed">
-                <strong>Security Notice:</strong> This temporary password will NOT be displayed again or stored in plaintext. The user will be required to set a permanent password immediately upon login.
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] leading-relaxed">
+                <strong>Saved on Record:</strong> This password is active immediately and can also be viewed or copied anytime from the Institute Details drawer.
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `Login Email: ${oneTimePasswordData.adminEmail}\nPassword: ${oneTimePasswordData.temporaryPassword}`;
+                  copyCredentialField(text, 'modal-both');
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-[#4E342E] text-xs font-semibold transition cursor-pointer"
+              >
+                {copiedCredKey === 'modal-both' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied Credentials!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" /> Copy Email &amp; Password
+                  </>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => setOneTimePasswordData(null)}

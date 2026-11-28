@@ -73,11 +73,15 @@ export const checkOutSchema = z.object({
   method: z.enum(['MANUAL', 'QR_SCAN', 'VOICE_CONFIRMED']).default('MANUAL'),
   remarks: z.string().optional(),
   idempotencyKey: z.string().optional(),
+  minDurationMinutes: z.number().int().min(1).max(480).default(30),
 });
 
 export const correctionSchema = z.object({
   remarks: z.string().optional(),
   isLate: z.boolean().optional(),
+  eventTime: z.string().optional(),
+  eventType: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(),
+  method: z.enum(['MANUAL', 'QR_SCAN', 'VOICE_CONFIRMED']).optional(),
   reason: z.string().min(3, 'Correction reason is required'),
 });
 
@@ -240,7 +244,8 @@ export async function recordCheckIn(req: AuthenticatedRequest, res: Response) {
     }
 
     // Determine session number (e.g. 1 for morning, 2 for evening session)
-    const nextSessionNumber = latestCheckIn ? latestCheckIn.sessionNumber + 1 : 1;
+    const maxSession = todaysEvents.reduce((max, e) => Math.max(max, e.sessionNumber), 0);
+    const nextSessionNumber = maxSession + 1;
 
     // Record Event in transactional scope
     const event = await prisma.attendanceEvent.create({
@@ -615,7 +620,7 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
       return res.status(400).json({ success: false, error: parse.error.errors[0]?.message });
     }
 
-    const { studentId, method, remarks, idempotencyKey } = parse.data;
+    const { studentId, method, remarks, idempotencyKey, minDurationMinutes } = parse.data;
 
     // Idempotency check
     if (idempotencyKey) {
@@ -685,6 +690,17 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
       });
     }
 
+    // Calculate elapsed class duration in minutes
+    const durationMinutes = Math.max(
+      0,
+      Math.round((serverNow.getTime() - activeCheckIn.eventTime.getTime()) / 60000)
+    );
+    const isShortClassLeave = durationMinutes < minDurationMinutes;
+    const leaveTag = isShortClassLeave
+      ? `[LEAVE:SHORT_CLASS|${durationMinutes}m<${minDurationMinutes}m]`
+      : '';
+    const finalRemarks = [leaveTag, remarks?.trim()].filter(Boolean).join(' ') || null;
+
     // Record Check-out Event + queue notification
     const event = await prisma.$transaction(
       async (tx) => {
@@ -700,7 +716,7 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
             method,
             isLate: false,
             markedById: req.user!.userId,
-            remarks: remarks || null,
+            remarks: finalRemarks,
             idempotencyKey: idempotencyKey || null,
           },
         });
@@ -727,11 +743,19 @@ export async function recordCheckOut(req: AuthenticatedRequest, res: Response) {
       hour12: true,
     }).format(serverNow);
 
+    const attendanceStatus = isShortClassLeave ? 'LEAVE' : 'CHECKED_OUT';
+
     return res.status(201).json({
       success: true,
-      message: `${student.firstName} ${student.lastName} checked out successfully.`,
+      message: isShortClassLeave
+        ? `${student.firstName} ${student.lastName} checked out after ${durationMinutes}m (below ${minDurationMinutes}m minimum) — marked as Leave.`
+        : `${student.firstName} ${student.lastName} checked out successfully (${durationMinutes}m class time).`,
       data: {
         event,
+        attendanceStatus,
+        durationMinutes,
+        minDurationMinutes,
+        isLeave: isShortClassLeave,
         student: {
           id: student.id,
           firstName: student.firstName,
@@ -820,7 +844,7 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           enrollments: {
             where: { isActive: true },
             select: {
-              batch: { select: { id: true, name: true } },
+              batch: { select: { id: true, name: true, schedule: true } },
             },
           },
         },
@@ -832,14 +856,17 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           eventDate: targetDate,
           ...(batchId ? { batchId } : {}),
         },
+        orderBy: [{ sessionNumber: 'desc' }, { eventTime: 'desc' }],
         select: {
           id: true,
           studentId: true,
           eventType: true,
           eventTime: true,
+          sessionNumber: true,
           method: true,
           batchId: true,
           isLate: true,
+          remarks: true,
           markedBy: { select: { fullName: true } },
         },
       }),
@@ -852,17 +879,26 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
       hour12: true,
     });
 
-    // Map each student's current status for today
+    const minDurationMinutes = Math.max(1, parseInt((req.query.minDurationMinutes as string) || '30', 10) || 30);
+    const nowTime = new Date();
+
+    // Map each student's current status for today (using the latest session)
     const studentStatusMap = students.map((student) => {
       const studentEvents = events.filter((e) => e.studentId === student.id);
       const checkInEvent = studentEvents.find((e) => e.eventType === 'CHECK_IN');
-      const checkOutEvent = studentEvents.find((e) => e.eventType === 'CHECK_OUT');
+      const checkOutEvent = checkInEvent
+        ? studentEvents.find((e) => e.eventType === 'CHECK_OUT' && e.sessionNumber === checkInEvent.sessionNumber)
+        : undefined;
 
       let status = 'ABSENT';
+      let durationMinutes: number | null = null;
       if (checkInEvent && !checkOutEvent) {
         status = 'CHECKED_IN';
+        durationMinutes = Math.max(0, Math.round((nowTime.getTime() - checkInEvent.eventTime.getTime()) / 60000));
       } else if (checkInEvent && checkOutEvent) {
-        status = 'CHECKED_OUT';
+        durationMinutes = Math.max(0, Math.round((checkOutEvent.eventTime.getTime() - checkInEvent.eventTime.getTime()) / 60000));
+        const isTaggedLeave = Boolean(checkOutEvent.remarks?.includes('[LEAVE:SHORT_CLASS'));
+        status = isTaggedLeave || durationMinutes < minDurationMinutes ? 'LEAVE' : 'CHECKED_OUT';
       }
 
       return {
@@ -871,9 +907,12 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           name: `${student.firstName} ${student.lastName}`,
           admissionNumber: student.admissionNumber,
           photoUrl: student.photoUrl,
+          batchId: student.enrollments[0]?.batch?.id || null,
           batchName: student.enrollments[0]?.batch?.name || 'Unassigned',
+          batchSchedule: student.enrollments[0]?.batch?.schedule || null,
         },
         status,
+        durationMinutes,
         isLate: checkInEvent?.isLate || false,
         checkInTime: checkInEvent?.eventTime || null,
         checkInTimeFormatted: checkInEvent ? timeFormatter.format(checkInEvent.eventTime) : null,
@@ -888,9 +927,10 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
     const totalStudents = students.length;
     const checkedInCount = studentStatusMap.filter((s) => s.status === 'CHECKED_IN').length;
     const checkedOutCount = studentStatusMap.filter((s) => s.status === 'CHECKED_OUT').length;
+    const leaveCount = studentStatusMap.filter((s) => s.status === 'LEAVE').length;
     const presentTotal = checkedInCount + checkedOutCount;
     const lateCount = studentStatusMap.filter((s) => s.isLate).length;
-    const absentCount = totalStudents - presentTotal;
+    const absentCount = Math.max(0, totalStudents - presentTotal - leaveCount);
 
     const formattedDate = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata',
@@ -912,6 +952,7 @@ export async function getAttendanceSummary(req: AuthenticatedRequest, res: Respo
           presentTotal,
           checkedInCount,
           checkedOutCount,
+          leaveCount,
           lateCount,
           absentCount,
         },
@@ -1079,17 +1120,21 @@ export async function validateScannedQr(req: AuthenticatedRequest, res: Response
       return res.status(400).json({ success: false, error: 'Student account is inactive or not found' });
     }
 
-    // Check current state for today
+    // Check current state for today (latest session)
     const today = getInstituteLocalDate();
     const todaysEvents = await prisma.attendanceEvent.findMany({
       where: { studentId: student.id, eventDate: today },
-      orderBy: { eventTime: 'desc' },
+      orderBy: [{ sessionNumber: 'desc' }, { eventTime: 'desc' }],
     });
 
-    const isCheckedIn = todaysEvents.some((e) => e.eventType === 'CHECK_IN');
-    const isCheckedOut = todaysEvents.some((e) => e.eventType === 'CHECK_OUT');
+    const latestCheckIn = todaysEvents.find((e) => e.eventType === 'CHECK_IN');
+    const latestCheckOut = latestCheckIn
+      ? todaysEvents.find((e) => e.eventType === 'CHECK_OUT' && e.sessionNumber === latestCheckIn.sessionNumber)
+      : undefined;
+    const isCheckedIn = Boolean(latestCheckIn && !latestCheckOut);
+    const isCheckedOut = Boolean(latestCheckIn && latestCheckOut);
 
-    const recommendedAction = !isCheckedIn ? 'CHECK_IN' : !isCheckedOut ? 'CHECK_OUT' : 'SESSION_COMPLETED';
+    const recommendedAction = isCheckedIn ? 'CHECK_OUT' : isCheckedOut ? 'SESSION_COMPLETED' : 'CHECK_IN';
 
     return res.json({
       success: true,
@@ -1126,7 +1171,7 @@ export async function correctAttendanceEvent(req: AuthenticatedRequest, res: Res
       return res.status(400).json({ success: false, error: parse.error.errors[0]?.message });
     }
 
-    const { remarks, isLate, reason } = parse.data;
+    const { remarks, isLate, eventTime, eventType, method, reason } = parse.data;
 
     const existing = await prisma.attendanceEvent.findFirst({
       where: { id: eventId, instituteId },
@@ -1142,12 +1187,23 @@ export async function correctAttendanceEvent(req: AuthenticatedRequest, res: Res
       return res.status(403).json({ success: false, error: 'Forbidden: You are not authorized to correct attendance for this student' });
     }
 
+    let parsedEventTime: Date | undefined = undefined;
+    if (eventTime) {
+      const d = new Date(eventTime);
+      if (!isNaN(d.getTime())) {
+        parsedEventTime = d;
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       const event = await tx.attendanceEvent.update({
         where: { id: eventId },
         data: {
           ...(remarks !== undefined && { remarks }),
           ...(isLate !== undefined && { isLate }),
+          ...(parsedEventTime !== undefined && { eventTime: parsedEventTime }),
+          ...(eventType !== undefined && { eventType }),
+          ...(method !== undefined && { method }),
           isCorrected: true,
           correctionNote: reason,
         },
@@ -1161,8 +1217,13 @@ export async function correctAttendanceEvent(req: AuthenticatedRequest, res: Res
           action: 'ATTENDANCE_CORRECTED',
           entityType: 'AttendanceEvent',
           entityId: eventId,
-          oldValues: { isLate: existing.isLate, remarks: existing.remarks },
-          newValues: { isLate, remarks, reason },
+          oldValues: {
+            isLate: existing.isLate,
+            remarks: existing.remarks,
+            eventTime: existing.eventTime,
+            eventType: existing.eventType,
+          },
+          newValues: { isLate, remarks, eventTime: parsedEventTime, eventType, reason },
         },
       });
 
@@ -1176,5 +1237,74 @@ export async function correctAttendanceEvent(req: AuthenticatedRequest, res: Res
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: 'Failed to correct attendance record' });
+  }
+}
+
+/**
+ * Delete Attendance Event (Academic Admin / Super Admin only)
+ */
+export async function deleteAttendanceEvent(req: AuthenticatedRequest, res: Response) {
+  try {
+    const instituteId = req.instituteId;
+    const { eventId } = req.params;
+
+    const existing = await prisma.attendanceEvent.findFirst({
+      where: { id: eventId, ...(instituteId ? { instituteId } : {}) },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Attendance log not found' });
+    }
+
+    const isAuth = await isStudentAuthorized(req, existing.studentId, prisma);
+    if (!isAuth) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You are not authorized to delete attendance for this student',
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.attendanceEvent.delete({
+        where: { id: eventId },
+      });
+
+      // If deleting a CHECK_IN event, also clean up any paired CHECK_OUT event in the same session
+      if (existing.eventType === 'CHECK_IN') {
+        await tx.attendanceEvent.deleteMany({
+          where: {
+            studentId: existing.studentId,
+            eventDate: existing.eventDate,
+            sessionNumber: existing.sessionNumber,
+            eventType: 'CHECK_OUT',
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          instituteId: existing.instituteId,
+          userId: req.user!.userId,
+          action: 'ATTENDANCE_DELETED',
+          entityType: 'AttendanceEvent',
+          entityId: eventId,
+          oldValues: {
+            studentId: existing.studentId,
+            eventType: existing.eventType,
+            eventDate: existing.eventDate,
+            eventTime: existing.eventTime,
+          },
+          newValues: {},
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: 'Attendance log deleted successfully',
+    });
+  } catch (err: any) {
+    console.error('[Delete Attendance Event Error]', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete attendance log' });
   }
 }

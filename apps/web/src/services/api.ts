@@ -139,7 +139,9 @@ export async function apiFetch<T = any>(endpoint: string, options: ApiFetchOptio
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     } else if (!endpoint.startsWith('/auth/login') && !endpoint.startsWith('/auth/register')) {
-      console.warn(`[apiFetch] Warning: Invoking ${endpoint} without an authorization token in localStorage.`);
+      const authErr = new Error('Authentication token required');
+      (authErr as any).status = 401;
+      throw authErr;
     }
 
     if (instituteId) {
@@ -240,7 +242,13 @@ export function getSubmissionDownloadUrl(submissionId: string, forceDownload = f
  * Initiates a direct file download that saves the file directly to the user's device disk.
  */
 export async function downloadFileToDevice(url: string, filename: string): Promise<void> {
-  const res = await fetch(url);
+  const token = getAuthToken();
+  const instId = getActiveInstituteId();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (instId) headers['x-institute-id'] = instId;
+
+  const res = await fetch(url, { headers });
   if (!res.ok) {
     throw new Error(`Failed to download file (HTTP ${res.status})`);
   }

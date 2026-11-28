@@ -13,62 +13,9 @@ import {
   HelpCircle,
   X,
   ChevronRight,
-  Sparkles,
   Eye,
   EyeOff,
 } from 'lucide-react';
-
-interface DemoAccount {
-  role: UserRole;
-  label: string;
-  roleBadgeColor: string;
-  identifier: string;
-  password: string;
-  subtext: string;
-}
-
-const DEMO_ACCOUNTS: DemoAccount[] = [
-  {
-    role: 'SUPER_ADMIN',
-    label: 'Super Admin',
-    roleBadgeColor: 'text-[#3E2723]',
-    identifier: 'superadmin@gmail.com',
-    password: 'admin@123',
-    subtext: 'superadmin@gmail.com',
-  },
-  {
-    role: 'ACADEMIC_ADMIN',
-    label: 'Academic Admin',
-    roleBadgeColor: 'text-[#4E342E]',
-    identifier: 'admin@apexacademy.com',
-    password: 'Password#123',
-    subtext: 'admin@apexacademy.com',
-  },
-  {
-    role: 'STAFF',
-    label: 'Staff / Faculty',
-    roleBadgeColor: 'text-emerald-700',
-    identifier: 'teacher@apexacademy.com',
-    password: 'Password#123',
-    subtext: 'teacher@apexacademy.com',
-  },
-  {
-    role: 'PARENT',
-    label: 'Parent Portal',
-    roleBadgeColor: 'text-sky-700',
-    identifier: '9826444306',
-    password: 'Password#123',
-    subtext: 'Phone: 9826444306',
-  },
-  {
-    role: 'STUDENT',
-    label: 'Student Portal',
-    roleBadgeColor: 'text-[#6D4C41]',
-    identifier: 'student@apexacademy.com',
-    password: 'Password#123',
-    subtext: 'student@apexacademy.com',
-  },
-];
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -125,128 +72,185 @@ export const Login: React.FC = () => {
     }
   };
 
-  const handleSelectDemo = (demo: DemoAccount) => {
-    setSelectedRole(demo.role);
-    setIdentifier(demo.identifier);
-    setPassword(demo.password);
-    setError(null);
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1A0F0D] via-[#271815] to-[#3E2723] text-white flex flex-col justify-center items-center px-4 py-12">
-      <div className="w-full max-w-md">
-        {/* Brand Header */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-[#6D4C41] to-[#8D6E63] flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-[#1A0F0D]/60 mb-4 border border-[#A1887F]/30">
-            T
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-[#F7F2EF]">TuitionOS Enterprise</h1>
-          <p className="text-sm text-[#D7CCC8] mt-2">Multi-Institute Tuition Management System</p>
-        </div>
+    <div className="min-h-screen bg-[#1A0F0D] text-white flex flex-col lg:flex-row">
+      {/* Left Brand & Enterprise Highlights Panel (Desktop Split-Screen) */}
+      <div className="hidden lg:flex lg:w-[46%] xl:w-[48%] relative overflow-hidden bg-gradient-to-br from-[#1A0F0D] via-[#2D1E18] to-[#4E342E] p-12 xl:p-16 flex-col justify-between border-r border-[#4E342E]/60">
+        {/* Subtle Decorative Glows */}
+        <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-[#8D6E63]/15 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-32 -right-24 w-[28rem] h-[28rem] rounded-full bg-[#6D4C41]/20 blur-3xl pointer-events-none" />
 
-        {/* Multi-Institute Selection Step (if user has multiple institutes) */}
-        {pendingAuth ? (
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl p-8 shadow-2xl text-[#2D1E18]">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
-                <Building2 className="w-5 h-5" />
+        <div className="relative z-10">
+          <div className="inline-flex items-center gap-3.5 mb-10">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#6D4C41] to-[#A1887F] flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-black/40 border border-white/15">
+              T
+            </div>
+            <div>
+              <span className="text-xl font-extrabold tracking-tight text-[#F7F2EF] block leading-none">
+                TuitionOS
+              </span>
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-[#BCAAA4] mt-1 block">
+                Enterprise Edition
+              </span>
+            </div>
+          </div>
+
+          <h1 className="text-4xl xl:text-5xl font-extrabold tracking-tight text-[#F7F2EF] leading-[1.15] max-w-lg">
+            Unified Academic &amp; Institute Operations
+          </h1>
+          <p className="text-base text-[#D7CCC8] mt-4 max-w-md leading-relaxed">
+            Manage multi-branch admissions, live GPS attendance, parent-teacher messaging, and automated payroll in one secure workspace.
+          </p>
+
+          <div className="mt-10 space-y-4 max-w-md">
+            <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
+              <div className="w-9 h-9 rounded-xl bg-[#6D4C41]/40 border border-[#A1887F]/30 flex items-center justify-center shrink-0 text-[#F7F2EF]">
+                <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-[#2D1E18]">Select Your Institute</h2>
-                <p className="text-xs text-[#6D4C41]">Your account is registered across multiple institutes</p>
+                <h3 className="text-sm font-bold text-[#F7F2EF]">Strict Tenant &amp; Role Isolation</h3>
+                <p className="text-xs text-[#D7CCC8]/90 mt-0.5 leading-relaxed">
+                  Server-enforced RBAC across Super Admin, Academic Admin, Staff, Parent, and Student portals.
+                </p>
               </div>
             </div>
 
-            <p className="text-xs text-[#5D4037] mb-4">
-              Choose the institute context you wish to access for this session:
-            </p>
-
-            <div className="space-y-2.5">
-              {pendingAuth.memberships.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    login(pendingAuth.token, pendingAuth.user, m.institute);
-                    setPendingAuth(null);
-                  }}
-                  className="w-full p-3.5 rounded-2xl bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-left transition-all flex items-center justify-between group"
-                >
-                  <div>
-                    <div className="font-bold text-[#2D1E18] text-sm group-hover:text-[#4E342E] transition-colors">
-                      {m.institute.name}
-                    </div>
-                    <div className="text-xs text-[#6D4C41] font-mono mt-0.5">
-                      Code: {m.institute.code} &bull; Role: {m.role}
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-[#8D6E63] group-hover:text-[#4E342E] group-hover:translate-x-0.5 transition-all" />
-                </button>
-              ))}
+            <div className="flex items-start gap-3.5 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
+              <div className="w-9 h-9 rounded-xl bg-[#6D4C41]/40 border border-[#A1887F]/30 flex items-center justify-center shrink-0 text-[#F7F2EF]">
+                <Building2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#F7F2EF]">Multi-Branch Command Center</h3>
+                <p className="text-xs text-[#D7CCC8]/90 mt-0.5 leading-relaxed">
+                  Real-time consolidated analytics, batch scheduling, and seamless student transfers.
+                </p>
+              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setPendingAuth(null)}
-              className="w-full mt-5 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] transition-colors text-center"
-            >
-              Back to Login
-            </button>
           </div>
-        ) : (
-          <>
-            {/* Role Selector Tabs */}
-            <div className="bg-[#2D1E18]/90 border border-[#4E342E] rounded-2xl p-1.5 mb-6 grid grid-cols-3 sm:grid-cols-5 gap-1 text-center shadow-lg">
-              {(
-                [
-                  { role: 'ACADEMIC_ADMIN', label: 'Admin' },
-                  { role: 'STAFF', label: 'Staff' },
-                  { role: 'PARENT', label: 'Parent' },
-                  { role: 'STUDENT', label: 'Student' },
-                  { role: 'SUPER_ADMIN', label: 'Super' },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.role}
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole(item.role);
-                    setError(null);
-                  }}
-                  className={`py-2 px-1 text-xs font-semibold rounded-xl transition-all ${selectedRole === item.role
-                      ? 'bg-[#6D4C41] text-white shadow-md font-bold'
-                      : 'text-[#D7CCC8] hover:text-white hover:bg-[#4E342E]/60'
-                    }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+        </div>
 
-            {/* Login Card */}
-            <div className="bg-white border border-[#D7CCC8] rounded-3xl p-8 shadow-2xl text-[#2D1E18]">
-              <div className="mb-6">
-                <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                  {selectedRole === 'SUPER_ADMIN' ? (
-                    <>
-                      <ShieldCheck className="w-5 h-5 text-[#3E2723]" /> Super Admin Portal
-                    </>
-                  ) : selectedRole === 'ACADEMIC_ADMIN' ? (
-                    <>
-                      <Building2 className="w-5 h-5 text-[#4E342E]" /> Academic Admin Login
-                    </>
-                  ) : selectedRole === 'STAFF' ? (
-                    <>
-                      <Users className="w-5 h-5 text-emerald-700" /> Staff & Faculty Login
-                    </>
-                  ) : (
-                    <>
-                      <User className="w-5 h-5 text-sky-700" /> {selectedRole === 'PARENT' ? 'Parent' : 'Student'} Portal
-                    </>
-                  )}
-                </h2>
-                <p className="text-xs text-[#6D4C41] mt-1">Enter your registered credentials to access your portal</p>
+        <div className="relative z-10 flex items-center justify-between text-xs text-[#BCAAA4] pt-8 border-t border-white/10">
+          <span>TuitionOS Platform &bull; v1.0</span>
+          <span className="font-mono text-[11px]">TLS 1.3 &bull; Encrypted</span>
+        </div>
+      </div>
+
+      {/* Right Authentication Panel */}
+      <div className="flex-1 bg-gradient-to-br from-[#F7F2EF] via-[#FAF7F5] to-[#EFEBE9] text-[#2D1E18] flex flex-col justify-center items-center px-4 py-10 sm:px-8 lg:px-12">
+        <div className="w-full max-w-[460px]">
+          {/* Mobile Brand Header */}
+          <div className="text-center mb-7 lg:hidden">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-[#4E342E] to-[#8D6E63] flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-[#3E2723]/30 mb-3 border border-[#A1887F]/30">
+              T
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#2D1E18]">TuitionOS Enterprise</h1>
+            <p className="text-xs sm:text-sm text-[#6D4C41] mt-1">Multi-Institute Tuition Management System</p>
+          </div>
+
+          {/* Multi-Institute Selection Step (if user has multiple institutes) */}
+          {pendingAuth ? (
+            <div className="bg-white border border-[#D7CCC8] rounded-3xl p-7 sm:p-8 shadow-xl shadow-[#3E2723]/10 text-[#2D1E18]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-[#2D1E18]">Select Your Institute</h2>
+                  <p className="text-xs text-[#6D4C41]">Your account is registered across multiple institutes</p>
+                </div>
               </div>
+
+              <p className="text-xs text-[#5D4037] mb-4">
+                Choose the institute context you wish to access for this session:
+              </p>
+
+              <div className="space-y-2.5">
+                {pendingAuth.memberships.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      login(pendingAuth.token, pendingAuth.user, m.institute);
+                      setPendingAuth(null);
+                    }}
+                    className="w-full p-3.5 rounded-2xl bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] text-left transition-all flex items-center justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <div className="font-bold text-[#2D1E18] text-sm group-hover:text-[#4E342E] transition-colors">
+                        {m.institute.name}
+                      </div>
+                      <div className="text-xs text-[#6D4C41] font-mono mt-0.5">
+                        Code: {m.institute.code} &bull; Role: {m.role}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-[#8D6E63] group-hover:text-[#4E342E] group-hover:translate-x-0.5 transition-all" />
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPendingAuth(null)}
+                className="w-full mt-5 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] transition-colors text-center cursor-pointer"
+              >
+                Back to Login
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Role Selector Tabs */}
+              <div className="bg-[#EFEBE9] border border-[#D7CCC8] rounded-2xl p-1.5 mb-5 grid grid-cols-3 sm:grid-cols-5 gap-1 text-center shadow-xs">
+                {(
+                  [
+                    { role: 'ACADEMIC_ADMIN', label: 'Admin' },
+                    { role: 'STAFF', label: 'Staff' },
+                    { role: 'PARENT', label: 'Parent' },
+                    { role: 'STUDENT', label: 'Student' },
+                    { role: 'SUPER_ADMIN', label: 'Super Admin' },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.role}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRole(item.role);
+                      setError(null);
+                    }}
+                    className={`py-2 px-1.5 text-[11px] font-semibold rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                      selectedRole === item.role
+                        ? 'bg-[#4E342E] text-white shadow-md shadow-[#3E2723]/25 font-bold'
+                        : 'text-[#5D4037] hover:text-[#2D1E18] hover:bg-white/70'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Login Card */}
+              <div className="bg-white border border-[#D7CCC8] rounded-3xl p-7 sm:p-8 shadow-xl shadow-[#3E2723]/10 text-[#2D1E18]">
+                <div className="mb-6">
+                  <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
+                    {selectedRole === 'SUPER_ADMIN' ? (
+                      <>
+                        <ShieldCheck className="w-5 h-5 text-[#3E2723]" /> Super Admin Portal
+                      </>
+                    ) : selectedRole === 'ACADEMIC_ADMIN' ? (
+                      <>
+                        <Building2 className="w-5 h-5 text-[#4E342E]" /> Academic Admin Login
+                      </>
+                    ) : selectedRole === 'STAFF' ? (
+                      <>
+                        <Users className="w-5 h-5 text-emerald-700" /> Staff &amp; Faculty Login
+                      </>
+                    ) : (
+                      <>
+                        <User className="w-5 h-5 text-sky-700" /> {selectedRole === 'PARENT' ? 'Parent' : 'Student'} Portal
+                      </>
+                    )}
+                  </h2>
+                  <p className="text-xs text-[#6D4C41] mt-1">Enter your registered credentials to access your workspace</p>
+                </div>
 
               {error && (
                 <div className="mb-6 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col gap-2">
@@ -386,57 +390,15 @@ export const Login: React.FC = () => {
                   )}
                 </button>
               </form>
-
-              {/* Quick Demo Credentials Autofill Section */}
-              <div className="mt-6 pt-5 border-t border-[#EFEBE9]">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-[11px] font-bold text-[#6D4C41] uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#8D6E63]" /> Quick Demo Fill (Click to autofill)
-                  </span>
-                  <span className="text-[10px] bg-[#F7F2EF] text-[#4E342E] px-2 py-0.5 rounded-full border border-[#D7CCC8] font-semibold">
-                    Demo Mode
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {DEMO_ACCOUNTS.slice(0, 4).map((demo) => (
-                    <button
-                      key={demo.role}
-                      type="button"
-                      onClick={() => handleSelectDemo(demo)}
-                      className="p-2.5 rounded-xl bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] hover:border-[#BCAAA4] text-left text-[#2D1E18] transition-all group"
-                    >
-                      <div className={`font-bold text-[11px] ${demo.roleBadgeColor}`}>{demo.label}</div>
-                      <div className="text-[10px] text-[#6D4C41] truncate mt-0.5">{demo.subtext}</div>
-                    </button>
-                  ))}
-
-                  {/* Student Portal Demo Card */}
-                  {DEMO_ACCOUNTS.find((d) => d.role === 'STUDENT') && (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemo(DEMO_ACCOUNTS.find((d) => d.role === 'STUDENT')!)}
-                      className="col-span-2 p-2.5 rounded-xl bg-[#F7F2EF] hover:bg-[#EFEBE9] border border-[#D7CCC8] hover:border-[#BCAAA4] text-left text-[#2D1E18] transition-all flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="font-bold text-[#6D4C41] text-[11px]">Student Portal</div>
-                        <div className="text-[10px] text-[#6D4C41] mt-0.5">student@apexacademy.com</div>
-                      </div>
-                      <span className="text-[10px] font-mono bg-[#EFEBE9] text-[#4E342E] px-2 py-0.5 rounded border border-[#D7CCC8] font-semibold">
-                        Demo Account
-                      </span>
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
 
             {/* Footer info */}
-            <div className="text-center mt-6 text-xs text-[#BCAAA4]">
+            <div className="text-center mt-6 text-xs text-[#6D4C41] font-medium">
               Enforced Server-Side RBAC &bull; Isolated Tenant Encryption
             </div>
           </>
         )}
+        </div>
       </div>
 
       {/* Credential Guidance Modal */}

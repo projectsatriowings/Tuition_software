@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { hashPassword, generateSecureRandomToken } from '../../utils/security.js';
 import { isStudentAuthorized } from '../students/student-authorization.service.js';
+import { mergeStudentCredentialNotes } from '../students/students.controller.js';
 
 export const createParentSchema = z.object({
   fullName: z.string().min(2, 'Full name is required'),
@@ -558,7 +559,22 @@ export async function resetParentPassword(req: AuthenticatedRequest, res: Respon
       where: { userId: parentProfile.userId },
     });
 
-    // Passwords are securely hashed at rest and never stored in student.notes
+    for (const rel of parentProfile.studentRelations) {
+      if (rel.student.instituteId === instituteId) {
+        const currentStudent = await prisma.student.findUnique({
+          where: { id: rel.studentId },
+          select: { notes: true },
+        });
+        await prisma.student.update({
+          where: { id: rel.studentId },
+          data: {
+            notes: mergeStudentCredentialNotes(currentStudent?.notes, {
+              parentPassword: temporaryPassword,
+            }),
+          },
+        });
+      }
+    }
 
     // Record audit log
     await prisma.auditLog.create({

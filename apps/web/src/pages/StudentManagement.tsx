@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { apiFetch } from '../services/api';
+import { apiFetch, getAuthToken } from '../services/api';
 import { Student, Batch, StudentStatus } from '../types';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/useAuth';
@@ -72,6 +72,7 @@ export const StudentManagement: React.FC = () => {
   const [checkingParent, setCheckingParent] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
 
   // Assign Batch & Subjects Modal State
   const [assignBatchStudent, setAssignBatchStudent] = useState<Student | null>(null);
@@ -725,6 +726,7 @@ Please keep this login and password safe. Use your registered mobile number and 
 
   // Load batches once per institute context
   const loadBatches = async () => {
+    if (!getAuthToken() || !user) return;
     try {
       const res = await apiFetch('/academics/batches');
       setBatches(res.data?.batches || []);
@@ -736,6 +738,7 @@ Please keep this login and password safe. Use your registered mobile number and 
   const requestSeq = useRef(0);
 
   const fetchData = async () => {
+    if (!getAuthToken() || !user) return;
     const seq = ++requestSeq.current;
     try {
       setLoading(true);
@@ -765,12 +768,14 @@ Please keep this login and password safe. Use your registered mobile number and 
   };
 
   useEffect(() => {
+    if (!getAuthToken() || !user) return;
     loadBatches();
-  }, [activeInstitute?.id]);
+  }, [activeInstitute?.id, user?.id]);
 
   useEffect(() => {
+    if (!getAuthToken() || !user) return;
     fetchData();
-  }, [debouncedSearch, statusFilter, batchFilter, subjectFilter, activeInstitute?.id]);
+  }, [debouncedSearch, statusFilter, batchFilter, subjectFilter, activeInstitute?.id, user?.id]);
 
   useEffect(() => {
     if (showAdmitModal) {
@@ -1138,32 +1143,34 @@ Please keep this login and password safe. Use your registered mobile number and 
           <p className="text-sm text-[#6D4C41] mt-1">Enrollment, student lifecycle, and academic batch tracking</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              setEnrollSearchQuery('');
-              setEnrollSearchResults([]);
-              setSelectedEnrollStudent(null);
-              setSelectedEnrollBatchId('');
-              setSelectedEnrollSubjectIds([]);
-              setEnrollError(null);
-              setShowEnrollExistingModal(true);
-            }}
-            className="inline-flex items-center gap-2 bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all"
-          >
-            <UserCheck className="w-4 h-4 text-[#6D4C41]" /> Enroll Existing Student
-          </button>
-          {user?.role !== 'ACADEMIC_ADMIN' && (
-            <button
-              type="button"
-              onClick={() => {
-                setDetectedCollision(null);
-                setShowAdmitModal(true);
-              }}
-              className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
-            >
-              <Plus className="w-4 h-4" /> Create New Student
-            </button>
+          {(user?.role === 'ACADEMIC_ADMIN' || user?.role === 'SUPER_ADMIN') && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setEnrollSearchQuery('');
+                  setEnrollSearchResults([]);
+                  setSelectedEnrollStudent(null);
+                  setSelectedEnrollBatchId('');
+                  setSelectedEnrollSubjectIds([]);
+                  setEnrollError(null);
+                  setShowEnrollExistingModal(true);
+                }}
+                className="inline-flex items-center gap-2 bg-[#F7F2EF] hover:bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8] text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all"
+              >
+                <UserCheck className="w-4 h-4 text-[#6D4C41]" /> Enroll Existing Student
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetectedCollision(null);
+                  setShowAdmitModal(true);
+                }}
+                className="inline-flex items-center gap-2 bg-[#4E342E] hover:bg-[#3E2723] text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-[#3E2723]/25 transition-all"
+              >
+                <Plus className="w-4 h-4" /> Create New Student
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1410,7 +1417,19 @@ Please keep this login and password safe. Use your registered mobile number and 
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setOpenActionMenuId(openActionMenuId === student.id ? null : student.id);
+                              if (openActionMenuId === student.id) {
+                                setOpenActionMenuId(null);
+                                setActionMenuPos(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const spaceBelow = window.innerHeight - rect.bottom;
+                                const openUp = spaceBelow < 240;
+                                setActionMenuPos({
+                                  top: openUp ? Math.max(8, rect.top - 220) : rect.bottom + 6,
+                                  right: Math.max(8, window.innerWidth - rect.right),
+                                });
+                                setOpenActionMenuId(student.id);
+                              }
                             }}
                             className={`p-1.5 rounded-lg border transition shadow-sm ${
                               openActionMenuId === student.id
@@ -1422,11 +1441,14 @@ Please keep this login and password safe. Use your registered mobile number and 
                             <MoreVertical className="w-4 h-4" />
                           </button>
 
-                          {openActionMenuId === student.id && (
+                          {openActionMenuId === student.id && actionMenuPos && createPortal(
                             <div
-                              className={`absolute right-0 ${
-                                isBottomRow ? 'bottom-full mb-1' : 'top-full mt-1'
-                              } w-48 bg-white rounded-2xl shadow-xl border border-[#D7CCC8] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95`}
+                              style={{
+                                position: 'fixed',
+                                top: `${actionMenuPos.top}px`,
+                                right: `${actionMenuPos.right}px`,
+                              }}
+                              className="w-48 bg-white rounded-2xl shadow-2xl border border-[#D7CCC8] py-1.5 z-[70] text-xs animate-in fade-in zoom-in-95"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <button
@@ -1501,7 +1523,8 @@ Please keep this login and password safe. Use your registered mobile number and 
                                   <span>Reactivate Student</span>
                                 </button>
                               )}
-                            </div>
+                            </div>,
+                            document.body
                           )}
                         </div>
                       </td>
@@ -2784,66 +2807,68 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
       )}
 
       {/* Student & Parent Login & Password Modal */}
-      {viewingStudentCreds && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto shadow-2xl text-[#2D1E18]">
-            <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
-                  <Key className="w-5 h-5" />
+      {viewingStudentCreds && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl text-[#2D1E18]">
+            <div className="px-6 pt-5 pb-0 shrink-0">
+              <div className="flex items-center justify-between pb-4 border-b border-[#EFEBE9]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] flex items-center justify-center text-[#4E342E]">
+                    <Key className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-[#2D1E18]">Student & Parent Login & Password</h2>
+                    <p className="text-xs text-[#6D4C41]">
+                      Manage login credentials for {viewingStudentCreds.firstName} {viewingStudentCreds.lastName}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-base font-bold text-[#2D1E18]">Student & Parent Login & Password</h2>
-                  <p className="text-xs text-[#6D4C41]">
-                    Manage login credentials for {viewingStudentCreds.firstName} {viewingStudentCreds.lastName}
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingStudentCreds(null)}
+                  className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setViewingStudentCreds(null)}
-                className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              {/* Credential Role Tabs */}
+              <div className="flex border-b border-[#EFEBE9] mt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCredsActiveTab('student');
+                    setCredsResetError(null);
+                    setCredsResetSuccess(null);
+                  }}
+                  className={`pb-2.5 px-4 text-xs font-bold transition-all relative flex items-center gap-1.5 cursor-pointer ${
+                    credsActiveTab === 'student'
+                      ? 'text-[#4E342E] border-b-2 border-[#4E342E]'
+                      : 'text-[#8D6E63] hover:text-[#4E342E]'
+                  }`}
+                >
+                  <span>🎓 Student Account</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCredsActiveTab('parent');
+                    setCredsResetError(null);
+                    setCredsResetSuccess(null);
+                  }}
+                  className={`pb-2.5 px-4 text-xs font-bold transition-all relative flex items-center gap-1.5 cursor-pointer ${
+                    credsActiveTab === 'parent'
+                      ? 'text-[#4E342E] border-b-2 border-[#4E342E]'
+                      : 'text-[#8D6E63] hover:text-[#4E342E]'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Parent / Guardian Account</span>
+                </button>
+              </div>
             </div>
 
-            {/* Credential Role Tabs */}
-            <div className="flex border-b border-[#EFEBE9] mt-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setCredsActiveTab('student');
-                  setCredsResetError(null);
-                  setCredsResetSuccess(null);
-                }}
-                className={`pb-2.5 px-4 text-xs font-bold transition-all relative flex items-center gap-1.5 ${
-                  credsActiveTab === 'student'
-                    ? 'text-[#4E342E] border-b-2 border-[#4E342E]'
-                    : 'text-[#8D6E63] hover:text-[#4E342E]'
-                }`}
-              >
-                <span>🎓 Student Account</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCredsActiveTab('parent');
-                  setCredsResetError(null);
-                  setCredsResetSuccess(null);
-                }}
-                className={`pb-2.5 px-4 text-xs font-bold transition-all relative flex items-center gap-1.5 ${
-                  credsActiveTab === 'parent'
-                    ? 'text-[#4E342E] border-b-2 border-[#4E342E]'
-                    : 'text-[#8D6E63] hover:text-[#4E342E]'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Parent / Guardian Account</span>
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4">
+            <div className="p-6 pt-4 overflow-y-auto flex-1 space-y-4">
               {credsResetSuccess && (
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
@@ -3059,20 +3084,36 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
                         value={resetStudentPasswordInput}
                         onChange={(e) => setResetStudentPasswordInput(e.target.value)}
                         placeholder="Type new password (or click Auto-generate)..."
-                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-9 pr-10 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                        className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-9 pr-16 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] select-text"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowResetStudentInputPassword(!showResetStudentInputPassword)}
-                        className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#2D1E18]"
-                        title={showResetStudentInputPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showResetStudentInputPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
+                      <div className="absolute right-2.5 top-2 flex items-center gap-1.5">
+                        {resetStudentPasswordInput && (
+                          <button
+                            type="button"
+                            onClick={() => copyCredsToClipboard(resetStudentPasswordInput, 'input_stud_pass')}
+                            className="p-0.5 text-[#8D6E63] hover:text-[#2D1E18] cursor-pointer"
+                            title="Copy password"
+                          >
+                            {copiedCredsKey === 'input_stud_pass' ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowResetStudentInputPassword(!showResetStudentInputPassword)}
+                          className="p-0.5 text-[#8D6E63] hover:text-[#2D1E18] cursor-pointer"
+                          title={showResetStudentInputPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showResetStudentInputPassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
 
                     <p className="text-[11px] text-[#6D4C41]">
@@ -3257,20 +3298,36 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
                                 value={resetParentPasswordInput}
                                 onChange={(e) => setResetParentPasswordInput(e.target.value)}
                                 placeholder="Type new password (or click Auto-generate)..."
-                                className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-9 pr-10 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                                className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl pl-9 pr-16 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63] select-text"
                               />
-                              <button
-                                type="button"
-                                onClick={() => setShowResetParentInputPassword(!showResetParentInputPassword)}
-                                className="absolute right-3 top-2.5 text-[#8D6E63] hover:text-[#2D1E18]"
-                                title={showResetParentInputPassword ? 'Hide password' : 'Show password'}
-                              >
-                                {showResetParentInputPassword ? (
-                                  <EyeOff className="w-4 h-4" />
-                                ) : (
-                                  <Eye className="w-4 h-4" />
+                              <div className="absolute right-2.5 top-2 flex items-center gap-1.5">
+                                {resetParentPasswordInput && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyCredsToClipboard(resetParentPasswordInput, 'input_parent_pass')}
+                                    className="p-0.5 text-[#8D6E63] hover:text-[#2D1E18] cursor-pointer"
+                                    title="Copy password"
+                                  >
+                                    {copiedCredsKey === 'input_parent_pass' ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
                                 )}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowResetParentInputPassword(!showResetParentInputPassword)}
+                                  className="p-0.5 text-[#8D6E63] hover:text-[#2D1E18] cursor-pointer"
+                                  title={showResetParentInputPassword ? 'Hide password' : 'Show password'}
+                                >
+                                  {showResetParentInputPassword ? (
+                                    <EyeOff className="w-4 h-4" />
+                                  ) : (
+                                    <Eye className="w-4 h-4" />
+                                  )}
+                                </button>
+                              </div>
                             </div>
 
                             <p className="text-[11px] text-[#6D4C41]">
@@ -3304,14 +3361,15 @@ Please keep credentials safe. Passwords must be changed upon first login.`;
                 <button
                   type="button"
                   onClick={() => setViewingStudentCreds(null)}
-                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18]"
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] cursor-pointer"
                 >
                   Close
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Assign Batch & Subjects Modal */}

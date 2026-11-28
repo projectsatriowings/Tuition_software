@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Pause, RotateCcw, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, AlertCircle, Loader2 } from 'lucide-react';
+import { useAuthenticatedMedia } from '../hooks/useAuthenticatedMedia';
 
 interface AudioWavePlayerProps {
   src: string;
@@ -40,6 +41,9 @@ export const AudioWavePlayer: React.FC<AudioWavePlayerProps> = ({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; time: number } | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  const { blobUrl: resolvedSrc, loading: loadingMedia, error: mediaFetchError } = useAuthenticatedMedia(src);
 
   // Sync initialDuration if it changes or updates
   useEffect(() => {
@@ -50,33 +54,42 @@ export const AudioWavePlayer: React.FC<AudioWavePlayerProps> = ({
 
   // Decode audio buffer via AudioContext to resolve finite duration for WebM blobs and streaming files
   useEffect(() => {
-    if (!src) return;
+    if (!resolvedSrc) return;
     let isMounted = true;
+    setAudioError(null);
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (AudioCtx) {
-      fetch(src)
+      fetch(resolvedSrc)
         .then((res) => res.arrayBuffer())
         .then((buf) => {
+          if (buf.byteLength === 0) return 0;
           const ctx = new AudioCtx();
-          return ctx.decodeAudioData(buf).then((decoded) => {
-            ctx.close().catch(() => {});
-            return decoded.duration;
-          });
+          return ctx
+            .decodeAudioData(buf)
+            .then((decoded) => {
+              ctx.close().catch(() => {});
+              return decoded.duration;
+            })
+            .catch((err) => {
+              ctx.close().catch(() => {});
+              throw err;
+            });
         })
         .then((dur) => {
           if (isMounted && dur && isFinite(dur) && dur > 0) {
             setTotalDuration(dur);
           }
         })
-        .catch((err) => {
-          console.warn('[AudioWavePlayer AudioContext decode error]', err);
+        .catch(() => {
+          // Graceful fallback: WebM streams without Cue duration headers may fail decodeAudioData;
+          // <audio> metadata / seeked trick or initialDuration will still handle playback.
         });
     }
 
     return () => {
       isMounted = false;
     };
-  }, [src]);
+  }, [resolvedSrc]);
 
   // Handle metadata loaded
   const handleLoadedMetadata = () => {
@@ -232,15 +245,41 @@ export const AudioWavePlayer: React.FC<AudioWavePlayerProps> = ({
     ? Math.min(100, Math.max(0, (currentTime / safeDuration) * 100))
     : 0;
 
+  if (loadingMedia) {
+    return (
+      <div
+        className={`relative w-full rounded-2xl bg-white border border-[#D7CCC8]/80 shadow-sm p-3.5 flex items-center gap-2.5 text-xs text-[#6D4C41] ${className}`}
+      >
+        <Loader2 className="w-4 h-4 animate-spin text-[#4E342E]" />
+        <span>Loading voice note...</span>
+      </div>
+    );
+  }
+
+  if (mediaFetchError || audioError || !resolvedSrc) {
+    return (
+      <div
+        className={`relative w-full rounded-2xl bg-rose-50/80 border border-rose-200 shadow-sm p-3 flex items-center gap-2.5 text-xs text-rose-700 ${className}`}
+      >
+        <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+        <span className="truncate">{audioError || 'Unable to play voice note'}</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`relative w-full rounded-2xl bg-white border border-[#D7CCC8]/80 shadow-sm p-3.5 transition-all hover:border-[#BCAAA4] ${className}`}
     >
       <audio
         ref={audioRef}
-        src={src}
+        src={resolvedSrc}
         preload="metadata"
         onLoadedMetadata={handleLoadedMetadata}
+        onError={() => {
+          setIsPlaying(false);
+          setAudioError('Audio format unsupported or failed to decode');
+        }}
         onTimeUpdate={() => {
           if (!isPlaying && audioRef.current) {
             setCurrentTime(audioRef.current.currentTime);

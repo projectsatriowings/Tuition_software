@@ -13,6 +13,30 @@ import {
   getAdmissionYear,
 } from './admission-number.service.js';
 
+export function mergeStudentCredentialNotes(
+  existingNotes: string | null | undefined,
+  updates: { studentPassword?: string | null; parentPassword?: string | null }
+): string | null {
+  let payload: Record<string, any> = {};
+  if (existingNotes && existingNotes.startsWith('{') && (existingNotes.includes('studentPassword') || existingNotes.includes('parentPassword') || existingNotes.includes('userNotes'))) {
+    try {
+      payload = JSON.parse(existingNotes);
+    } catch {
+      payload = { userNotes: existingNotes };
+    }
+  } else if (existingNotes && existingNotes.trim()) {
+    payload = { userNotes: existingNotes.trim() };
+  }
+
+  if (updates.studentPassword !== undefined) {
+    payload.studentPassword = updates.studentPassword;
+  }
+  if (updates.parentPassword !== undefined) {
+    payload.parentPassword = updates.parentPassword;
+  }
+  return JSON.stringify(payload);
+}
+
 export function formatStudentResponse<T extends { id: string; photoUrl?: string | null; notes?: string | null; updatedAt?: Date | string }>(student: T): T & { credentialsOnRecord?: { studentPassword: string | null; parentPassword: string | null } } {
   if (!student) return student;
   let formattedPhoto = student.photoUrl;
@@ -752,7 +776,16 @@ export async function admitStudent(req: AuthenticatedRequest, res: Response) {
               });
             }
 
-            // Passwords are securely hashed at rest and never stored in student.notes
+            if (tempPassword || parentTempPassword) {
+              const mergedNotes = mergeStudentCredentialNotes(student.notes, {
+                ...(tempPassword ? { studentPassword: tempPassword } : {}),
+                ...(parentTempPassword ? { parentPassword: parentTempPassword } : {}),
+              });
+              await tx.student.update({
+                where: { id: student.id },
+                data: { notes: mergedNotes },
+              });
+            }
 
             // Record Audit Log
             await tx.auditLog.create({
@@ -1681,7 +1714,13 @@ export async function resetStudentPassword(req: AuthenticatedRequest, res: Respo
       where: { userId: targetUserId },
     });
 
-    // Passwords are securely hashed at rest and never stored in student.notes
+    const updatedStudentNotes = mergeStudentCredentialNotes(student.notes, {
+      studentPassword: temporaryPassword,
+    });
+    await prisma.student.update({
+      where: { id: student.id },
+      data: { notes: updatedStudentNotes },
+    });
 
     // Record audit log
     await prisma.auditLog.create({

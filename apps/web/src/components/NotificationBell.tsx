@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/useAuth';
 import { useToast } from '../context/ToastContext';
-import { apiFetch } from '../services/api';
+import { apiFetch, getAuthToken } from '../services/api';
 import { verifyNotificationTarget } from '../services/notificationService';
 import {
   Bell,
@@ -52,7 +52,7 @@ export const NotificationBell: React.FC = () => {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchNotifications = async () => {
-    if (!user) return;
+    if (!user || !getAuthToken()) return;
     try {
       setLoading(true);
       const res = await apiFetch(`/notifications?limit=30${filterUnread ? '&unreadOnly=true' : ''}`);
@@ -116,6 +116,7 @@ export const NotificationBell: React.FC = () => {
 
     // Periodic poll fallback every 20 seconds
     const pollInterval = setInterval(() => {
+      if (!getAuthToken()) return;
       apiFetch('/notifications/unread-count')
         .then((res) => {
           if (res.success && res.data?.unreadCount !== undefined) {

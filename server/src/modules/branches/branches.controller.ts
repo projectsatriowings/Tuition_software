@@ -4,8 +4,9 @@ import { BranchesService } from './branches.service.js';
 
 export async function listBranches(req: AuthenticatedRequest, res: Response) {
   try {
+    const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
     const instituteId = req.instituteId;
-    if (!instituteId) {
+    if (!instituteId && !isSuperAdmin) {
       return res.status(400).json({ success: false, error: 'Institute context required' });
     }
 
@@ -30,9 +31,10 @@ export async function listBranches(req: AuthenticatedRequest, res: Response) {
 
 export async function getBranchDetails(req: AuthenticatedRequest, res: Response) {
   try {
+    const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
     const instituteId = req.instituteId;
     const { id } = req.params;
-    if (!instituteId) {
+    if (!instituteId && !isSuperAdmin) {
       return res.status(400).json({ success: false, error: 'Institute context required' });
     }
 
@@ -291,8 +293,9 @@ export async function transferStudent(req: AuthenticatedRequest, res: Response) 
 
 export async function getConsolidatedSummary(req: AuthenticatedRequest, res: Response) {
   try {
+    const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
     const instituteId = req.instituteId;
-    if (!instituteId) {
+    if (!instituteId && !isSuperAdmin) {
       return res.status(400).json({ success: false, error: 'Institute context required' });
     }
 

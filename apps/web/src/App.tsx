@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { AuthProvider, getDefaultRouteForRole } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -51,7 +51,6 @@ const StudentPortal = lazyWithRetry(() => import('./pages/StudentPortal').then((
 const MaterialsManagement = lazyWithRetry(() => import('./pages/MaterialsManagement').then((m) => ({ default: m.MaterialsManagement })));
 const HomeworkManagement = lazyWithRetry(() => import('./pages/HomeworkManagement').then((m) => ({ default: m.HomeworkManagement })));
 const ExaminationsManagement = lazyWithRetry(() => import('./pages/ExaminationsManagement').then((m) => ({ default: m.ExaminationsManagement })));
-const QuestionGenerator = lazyWithRetry(() => import('./pages/QuestionGenerator/QuestionGenerator').then((m) => ({ default: m.QuestionGenerator })));
 const ProgressReviewsManagement = lazyWithRetry(() => import('./pages/ProgressReviewsManagement').then((m) => ({ default: m.ProgressReviewsManagement })));
 const MessagingInbox = lazyWithRetry(() => import('./pages/MessagingInbox').then((m) => ({ default: m.MessagingInbox })));
 const FeesManagement = lazyWithRetry(() => import('./pages/FeesManagement').then((m) => ({ default: m.FeesManagement })));
@@ -80,15 +79,15 @@ const isTabAllowedForRole = (tab: string, role?: string): boolean => {
   if (!role) return false;
   switch (role) {
     case 'SUPER_ADMIN':
-      return ['super_admin_dashboard', 'staff_attendance', 'staff', 'students', 'academics', 'exams', 'fees', 'payroll', 'branches'].includes(tab);
+      return ['super_admin_dashboard', 'staff_attendance', 'attendance', 'staff', 'students', 'academics', 'exams', 'fees', 'payroll', 'branches'].includes(tab);
     case 'ACADEMIC_ADMIN':
-      return ['academic_dashboard', 'staff', 'staff_attendance', 'students', 'academics', 'exams', 'question_generator', 'progress_reviews', 'messaging', 'fees', 'payroll', 'branches'].includes(tab);
+      return ['academic_dashboard', 'staff', 'staff_attendance', 'attendance', 'students', 'academics', 'exams', 'progress_reviews', 'messaging', 'fees', 'payroll', 'branches'].includes(tab);
     case 'STAFF':
       return ['my_attendance', 'my_payslips', 'attendance', 'academic_dashboard', 'students', 'materials', 'homework', 'exams', 'progress_reviews', 'messaging'].includes(tab);
     case 'PARENT':
       return tab === 'parent_portal' || tab.startsWith('parent_') || tab === 'progress_reviews';
     case 'STUDENT':
-      return ['student_portal', 'materials', 'homework', 'exams', 'progress_reviews'].includes(tab) || tab.startsWith('student_');
+      return ['student_portal', 'materials', 'homework', 'exams', 'progress_reviews', 'messaging'].includes(tab) || tab.startsWith('student_');
     default:
       return false;
   }
@@ -97,27 +96,25 @@ const isTabAllowedForRole = (tab: string, role?: string): boolean => {
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [currentTab, setCurrentTab] = useState<string>(() => {
-    const raw = window.location.pathname.replace(/^\//, '').trim();
-    if (raw && raw !== '/') {
-      return raw === 'learning_materials' ? 'materials' : raw;
-    }
-    return 'academic_dashboard';
-  });
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    if (user) {
-      const raw = window.location.pathname.replace(/^\//, '').trim();
-      const targetTab = raw === 'learning_materials' ? 'materials' : raw;
-      if (targetTab && isTabAllowedForRole(targetTab, user.role)) {
-        setCurrentTab(targetTab);
-      } else {
-        const defaultTab = getDefaultTabForRole(user.role);
-        setCurrentTab(defaultTab);
-        window.history.replaceState({}, '', `/${defaultTab}`);
-      }
+  const rawPath = location.pathname.replace(/^\//, '').trim();
+  const normalizedPath = rawPath === 'learning_materials' ? 'materials' : rawPath;
+  const currentTab =
+    user && normalizedPath && isTabAllowedForRole(normalizedPath, user.role)
+      ? normalizedPath
+      : getDefaultTabForRole(user?.role);
+
+  const handleNavigateTab = (tab: string) => {
+    const normalized = tab === 'learning_materials' ? 'materials' : tab;
+    if (!user || isTabAllowedForRole(normalized, user.role)) {
+      navigate(`/${normalized}`);
+    } else {
+      navigate(getDefaultRouteForRole(user.role), { replace: true });
     }
-  }, [user]);
+    setMobileMenuOpen(false);
+  };
 
   useEffect(() => {
     const handleTabChange = (e: any) => {
@@ -125,39 +122,16 @@ const AppContent: React.FC = () => {
       if (tab) {
         const normalized = tab === 'learning_materials' ? 'materials' : tab;
         if (!user || isTabAllowedForRole(normalized, user.role)) {
-          setCurrentTab(normalized);
-        }
-      }
-    };
-    const handlePopState = () => {
-      const raw = window.location.pathname.replace(/^\//, '').trim();
-      if (raw) {
-        const normalized = raw === 'learning_materials' ? 'materials' : raw;
-        if (!user || isTabAllowedForRole(normalized, user.role)) {
-          setCurrentTab(normalized);
-        } else if (user) {
-          const defaultTab = getDefaultTabForRole(user.role);
-          setCurrentTab(defaultTab);
-          window.history.replaceState({}, '', `/${defaultTab}`);
+          navigate(`/${normalized}`);
         }
       }
     };
 
     window.addEventListener('tuitionos:tab-change', handleTabChange);
-    window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('tuitionos:tab-change', handleTabChange);
-      window.removeEventListener('popstate', handlePopState);
     };
-  }, [user]);
-
-  useEffect(() => {
-    if (user && !isTabAllowedForRole(currentTab, user.role)) {
-      const defaultTab = getDefaultTabForRole(user.role);
-      setCurrentTab(defaultTab);
-      window.history.replaceState({}, '', `/${defaultTab}`);
-    }
-  }, [user, currentTab]);
+  }, [user, navigate]);
 
   if (loading) {
     return (
@@ -171,8 +145,21 @@ const AppContent: React.FC = () => {
   }
 
   if (!user) {
-    return <Login />;
+    return (
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
   }
+
+  const defaultRoute = getDefaultRouteForRole(user.role);
+  const parentTab =
+    currentTab === 'parent_portal' || currentTab === 'parent_dashboard'
+      ? 'dashboard'
+      : currentTab.startsWith('parent_')
+      ? currentTab.replace('parent_', '')
+      : 'dashboard';
 
   return (
     <div className="h-screen bg-[#F7F2EF] overflow-hidden text-[#2D1E18] flex flex-col font-sans">
@@ -181,11 +168,7 @@ const AppContent: React.FC = () => {
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
         <Sidebar
           currentTab={currentTab}
-          onSelectTab={(tab) => {
-            setCurrentTab(tab);
-            window.history.pushState({}, '', `/${tab}`);
-            setMobileMenuOpen(false);
-          }}
+          onSelectTab={handleNavigateTab}
           isOpenOnMobile={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
         />
@@ -201,57 +184,223 @@ const AppContent: React.FC = () => {
                   animate="animate"
                   exit="exit"
                 >
-                  {currentTab === 'super_admin_dashboard' && user.role === 'SUPER_ADMIN' && (
-                    <SuperAdminDashboard />
-                  )}
+                  <Routes>
+                    <Route path="/" element={<Navigate to={defaultRoute} replace />} />
 
-                  {currentTab === 'academic_dashboard' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF' || user.role === 'SUPER_ADMIN') && (
-                    <AcademicAdminDashboard onNavigateTab={(tab) => setCurrentTab(tab)} />
-                  )}
-
-                  {currentTab === 'staff' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <StaffManagement />}
-
-                  {currentTab === 'staff_attendance' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
-                    <StaffAttendanceAdmin onNavigateTab={(tab) => setCurrentTab(tab)} />
-                  )}
-
-                  {currentTab === 'my_attendance' && user.role === 'STAFF' && <StaffMyAttendance />}
-
-                  {currentTab === 'students' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'STAFF') && <StudentManagement />}
-
-                  {currentTab === 'academics' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && (
-                    <AcademicsManagement onNavigateTab={(tab) => setCurrentTab(tab)} />
-                  )}
-
-                  {currentTab === 'attendance' && user.role === 'STAFF' && <AttendanceManagement />}
-
-                  {(currentTab === 'parent_portal' || currentTab.startsWith('parent_')) && user.role === 'PARENT' && (
-                    <ParentPortal
-                      initialTab={
-                        currentTab === 'parent_portal' || currentTab === 'parent_dashboard'
-                          ? 'dashboard'
-                          : currentTab.replace('parent_', '')
+                    <Route
+                      path="/super_admin_dashboard"
+                      element={
+                        user.role === 'SUPER_ADMIN' ? (
+                          <SuperAdminDashboard />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
                       }
                     />
-                  )}
 
-                  {currentTab === 'student_portal' && user.role === 'STUDENT' && <StudentPortal />}
+                    <Route
+                      path="/academic_dashboard"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF' || user.role === 'SUPER_ADMIN' ? (
+                          <AcademicAdminDashboard onNavigateTab={handleNavigateTab} />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
 
-                  {currentTab === 'materials' && (user.role === 'STAFF' || user.role === 'STUDENT') && <MaterialsManagement />}
+                    <Route
+                      path="/staff"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <StaffManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
 
-                  {currentTab === 'homework' && (user.role === 'STAFF' || user.role === 'STUDENT') && <HomeworkManagement />}
+                    <Route
+                      path="/staff_attendance"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <StaffAttendanceAdmin onNavigateTab={handleNavigateTab} />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
 
-                  {currentTab === 'exams' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'STAFF' || user.role === 'STUDENT') && <ExaminationsManagement />}
+                    <Route
+                      path="/my_attendance"
+                      element={
+                        user.role === 'STAFF' ? <StaffMyAttendance /> : <Navigate to={defaultRoute} replace />
+                      }
+                    />
 
-                  {currentTab === 'question_generator' && user.role === 'ACADEMIC_ADMIN' && <QuestionGenerator />}
+                    <Route
+                      path="/my_payslips"
+                      element={
+                        user.role === 'STAFF' ? <StaffMyPayslips /> : <Navigate to={defaultRoute} replace />
+                      }
+                    />
 
-                  {currentTab === 'progress_reviews' && <ProgressReviewsManagement />}
+                    <Route
+                      path="/students"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'STAFF' ? (
+                          <StudentManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
 
-                  {currentTab === 'messaging' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF') && <MessagingInbox />}
-                  {currentTab === 'fees' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <FeesManagement />}
-                  {currentTab === 'payroll' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <PayrollManagement />}
-                  {currentTab === 'branches' && (user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN') && <BranchManagement />}
-                  {currentTab === 'my_payslips' && user.role === 'STAFF' && <StaffMyPayslips />}
+                    <Route
+                      path="/academics"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <AcademicsManagement onNavigateTab={handleNavigateTab} />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/attendance"
+                      element={
+                        user.role === 'STAFF' || user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <AttendanceManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/materials"
+                      element={
+                        user.role === 'STAFF' || user.role === 'STUDENT' ? (
+                          <MaterialsManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+                    <Route path="/learning_materials" element={<Navigate to="/materials" replace />} />
+
+                    <Route
+                      path="/homework"
+                      element={
+                        user.role === 'STAFF' || user.role === 'STUDENT' ? (
+                          <HomeworkManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/exams"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' ||
+                        user.role === 'SUPER_ADMIN' ||
+                        user.role === 'STAFF' ||
+                        user.role === 'STUDENT' ? (
+                          <ExaminationsManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route path="/progress_reviews" element={<ProgressReviewsManagement />} />
+
+                    <Route
+                      path="/messaging"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'STAFF' || user.role === 'STUDENT' ? (
+                          <MessagingInbox />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/fees"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <FeesManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/payroll"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <PayrollManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/branches"
+                      element={
+                        user.role === 'ACADEMIC_ADMIN' || user.role === 'SUPER_ADMIN' ? (
+                          <BranchManagement />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route
+                      path="/student_portal"
+                      element={
+                        user.role === 'STUDENT' ? <StudentPortal /> : <Navigate to={defaultRoute} replace />
+                      }
+                    />
+
+                    <Route
+                      path="/parent_portal"
+                      element={
+                        user.role === 'PARENT' ? (
+                          <ParentPortal initialTab={parentTab} />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+                    <Route
+                      path="/parent_dashboard"
+                      element={
+                        user.role === 'PARENT' ? (
+                          <ParentPortal initialTab="dashboard" />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+                    <Route
+                      path="/:tab"
+                      element={
+                        user.role === 'PARENT' && currentTab.startsWith('parent_') ? (
+                          <ParentPortal initialTab={parentTab} />
+                        ) : (
+                          <Navigate to={defaultRoute} replace />
+                        )
+                      }
+                    />
+
+                    <Route path="*" element={<Navigate to={defaultRoute} replace />} />
+                  </Routes>
                 </motion.div>
               </AnimatePresence>
             </Suspense>

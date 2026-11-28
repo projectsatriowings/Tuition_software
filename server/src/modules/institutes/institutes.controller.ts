@@ -196,6 +196,9 @@ export async function createInstitute(req: AuthenticatedRequest, res: Response) 
           phone: data.phone?.trim() || null,
           email: data.email?.trim() || null,
           status: 'ACTIVE',
+          settingsJson: {
+            adminPasswordOnRecord: data.adminInitialPassword,
+          },
         },
       });
 
@@ -320,7 +323,16 @@ export async function getInstituteById(req: AuthenticatedRequest, res: Response)
       return res.status(404).json({ success: false, error: 'Institute not found' });
     }
 
-    const adminAccount = institute.memberships?.[0]?.user || null;
+    const rawAdminAccount = institute.memberships?.[0]?.user || null;
+    const settingsObj = (institute.settingsJson as Record<string, any> | null) || {};
+    const adminAccount = rawAdminAccount
+      ? {
+          ...rawAdminAccount,
+          ...(req.user?.role === 'SUPER_ADMIN'
+            ? { passwordOnRecord: settingsObj.adminPasswordOnRecord || null }
+            : {}),
+        }
+      : null;
 
     return res.json({
       success: true,
@@ -690,6 +702,21 @@ export async function resetAdminPassword(req: AuthenticatedRequest, res: Respons
       data: {
         passwordHash,
         mustChangePassword: false,
+      },
+    });
+
+    const targetInstitute = await prisma.institute.findUnique({
+      where: { id },
+      select: { settingsJson: true },
+    });
+    const existingSettings = (targetInstitute?.settingsJson as Record<string, any> | null) || {};
+    await prisma.institute.update({
+      where: { id },
+      data: {
+        settingsJson: {
+          ...existingSettings,
+          adminPasswordOnRecord: temporaryPassword,
+        },
       },
     });
 

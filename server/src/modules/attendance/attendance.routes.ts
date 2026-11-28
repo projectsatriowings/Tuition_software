@@ -8,6 +8,7 @@ import {
   getStudentQrPass,
   validateScannedQr,
   correctAttendanceEvent,
+  deleteAttendanceEvent,
 } from './attendance.controller.js';
 import { authenticateToken, requireRole, requireInstituteContext } from '../../middleware/auth.js';
 
@@ -33,7 +34,8 @@ router.post('/check-out', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'),
 router.get('/students/:studentId/qr', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF', 'PARENT', 'STUDENT'), getStudentQrPass);
 router.post('/qr/scan', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), validateScannedQr);
 
-// Corrections
+// Corrections & Admin Delete
 router.patch('/:eventId/correction', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), correctAttendanceEvent);
+router.delete('/:eventId', requireRole('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STAFF'), deleteAttendanceEvent);
 
 export default router;

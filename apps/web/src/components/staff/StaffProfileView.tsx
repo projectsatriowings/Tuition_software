@@ -203,6 +203,7 @@ export const StaffProfileView: React.FC<StaffProfileViewProps> = ({
 
   // Load Staff Details
   const fetchStaffDetails = async () => {
+    if (!staffId) return;
     try {
       setLoading(true);
       setError(null);

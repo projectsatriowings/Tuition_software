@@ -73,7 +73,7 @@ export class BranchesService {
    * List branches for an institute with operational metrics
    */
   static async listBranches(
-    instituteId: string,
+    instituteId?: string,
     options: {
       search?: string;
       isActive?: boolean;
@@ -81,7 +81,7 @@ export class BranchesService {
       role?: string;
     } = {}
   ) {
-    const where: any = { instituteId };
+    const where: any = instituteId ? { instituteId } : {};
 
     if (options.isActive !== undefined) {
       where.isActive = options.isActive;
@@ -168,13 +168,13 @@ export class BranchesService {
   /**
    * Get single branch with comprehensive relationships
    */
-  static async getBranchById(instituteId: string, branchId: string) {
+  static async getBranchById(instituteId: string | undefined, branchId: string) {
     if (!branchId || branchId === 'consolidated-summary' || branchId === 'summary') {
       return null;
     }
 
     const branch = await prisma.branch.findFirst({
-      where: { id: branchId, instituteId },
+      where: { id: branchId, ...(instituteId ? { instituteId } : {}) },
       include: {
         staffAssignments: {
           where: { isActive: true },
@@ -953,9 +953,10 @@ export class BranchesService {
   /**
    * Consolidated Multi-Branch Operational Summary for Executive Dashboards
    */
-  static async getConsolidatedSummary(instituteId: string) {
+  static async getConsolidatedSummary(instituteId?: string) {
+    const instFilter = instituteId ? { instituteId } : {};
     const branches = await prisma.branch.findMany({
-      where: { instituteId },
+      where: instFilter,
       include: {
         _count: {
           select: {
@@ -969,15 +970,15 @@ export class BranchesService {
     });
 
     const totalStudents = await prisma.student.count({
-      where: { instituteId, status: 'ACTIVE' },
+      where: { ...instFilter, status: 'ACTIVE' },
     });
 
     const totalStaff = await prisma.staffProfile.count({
-      where: { instituteId },
+      where: instFilter,
     });
 
     const totalBatches = await prisma.batch.count({
-      where: { instituteId, isActive: true },
+      where: { ...instFilter, isActive: true },
     });
 
     const today = new Date();
@@ -985,14 +986,14 @@ export class BranchesService {
 
     const todayStaffCheckins = await prisma.staffAttendanceSession.count({
       where: {
-        instituteId,
+        ...instFilter,
         attendanceDate: today,
         status: { in: ['CHECKED_IN', 'CHECKED_OUT'] },
       },
     });
 
     const totalRevenue = await prisma.payment.aggregate({
-      where: { instituteId, status: 'SUCCESS' },
+      where: { ...instFilter, status: 'SUCCESS' },
       _sum: { amountPaid: true },
     });
 

@@ -22,6 +22,13 @@ export function useWebSpeechRecognition(options: UseSpeechRecognitionOptions = {
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const onResultRef = useRef(options.onResult);
+  const onErrorRef = useRef(options.onError);
+
+  useEffect(() => {
+    onResultRef.current = options.onResult;
+    onErrorRef.current = options.onError;
+  }, [options.onResult, options.onError]);
 
   useEffect(() => {
     const SpeechRecognitionClass =
@@ -55,11 +62,11 @@ export function useWebSpeechRecognition(options: UseSpeechRecognitionOptions = {
         if (finalChunk) {
           const full = finalChunk.trim();
           setTranscript(full);
-          options.onResult?.(full, true);
+          onResultRef.current?.(full, true);
         }
         setInterimTranscript(currentInterim);
         if (currentInterim && !finalChunk) {
-          options.onResult?.(currentInterim, false);
+          onResultRef.current?.(currentInterim, false);
         }
       };
 
@@ -72,11 +79,11 @@ export function useWebSpeechRecognition(options: UseSpeechRecognitionOptions = {
         if (event.error === 'not-allowed' || event.error === 'permission-denied') {
           const msg = 'Microphone permission denied. Please allow microphone access in your browser settings.';
           setError(msg);
-          options.onError?.(msg);
+          onErrorRef.current?.(msg);
         } else {
           const msg = `Speech recognition error: ${event.error}`;
           setError(msg);
-          options.onError?.(msg);
+          onErrorRef.current?.(msg);
         }
         setIsListening(false);
       };

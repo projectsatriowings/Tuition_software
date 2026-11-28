@@ -1,8 +1,9 @@
 import { markNotificationEntityAsRead } from '../services/notificationService';
 import React, { useEffect, useState, useRef } from 'react';
 import { AudioWavePlayer } from '../components/AudioWavePlayer';
+import { AuthImage } from '../components/AuthImage';
 import { fixWebmDuration } from '../utils/fixWebmDuration';
-import { apiFetch } from '../services/api';
+import { apiFetch, downloadFileToDevice } from '../services/api';
 import { useAuth } from '../context/useAuth';
 import {
   MessageSquare,
@@ -47,6 +48,8 @@ export const MessagingInbox: React.FC = () => {
   // Filters & Search
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'UNREAD' | 'READ'>('ALL');
+  const [audienceFilter, setAudienceFilter] = useState<'ALL' | 'PARENT' | 'STUDENT'>('ALL');
+  const [modalContactTab, setModalContactTab] = useState<'PARENT' | 'STUDENT'>('PARENT');
 
   // New Conversation Modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -380,16 +383,28 @@ export const MessagingInbox: React.FC = () => {
     setRecordingSeconds(0);
   };
 
-  // Start chat with an eligible parent
-  const handleStartChatWithContact = async (contact: any) => {
+  // Start chat with an eligible contact (teacher for student, or parent/student for staff)
+  const handleStartChatWithContact = async (contact: any, targetType: 'PARENT' | 'STUDENT' | 'TEACHER' = 'PARENT') => {
     try {
       setStartingChat(true);
+      const isTeacherContact = contact.contactType === 'TEACHER' || targetType === 'TEACHER';
+      const recipientUserId = isTeacherContact
+        ? contact.teacherUserId
+        : targetType === 'STUDENT'
+        ? contact.studentUserId
+        : contact.parentUserId;
+      const title = isTeacherContact
+        ? `Student Inquiry: ${contact.studentName} (${contact.teacherName})`
+        : targetType === 'STUDENT'
+        ? `Direct Message: ${contact.studentName}`
+        : `Discussion regarding ${contact.studentName}`;
+
       const res = await apiFetch('/messaging/conversations', {
         method: 'POST',
         body: JSON.stringify({
-          recipientUserId: contact.parentUserId,
+          recipientUserId,
           studentId: contact.studentId,
-          title: `Discussion regarding ${contact.studentName}`,
+          title,
         }),
       });
 
@@ -424,13 +439,31 @@ export const MessagingInbox: React.FC = () => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const isStudentUser = user?.role === 'STUDENT';
+
   const filteredContacts = eligibleContacts.filter(
     (c) =>
+      c.teacherName?.toLowerCase().includes(contactSearch.toLowerCase()) ||
+      c.designation?.toLowerCase().includes(contactSearch.toLowerCase()) ||
+      (Array.isArray(c.subjects) && c.subjects.some((s: string) => s.toLowerCase().includes(contactSearch.toLowerCase()))) ||
       c.studentName?.toLowerCase().includes(contactSearch.toLowerCase()) ||
       c.admissionNumber?.toLowerCase().includes(contactSearch.toLowerCase()) ||
       c.parentName?.toLowerCase().includes(contactSearch.toLowerCase()) ||
       c.batchName?.toLowerCase().includes(contactSearch.toLowerCase())
   );
+
+  const displayedConversations = conversations.filter((conv) => {
+    if (isStudentUser || audienceFilter === 'ALL') return true;
+    const otherRole = conv.otherUser?.role || (conv.parent ? 'PARENT' : 'STUDENT');
+    return otherRole === audienceFilter;
+  });
+
+  const parentConvCount = conversations.filter(
+    (c) => (c.otherUser?.role || (c.parent ? 'PARENT' : '')) === 'PARENT'
+  ).length;
+  const studentConvCount = conversations.filter(
+    (c) => c.otherUser?.role === 'STUDENT'
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -439,10 +472,14 @@ export const MessagingInbox: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-[#2D1E18] flex items-center gap-2.5">
             <MessageSquare className="w-7 h-7 text-[#6D4C41]" />
-            <span>Parent Messages & Faculty Communication Center</span>
+            <span>
+              {isStudentUser ? 'Teacher Messages & Doubt Support' : 'Messages & Communication Center'}
+            </span>
           </h1>
           <p className="text-sm text-[#6D4C41] mt-1">
-            Authenticated, private channels between teachers and verified student guardians
+            {isStudentUser
+              ? 'Direct private channels with your batch teachers and faculty'
+              : 'Separate private communication channels for Parents and Students'}
           </p>
         </div>
 
@@ -451,9 +488,9 @@ export const MessagingInbox: React.FC = () => {
             setShowNewModal(true);
             loadEligibleContacts();
           }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-2xl text-xs font-semibold shadow-md transition-all shrink-0"
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#4E342E] hover:bg-[#3E2723] text-white rounded-2xl text-xs font-semibold shadow-md transition-all shrink-0 cursor-pointer"
         >
-          <Plus className="w-4 h-4" /> Message a Parent
+          <Plus className="w-4 h-4" /> {isStudentUser ? 'Message a Teacher' : 'New Message'}
         </button>
       </div>
 
@@ -474,6 +511,32 @@ export const MessagingInbox: React.FC = () => {
                 className="w-full pl-9 pr-3 py-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl text-xs text-[#2D1E18] placeholder-[#8D6E63] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
               />
             </div>
+
+            {/* Audience Separation Tabs (Parents vs Students) */}
+            {!isStudentUser && (
+              <div className="grid grid-cols-3 gap-1 p-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl">
+                {(
+                  [
+                    { id: 'ALL', label: `All (${conversations.length})` },
+                    { id: 'PARENT', label: `Parents (${parentConvCount})` },
+                    { id: 'STUDENT', label: `Students (${studentConvCount})` },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setAudienceFilter(tab.id)}
+                    className={`py-1.5 px-2 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      audienceFilter === tab.id
+                        ? 'bg-[#4E342E] text-white shadow-xs'
+                        : 'text-[#6D4C41] hover:text-[#2D1E18] hover:bg-white/70'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Filter Pills */}
             <div className="flex items-center gap-1.5">
@@ -518,7 +581,7 @@ export const MessagingInbox: React.FC = () => {
                   Retry
                 </button>
               </div>
-            ) : conversations.length === 0 ? (
+            ) : displayedConversations.length === 0 ? (
               <div className="p-8 text-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-[#D7CCC8]/30 flex items-center justify-center mx-auto text-[#6D4C41]">
                   <MessageSquare className="w-6 h-6" />
@@ -527,7 +590,11 @@ export const MessagingInbox: React.FC = () => {
                 <p className="text-[11px] text-[#8D6E63] max-w-xs mx-auto">
                   {statusFilter === 'UNREAD'
                     ? 'No unread messages right now.'
-                    : 'Start a direct message with any student guardian from your assigned batches.'}
+                    : audienceFilter === 'STUDENT'
+                    ? 'No student conversations yet. Start a direct chat with any student.'
+                    : audienceFilter === 'PARENT'
+                    ? 'No parent conversations yet. Start a chat with any student guardian.'
+                    : 'Start a direct message from your assigned batches.'}
                 </p>
                 <button
                   onClick={() => {
@@ -540,10 +607,25 @@ export const MessagingInbox: React.FC = () => {
                 </button>
               </div>
             ) : (
-              conversations.map((conv) => {
+              displayedConversations.map((conv) => {
                 const isSelected = selectedConversation?.id === conv.id;
                 const student = conv.student;
-                const parent = conv.parent || conv.otherUser;
+                const otherRole = conv.otherUser?.role || (conv.parent ? 'PARENT' : 'STAFF');
+                const contactUser = conv.otherUser || conv.parent;
+                const roleBadgeText =
+                  otherRole === 'STUDENT'
+                    ? 'Student'
+                    : otherRole === 'PARENT'
+                    ? 'Parent'
+                    : otherRole === 'STAFF'
+                    ? 'Faculty'
+                    : 'Admin';
+                const roleBadgeClass =
+                  otherRole === 'STUDENT'
+                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                    : otherRole === 'PARENT'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-[#EFEBE9] text-[#4E342E] border-[#D7CCC8]';
 
                 return (
                   <button
@@ -557,14 +639,21 @@ export const MessagingInbox: React.FC = () => {
                   >
                     {/* Avatar */}
                     <div className="w-10 h-10 rounded-2xl bg-[#4E342E]/15 text-[#4E342E] border border-[#D7CCC8] flex items-center justify-center font-bold text-sm shrink-0">
-                      {parent?.fullName?.[0] || 'P'}
+                      {contactUser?.fullName?.[0] || 'U'}
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="font-bold text-[#2D1E18] text-xs truncate">
-                          {parent?.fullName || 'Parent'}
-                        </span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-bold text-[#2D1E18] text-xs truncate">
+                            {contactUser?.fullName || 'User'}
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 ${roleBadgeClass}`}
+                          >
+                            {roleBadgeText}
+                          </span>
+                        </div>
                         {conv.lastMessage && (
                           <span className="text-[10px] text-[#8D6E63] font-mono shrink-0">
                             {formatTime(conv.lastMessage.createdAt)}
@@ -680,7 +769,20 @@ export const MessagingInbox: React.FC = () => {
                   </div>
                 ) : (
                   messages.map((msg) => {
-                    const isMe = msg.senderId === user?.id || msg.isMine;
+                    const currentUserId = user?.id || (user as any)?.userId;
+                    const msgSenderId = msg.senderId || msg.sender_id || msg.sender?.id;
+                    const isMe = Boolean(currentUserId && msgSenderId ? msgSenderId === currentUserId : msg.isMine === true);
+                    const senderRole = msg.sender?.role || msg.senderRole || 'PARENT';
+                    const roleBadgeLabel =
+                      senderRole === 'PARENT'
+                        ? 'Parent'
+                        : senderRole === 'STAFF'
+                        ? 'Staff'
+                        : senderRole === 'ACADEMIC_ADMIN'
+                        ? 'Admin'
+                        : senderRole === 'SUPER_ADMIN'
+                        ? 'Super Admin'
+                        : senderRole;
 
                     return (
                       <div
@@ -691,21 +793,28 @@ export const MessagingInbox: React.FC = () => {
                           className={`max-w-[85%] sm:max-w-md p-3.5 rounded-2xl text-xs space-y-2 shadow-sm ${
                             isMe
                               ? 'bg-[#4E342E] text-white rounded-br-none'
-                              : 'bg-white text-[#2D1E18] rounded-bl-none border border-[#D7CCC8]'
+                              : 'bg-[#F7F2EF] text-[#2D1E18] rounded-bl-none border border-[#D7CCC8]'
                           }`}
                         >
-                          <span
-                            className={`text-[10px] font-semibold block ${
-                              isMe ? 'text-[#D7CCC8]' : 'text-[#6D4C41]'
-                            }`}
-                          >
-                            {isMe ? 'You' : msg.sender?.fullName || 'Parent'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[10px] font-semibold ${
+                                isMe ? 'text-[#D7CCC8]' : 'text-[#4E342E]'
+                              }`}
+                            >
+                              {isMe ? 'You' : msg.sender?.fullName || 'Parent'}
+                            </span>
+                            {!isMe && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-white border border-[#D7CCC8] text-[#6D4C41]">
+                                {roleBadgeLabel}
+                              </span>
+                            )}
+                          </div>
 
                           {/* Image Attachment */}
                           {msg.attachmentType === 'IMAGE' && msg.attachmentUrl && (
                             <div className="rounded-xl overflow-hidden border border-black/10 my-1 bg-black/5">
-                              <img
+                              <AuthImage
                                 src={msg.attachmentUrl}
                                 alt={msg.attachmentName || 'Attachment'}
                                 onClick={() => setLightboxImg(msg.attachmentUrl)}
@@ -727,14 +836,18 @@ export const MessagingInbox: React.FC = () => {
 
                           {/* Document Attachment */}
                           {msg.attachmentType === 'DOCUMENT' && msg.attachmentUrl && (
-                            <a
-                              href={`${msg.attachmentUrl}?download=true`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all ${
+                            <button
+                              type="button"
+                              onClick={() =>
+                                downloadFileToDevice(
+                                  `${msg.attachmentUrl}?download=true`,
+                                  msg.attachmentName || 'Document.pdf'
+                                ).catch((err) => console.error('Download failed:', err))
+                              }
+                              className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${
                                 isMe
                                   ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white'
-                                  : 'bg-[#F7F2EF] border-[#D7CCC8] hover:bg-[#EFEBE9] text-[#2D1E18]'
+                                  : 'bg-white border-[#D7CCC8] hover:bg-[#EFEBE9] text-[#2D1E18]'
                               }`}
                             >
                               <FileText className="w-5 h-5 shrink-0" />
@@ -747,7 +860,7 @@ export const MessagingInbox: React.FC = () => {
                                 </span>
                               </div>
                               <Download className="w-4 h-4 shrink-0" />
-                            </a>
+                            </button>
                           )}
 
                           {/* Message Body */}
@@ -891,7 +1004,7 @@ export const MessagingInbox: React.FC = () => {
                   {/* Text Input */}
                   <input
                     type="text"
-                    placeholder="Type your message to parent..."
+                    placeholder={isStudentUser ? 'Type your message to teacher...' : 'Type your message...'}
                     value={messageBody}
                     onChange={(e) => setMessageBody(e.target.value)}
                     className="flex-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl px-4 py-2.5 text-xs sm:text-sm text-[#2D1E18] placeholder-[#8D6E63] focus:outline-none focus:ring-2 focus:ring-[#6D4C41]"
@@ -938,10 +1051,13 @@ export const MessagingInbox: React.FC = () => {
             <div className="flex items-center justify-between border-b border-[#EFEBE9] pb-3">
               <div>
                 <h2 className="text-lg font-bold text-[#2D1E18] flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-[#6D4C41]" /> Message a Student's Parent
+                  <Plus className="w-5 h-5 text-[#6D4C41]" />
+                  {isStudentUser ? 'Message a Teacher / Faculty' : 'Message Parent or Student'}
                 </h2>
                 <p className="text-xs text-[#6D4C41] mt-0.5">
-                  Select an authorized student guardian from your assigned batches
+                  {isStudentUser
+                    ? 'Select a faculty member assigned to your enrolled batches'
+                    : 'Select an authorized parent or student from your assigned batches'}
                 </p>
               </div>
               <button
@@ -952,12 +1068,40 @@ export const MessagingInbox: React.FC = () => {
               </button>
             </div>
 
+            {/* Separate Parents vs Students Tabs in New Message Modal */}
+            {!isStudentUser && (
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setModalContactTab('PARENT')}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    modalContactTab === 'PARENT'
+                      ? 'bg-[#4E342E] text-white shadow-xs'
+                      : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                  }`}
+                >
+                  Parents / Guardians
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalContactTab('STUDENT')}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    modalContactTab === 'STUDENT'
+                      ? 'bg-[#4E342E] text-white shadow-xs'
+                      : 'text-[#6D4C41] hover:text-[#2D1E18]'
+                  }`}
+                >
+                  Students (Direct)
+                </button>
+              </div>
+            )}
+
             {/* Quick Contact Search */}
             <div className="relative">
               <Search className="w-4 h-4 text-[#8D6E63] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search student or parent name..."
+                placeholder={isStudentUser ? 'Search teacher, subject, or batch...' : 'Search student or parent name...'}
                 value={contactSearch}
                 onChange={(e) => setContactSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-[#F7F2EF] border border-[#D7CCC8] rounded-xl text-xs text-[#2D1E18] focus:ring-2 focus:ring-[#6D4C41]"
@@ -969,45 +1113,111 @@ export const MessagingInbox: React.FC = () => {
               {loadingContacts ? (
                 <div className="py-8 text-center text-xs text-[#8D6E63] flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-[#6D4C41]" />
-                  <span>Loading eligible students & parents...</span>
+                  <span>{isStudentUser ? 'Loading your batch teachers...' : 'Loading eligible students & parents...'}</span>
                 </div>
               ) : filteredContacts.length === 0 ? (
                 <div className="py-8 text-center text-xs text-[#8D6E63]">
                   No eligible contacts found matching '{contactSearch}'.
                 </div>
               ) : (
-                filteredContacts.map((contact) => (
-                  <div
-                    key={`${contact.studentId}_${contact.parentUserId}`}
-                    className="p-3.5 rounded-2xl border border-[#D7CCC8] bg-[#FAF8F6] hover:bg-white hover:border-[#6D4C41] transition-all flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-[#2D1E18]">
-                          {contact.parentName}
-                        </span>
-                        <span className="text-[10px] text-[#6D4C41] bg-[#EFEBE9] px-1.5 py-0.2 rounded font-semibold">
-                          {contact.relation}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px] text-[#8D6E63] mt-0.5">
-                        <span>
-                          Student: <strong>{contact.studentName}</strong> ({contact.admissionNumber})
-                        </span>
-                        <span>&bull;</span>
-                        <span className="text-[#4E342E] font-medium">{contact.batchName}</span>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleStartChatWithContact(contact)}
-                      disabled={startingChat}
-                      className="px-3.5 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-xs shrink-0 transition-all"
+                filteredContacts.map((contact) =>
+                  contact.contactType === 'TEACHER' ? (
+                    <div
+                      key={contact.teacherUserId}
+                      className="p-3.5 rounded-2xl border border-[#D7CCC8] bg-[#FAF8F6] hover:bg-white hover:border-[#6D4C41] transition-all flex items-center justify-between gap-3"
                     >
-                      Chat
-                    </button>
-                  </div>
-                ))
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-[#2D1E18]">{contact.teacherName}</span>
+                          <span className="text-[10px] text-[#6D4C41] bg-[#EFEBE9] px-1.5 py-0.5 rounded font-semibold">
+                            {contact.designation || 'Faculty'}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#8D6E63] mt-0.5">
+                          <span className="text-[#4E342E] font-medium">{contact.batchName}</span>
+                          {Array.isArray(contact.subjects) && contact.subjects.length > 0 && (
+                            <>
+                              <span>&bull;</span>
+                              <span>{contact.subjects.join(', ')}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleStartChatWithContact(contact, 'TEACHER')}
+                        disabled={startingChat}
+                        className="px-3.5 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-xs shrink-0 transition-all cursor-pointer"
+                      >
+                        Chat
+                      </button>
+                    </div>
+                  ) : (
+                    modalContactTab === 'PARENT' ? (
+                      contact.parentUserId ? (
+                        <div
+                          key={`${contact.studentId}_parent_${contact.parentUserId}`}
+                          className="p-3.5 rounded-2xl border border-[#D7CCC8] bg-[#FAF8F6] hover:bg-white hover:border-[#6D4C41] transition-all flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-[#2D1E18]">
+                                {contact.parentName}
+                              </span>
+                              <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
+                                {contact.relation}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-[#8D6E63] mt-0.5">
+                              <span>
+                                Student: <strong>{contact.studentName}</strong> ({contact.admissionNumber})
+                              </span>
+                              <span>&bull;</span>
+                              <span className="text-[#4E342E] font-medium">{contact.batchName}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleStartChatWithContact(contact, 'PARENT')}
+                            disabled={startingChat}
+                            className="px-3.5 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-xs shrink-0 transition-all cursor-pointer"
+                          >
+                            Chat Parent
+                          </button>
+                        </div>
+                      ) : null
+                    ) : contact.studentUserId ? (
+                      <div
+                        key={`${contact.studentId}_student_${contact.studentUserId}`}
+                        className="p-3.5 rounded-2xl border border-[#D7CCC8] bg-[#FAF8F6] hover:bg-white hover:border-[#6D4C41] transition-all flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-[#2D1E18]">
+                              {contact.studentName}
+                            </span>
+                            <span className="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded font-semibold">
+                              Student
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-[#8D6E63] mt-0.5">
+                            <span className="font-mono">{contact.admissionNumber}</span>
+                            <span>&bull;</span>
+                            <span className="text-[#4E342E] font-medium">{contact.batchName}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleStartChatWithContact(contact, 'STUDENT')}
+                          disabled={startingChat}
+                          className="px-3.5 py-1.5 bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-semibold rounded-xl shadow-xs shrink-0 transition-all cursor-pointer"
+                        >
+                          Chat Student
+                        </button>
+                      </div>
+                    ) : null
+                  )
+                )
               )}
             </div>
 
@@ -1031,7 +1241,7 @@ export const MessagingInbox: React.FC = () => {
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm"
         >
           <div className="relative max-w-4xl max-h-[90vh]">
-            <img
+            <AuthImage
               src={lightboxImg}
               alt="Full preview"
               className="max-w-full max-h-[90vh] rounded-2xl object-contain shadow-2xl"

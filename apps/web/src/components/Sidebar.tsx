@@ -11,7 +11,6 @@ import {
   FileText,
   Award,
   Sparkles,
-  FileQuestion,
   MessageSquare,
   CreditCard,
   Bell,
@@ -125,6 +124,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <Calendar className="w-4 h-4" /> Staff Attendance
               </button>
+
+              <button
+                onClick={() => handleItemClick('attendance')}
+                className={navItemClass('attendance')}
+              >
+                <Calendar className="w-4 h-4" /> Student Attendance
+              </button>
               <button
                 onClick={() => handleItemClick('payroll')}
                 className={navItemClass('payroll')}
@@ -165,6 +171,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
 
               <button
+                onClick={() => handleItemClick('attendance')}
+                className={navItemClass('attendance')}
+              >
+                <Calendar className="w-4 h-4" /> Student Attendance
+              </button>
+
+              <button
                 onClick={() => handleItemClick('students')}
                 className={navItemClass('students')}
               >
@@ -186,13 +199,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
 
               <button
-                onClick={() => handleItemClick('question_generator')}
-                className={navItemClass('question_generator')}
-              >
-                <FileQuestion className="w-4 h-4" /> AI Question Generator
-              </button>
-
-              <button
                 onClick={() => handleItemClick('progress_reviews')}
                 className={navItemClass('progress_reviews')}
               >
@@ -203,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => handleItemClick('messaging')}
                 className={navItemClass('messaging')}
               >
-                <MessageSquare className="w-4 h-4" /> Parent Messages
+                <MessageSquare className="w-4 h-4" /> Messages
               </button>
 
               <button
@@ -292,7 +298,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => handleItemClick('messaging')}
                 className={navItemClass('messaging')}
               >
-                <MessageSquare className="w-4 h-4" /> Parent Messages
+                <MessageSquare className="w-4 h-4" /> Messages
               </button>
             </>
           )}
@@ -401,6 +407,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={navItemClass('progress_reviews')}
               >
                 <Sparkles className="w-4 h-4" /> Academic Progress
+              </button>
+
+              <button
+                onClick={() => handleItemClick('messaging')}
+                className={navItemClass('messaging')}
+              >
+                <MessageSquare className="w-4 h-4" /> Message Teachers
               </button>
             </>
           )}

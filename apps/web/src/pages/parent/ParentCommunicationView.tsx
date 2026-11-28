@@ -1,8 +1,10 @@
 import { markNotificationEntityAsRead } from '../../services/notificationService';
 import React, { useEffect, useState, useRef } from 'react';
 import { AudioWavePlayer } from '../../components/AudioWavePlayer';
+import { AuthImage } from '../../components/AuthImage';
 import { fixWebmDuration } from '../../utils/fixWebmDuration';
-import { apiFetch } from '../../services/api';
+import { apiFetch, downloadFileToDevice } from '../../services/api';
+import { useAuth } from '../../context/useAuth';
 import {
   MessageSquare,
   Send,
@@ -35,6 +37,7 @@ interface ParentCommunicationViewProps {
 }
 
 export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = ({ student }) => {
+  const { user } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<'chat' | 'feedback'>('chat');
 
   // Chat State
@@ -569,7 +572,22 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
                     </div>
                   ) : (
                     messages.map((m) => {
-                      const isMe = m.senderId !== selectedTeacher.userId;
+                      const currentUserId = user?.id || (user as any)?.userId;
+                      const msgSenderId = m.senderId || m.sender_id || m.sender?.id;
+                      const isMe = Boolean(
+                        currentUserId && msgSenderId
+                          ? msgSenderId === currentUserId
+                          : m.senderId !== selectedTeacher.userId
+                      );
+                      const senderRole = m.sender?.role || m.senderRole || 'STAFF';
+                      const roleBadgeLabel =
+                        senderRole === 'STAFF'
+                          ? 'Faculty'
+                          : senderRole === 'ACADEMIC_ADMIN'
+                          ? 'Admin'
+                          : senderRole === 'SUPER_ADMIN'
+                          ? 'Super Admin'
+                          : senderRole;
                       return (
                         <div
                           key={m.id}
@@ -582,9 +600,19 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
                                 : 'bg-white text-[#2D1E18] border border-[#D7CCC8] rounded-tl-none'
                             }`}
                           >
+                            {!isMe && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-semibold text-[#4E342E]">
+                                  {m.sender?.fullName || selectedTeacher?.fullName || 'Teacher'}
+                                </span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-[#F7F2EF] border border-[#D7CCC8] text-[#6D4C41]">
+                                  {roleBadgeLabel}
+                                </span>
+                              </div>
+                            )}
                             {/* Image Attachment */}
                             {m.attachmentType === 'IMAGE' && m.attachmentUrl && (
-                              <img
+                              <AuthImage
                                 src={m.attachmentUrl}
                                 alt="Attachment"
                                 onClick={() => setLightboxImg(m.attachmentUrl)}
@@ -605,16 +633,20 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
 
                             {/* Document Attachment */}
                             {m.attachmentType === 'DOCUMENT' && m.attachmentUrl && (
-                              <a
-                                href={`${m.attachmentUrl}?download=true`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-2 p-2 bg-black/10 rounded-xl hover:bg-black/15 transition-colors"
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  downloadFileToDevice(
+                                    `${m.attachmentUrl}?download=true`,
+                                    m.attachmentName || 'Document.pdf'
+                                  ).catch((err) => console.error('Download failed:', err))
+                                }
+                                className="w-full text-left flex items-center gap-2 p-2 bg-black/10 rounded-xl hover:bg-black/15 transition-colors cursor-pointer"
                               >
                                 <FileText className="w-4 h-4 shrink-0" />
                                 <span className="truncate flex-1 text-[11px] font-semibold">{m.attachmentName || 'Document.pdf'}</span>
                                 <Download className="w-3.5 h-3.5 shrink-0" />
-                              </a>
+                              </button>
                             )}
 
                             {m.body && <p className="whitespace-pre-wrap">{m.body}</p>}
@@ -941,7 +973,7 @@ export const ParentCommunicationView: React.FC<ParentCommunicationViewProps> = (
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm"
         >
           <div className="relative max-w-3xl max-h-[90vh]">
-            <img src={lightboxImg} alt="Preview" className="max-w-full max-h-[90vh] rounded-2xl object-contain shadow-2xl" />
+            <AuthImage src={lightboxImg} alt="Preview" className="max-w-full max-h-[90vh] rounded-2xl object-contain shadow-2xl" />
             <button
               onClick={() => setLightboxImg(null)}
               className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full text-black shadow-lg"

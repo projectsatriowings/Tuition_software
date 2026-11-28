@@ -3,10 +3,12 @@ import path from 'path';
 
 import fs from 'fs';
 
-// Look for .env in current working dir, server dir, or root
+// Look for .env in current working dir, parent monorepo root, server dir, or relative to config
 const envPaths = [
   path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '../.env'),
   path.resolve(process.cwd(), 'server/.env'),
+  path.resolve(__dirname, '../../../.env'),
   path.resolve(__dirname, '../../.env'),
   path.resolve(__dirname, '../.env'),
 ];

@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../context/useAuth';
 import { StudentAvatar } from '../components/StudentAvatar';
+import { StudentDetailsModal } from '../components/StudentDetailsModal';
 import { Batch } from '../types';
 import { matchStudentVoice, EnrolledStudentCandidate, AttendanceMethod } from '@tuition/shared';
 import { useWebSpeechRecognition } from '../hooks/useWebSpeechRecognition';
@@ -19,6 +21,7 @@ import {
   Send,
   X,
   Edit2,
+  Trash2,
   RefreshCw,
   Check,
   Phone,
@@ -28,7 +31,8 @@ import {
 } from 'lucide-react';
 
 export const AttendanceManagement: React.FC = () => {
-  const { activeInstitute } = useAuth();
+  const { activeInstitute, user } = useAuth();
+  const isAdmin = user?.role === 'ACADEMIC_ADMIN' || user?.role === 'SUPER_ADMIN';
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
@@ -75,6 +79,70 @@ export const AttendanceManagement: React.FC = () => {
   const [correctionTarget, setCorrectionTarget] = useState<any>(null);
   const [correctionReason, setCorrectionReason] = useState<string>('');
   const [correctionIsLate, setCorrectionIsLate] = useState<boolean>(false);
+  const [correctionEventTime, setCorrectionEventTime] = useState<string>('');
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
+
+  // Timing Period Filter & Student Profile Modal
+  const [timingFilter, setTimingFilter] = useState<string>('ALL');
+  const [profileStudentId, setProfileStudentId] = useState<string | null>(null);
+
+  // Parse schedule strings like "4:00 PM - 5:30 PM" or "16:00 - 17:30"
+  const parseScheduleWindow = useCallback((schedule?: string | null) => {
+    if (!schedule) return null;
+    const match = schedule.match(
+      /(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\s*[-–to]+\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i
+    );
+    if (!match) return null;
+
+    const toMinutes = (hStr: string, mStr?: string, meridiem?: string) => {
+      let h = parseInt(hStr, 10);
+      const m = mStr ? parseInt(mStr, 10) : 0;
+      if (meridiem) {
+        const up = meridiem.toUpperCase();
+        if (up === 'PM' && h < 12) h += 12;
+        if (up === 'AM' && h === 12) h = 0;
+      }
+      return h * 60 + m;
+    };
+
+    const startMinutes = toMinutes(match[1], match[2], match[3] || match[6]);
+    const endMinutes = toMinutes(match[4], match[5], match[6] || match[3]);
+    return { startMinutes, endMinutes, label: schedule.trim() };
+  }, []);
+
+  const isScheduleLiveNow = useCallback(
+    (schedule?: string | null) => {
+      const parsed = parseScheduleWindow(schedule);
+      if (!parsed) return false;
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      return nowMins >= parsed.startMinutes && nowMins <= parsed.endMinutes;
+    },
+    [parseScheduleWindow]
+  );
+
+  // Minimum Class Duration (minutes) for valid attendance on checkout (default 30 mins)
+  const [minDurationMinutes, setMinDurationMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('tuition_min_class_minutes');
+    const parsed = saved ? parseInt(saved, 10) : 30;
+    return !isNaN(parsed) && parsed > 0 ? parsed : 30;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tuition_min_class_minutes', String(minDurationMinutes));
+  }, [minDurationMinutes]);
+
+  // Check-In / Check-Out Confirmation Modal State
+  const [pendingActionConfirm, setPendingActionConfirm] = useState<{
+    candidate: EnrolledStudentCandidate;
+    action: 'CHECK_IN' | 'CHECK_OUT';
+    isLate?: boolean;
+    method: AttendanceMethod | 'MANUAL' | 'QR_SCAN' | 'VOICE_CONFIRMED';
+    checkInTime?: string | null;
+    elapsedMinutes?: number | null;
+  } | null>(null);
+  const [confirmRemarks, setConfirmRemarks] = useState<string>('');
 
   // SMS Logs State
   const [smsLogs, setSmsLogs] = useState<any[]>([]);
@@ -121,7 +189,7 @@ export const AttendanceManagement: React.FC = () => {
 
   // Fetch Attendance Summary
   const fetchSummary = useCallback(async () => {
-    if (!selectedBatchId) {
+    if (batches.length === 0 && !selectedBatchId) {
       setAttendanceData({ records: [], counts: { totalStudents: 0, checkedInCount: 0, checkedOutCount: 0, absentCount: 0, lateCount: 0 } });
       setLoading(false);
       return;
@@ -130,8 +198,9 @@ export const AttendanceManagement: React.FC = () => {
       setLoading(true);
       setFetchError(null);
       const query = new URLSearchParams({
-        batchId: selectedBatchId,
         date: selectedDate,
+        minDurationMinutes: String(minDurationMinutes),
+        ...(selectedBatchId && selectedBatchId !== 'ALL' ? { batchId: selectedBatchId } : {}),
         ...(selectedSubjectId ? { subjectId: selectedSubjectId } : {}),
       });
       const res = await apiFetch(`/attendance/summary?${query.toString()}`);
@@ -142,7 +211,7 @@ export const AttendanceManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedBatchId, selectedSubjectId, selectedDate]);
+  }, [batches.length, selectedBatchId, selectedSubjectId, selectedDate, minDurationMinutes]);
 
   const handleRefreshRoster = useCallback(async () => {
     if (batches.length === 0) {
@@ -192,7 +261,9 @@ export const AttendanceManagement: React.FC = () => {
       candidate: EnrolledStudentCandidate,
       action: 'CHECK_IN' | 'CHECK_OUT',
       method: AttendanceMethod | 'MANUAL' | 'QR_SCAN' | 'VOICE_CONFIRMED' = AttendanceMethod.VOICE_CONFIRMED,
-      isAuto = false
+      isAuto = false,
+      isLate = false,
+      remarks?: string
     ) => {
       setActionLoading(candidate.id);
       setFeedback(null);
@@ -203,7 +274,7 @@ export const AttendanceManagement: React.FC = () => {
 
       try {
         const todayStr = new Date().toISOString().split('T')[0];
-        const idempotencyKey = `ATT_${candidate.id}_${todayStr}_${action}_1`;
+        const idempotencyKey = `ATT_${candidate.id}_${todayStr}_${action}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const endpoint = action === 'CHECK_IN' ? '/attendance/check-in' : '/attendance/check-out';
         const res = await apiFetch(endpoint, {
           method: 'POST',
@@ -212,6 +283,9 @@ export const AttendanceManagement: React.FC = () => {
             batchId: selectedBatchId || candidate.batchId || undefined,
             subjectId: selectedSubjectId || candidate.subjectId || undefined,
             method,
+            isLate: action === 'CHECK_IN' ? isLate : undefined,
+            remarks: remarks?.trim() || undefined,
+            minDurationMinutes: action === 'CHECK_OUT' ? minDurationMinutes : undefined,
             idempotencyKey,
           }),
         });
@@ -227,11 +301,9 @@ export const AttendanceManagement: React.FC = () => {
           return;
         }
 
-        const notifInfo = res.data?.notification;
         const smsInfo = res.data?.smsNotification;
         let notificationNote = '';
         if (smsInfo?.queued) {
-          const rec = smsInfo.recipient ? ` to ${smsInfo.recipient}` : '';
           notificationNote = 'In-app notification sent to linked parents';
         } else if (smsInfo?.reason) {
           notificationNote = smsInfo.reason;
@@ -244,7 +316,13 @@ export const AttendanceManagement: React.FC = () => {
           hour12: true,
         }).format(new Date());
 
-        const newStatus = action === 'CHECK_IN' ? 'CHECKED_IN' : 'CHECKED_OUT';
+        const newStatus =
+          action === 'CHECK_IN'
+            ? 'CHECKED_IN'
+            : res.data?.attendanceStatus === 'LEAVE' || res.data?.isLeave
+            ? 'LEAVE'
+            : 'CHECKED_OUT';
+        const durationMins = res.data?.durationMinutes ?? null;
 
         // 1. Optimistically update roster row and counts immediately (zero latency)
         setAttendanceData((prev: any) => {
@@ -254,6 +332,8 @@ export const AttendanceManagement: React.FC = () => {
               return {
                 ...r,
                 status: newStatus,
+                isLate: action === 'CHECK_IN' ? isLate : r.isLate,
+                durationMinutes: action === 'CHECK_OUT' ? durationMins : 0,
                 checkInTime: action === 'CHECK_IN' ? new Date().toISOString() : r.checkInTime,
                 checkInTimeFormatted: action === 'CHECK_IN' ? nowFormatted : r.checkInTimeFormatted,
                 checkOutTime: action === 'CHECK_OUT' ? new Date().toISOString() : r.checkOutTime,
@@ -265,8 +345,9 @@ export const AttendanceManagement: React.FC = () => {
 
           const checkedInCount = updatedRecords.filter((r: any) => r.status === 'CHECKED_IN').length;
           const checkedOutCount = updatedRecords.filter((r: any) => r.status === 'CHECKED_OUT').length;
+          const leaveCount = updatedRecords.filter((r: any) => r.status === 'LEAVE').length;
           const presentTotal = checkedInCount + checkedOutCount;
-          const absentCount = updatedRecords.length - presentTotal;
+          const absentCount = Math.max(0, updatedRecords.length - presentTotal - leaveCount);
 
           return {
             ...prev,
@@ -275,6 +356,7 @@ export const AttendanceManagement: React.FC = () => {
               totalStudents: updatedRecords.length,
               checkedInCount,
               checkedOutCount,
+              leaveCount,
               presentTotal,
               absentCount,
             },
@@ -330,15 +412,60 @@ export const AttendanceManagement: React.FC = () => {
         setActionLoading(null);
       }
     },
-    [selectedBatchId, selectedSubjectId, fetchSummary]
+    [selectedBatchId, selectedSubjectId, minDurationMinutes, fetchSummary]
+  );
+
+  // Open Check-In / Check-Out Confirmation Modal
+  const openActionConfirmation = useCallback(
+    (
+      candidate: EnrolledStudentCandidate,
+      action: 'CHECK_IN' | 'CHECK_OUT',
+      method: AttendanceMethod | 'MANUAL' | 'QR_SCAN' | 'VOICE_CONFIRMED' = 'MANUAL',
+      isLate = false
+    ) => {
+      const record = (attendanceData?.records || []).find((r: any) => r.student.id === candidate.id);
+      const checkInTime = record?.checkInTime || null;
+      const elapsedMinutes =
+        action === 'CHECK_OUT' && checkInTime
+          ? Math.max(0, Math.round((Date.now() - new Date(checkInTime).getTime()) / 60000))
+          : null;
+      setConfirmRemarks('');
+      setPendingActionConfirm({
+        candidate,
+        action,
+        isLate,
+        method,
+        checkInTime,
+        elapsedMinutes,
+      });
+    },
+    [attendanceData]
   );
 
   // Perform Voice Match with Backend and Dynamic Check-In / Check-Out
   const isSearchingRef = React.useRef(false);
   const performVoiceMatch = useCallback(
     async (spokenText: string) => {
-      const trimmed = spokenText.trim();
-      if (!trimmed || isSearchingRef.current) return;
+      const raw = spokenText.trim();
+      if (!raw || isSearchingRef.current) return;
+
+      // Parse natural voice command intent (e.g. "check out aarav", "late aarav", "check in aarav")
+      const lower = raw.toLowerCase();
+      let voiceIntent: 'CHECK_IN' | 'CHECK_OUT' | 'LATE' | null = null;
+      let cleanedTranscript = raw;
+
+      if (/\b(check\s*out|checkout|exit|leaving)\b/i.test(lower)) {
+        voiceIntent = 'CHECK_OUT';
+        cleanedTranscript = raw.replace(/\b(check\s*out|checkout|exit|leaving|mark)\b/gi, '').trim();
+      } else if (/\b(late)\b/i.test(lower)) {
+        voiceIntent = 'LATE';
+        cleanedTranscript = raw.replace(/\b(late|mark|check\s*in|checkin)\b/gi, '').trim();
+      } else if (/\b(check\s*in|checkin|present|mark)\b/i.test(lower)) {
+        voiceIntent = 'CHECK_IN';
+        cleanedTranscript = raw.replace(/\b(check\s*in|checkin|present|mark)\b/gi, '').trim();
+      }
+
+      const trimmed = cleanedTranscript || raw;
 
       isSearchingRef.current = true;
       setVoiceSearching(true);
@@ -362,24 +489,27 @@ export const AttendanceManagement: React.FC = () => {
         if (res.success) {
           setVoiceResult(res);
 
-          // Case A: Exactly one eligible student matches
+          // Case A: Show matched student as a suggestion card (never auto-mark attendance)
           if (res.status === 'EXACT_SINGLE' && res.bestMatch) {
-            const proposed = res.proposedAction || (res.bestMatch.alreadyCheckedIn ? 'CHECK_OUT' : 'CHECK_IN');
-            if (proposed === 'CHECK_IN' && res.autoActionEligible) {
-              await executeStudentAttendanceAction(res.bestMatch, 'CHECK_IN', 'VOICE_CONFIRMED', true);
-            } else if (proposed === 'CHECK_OUT') {
-              // Student is currently checked in; offer one-click Check-Out confirmation
-              setPendingVoiceCandidate({
-                ...res.bestMatch,
-                recommendedAction: 'CHECK_OUT',
-              });
-              setCandidateOptions([]);
-            } else if (proposed === 'COMPLETED' || res.alreadyCheckedOut) {
+            const proposed =
+              voiceIntent === 'CHECK_OUT'
+                ? 'CHECK_OUT'
+                : res.proposedAction || (res.bestMatch.alreadyCheckedIn ? 'CHECK_OUT' : 'CHECK_IN');
+            if (proposed === 'COMPLETED' || res.alreadyCheckedOut) {
               setFeedback({
                 type: 'warning',
                 message: `${res.bestMatch.firstName} ${res.bestMatch.lastName} has already checked out for today.`,
               });
-              setVoiceResult(null);
+              setCandidateOptions([res.bestMatch]);
+              setPendingVoiceCandidate(null);
+            } else {
+              setCandidateOptions([
+                {
+                  ...res.bestMatch,
+                  recommendedAction: proposed === 'CHECK_OUT' ? 'CHECK_OUT' : 'CHECK_IN',
+                },
+              ]);
+              setPendingVoiceCandidate(null);
             }
           } else if (res.status === 'EXACT_MULTIPLE' || res.status === 'FUZZY_MULTIPLE') {
             // Case B: Multiple students match -> Show candidate cards with individual Check In / Check Out action
@@ -463,29 +593,29 @@ export const AttendanceManagement: React.FC = () => {
     }
   };
 
-  // Perform Voice-Confirmed Attendance (Manual confirm)
+  // Perform Voice-Confirmed Attendance (opens confirmation dialog)
   const handleConfirmVoiceAttendance = async (student: EnrolledStudentCandidate) => {
     const actionType =
       student.recommendedAction === 'CHECK_OUT' || student.alreadyCheckedIn ? 'CHECK_OUT' : 'CHECK_IN';
-    await executeStudentAttendanceAction(student, actionType, 'VOICE_CONFIRMED', false);
+    openActionConfirmation(student, actionType, 'VOICE_CONFIRMED', false);
     resetTranscript();
     setManualVoiceInput('');
   };
 
-  // Handle Manual Check-In
+  // Handle Manual Check-In (with Confirmation Modal)
   const handleCheckIn = async (studentId: string, isLate = false) => {
     const candidate =
       enrolledCandidates.find((c) => c.id === studentId) ||
       ({ id: studentId, firstName: 'Student', lastName: '' } as any);
-    await executeStudentAttendanceAction(candidate, 'CHECK_IN', 'MANUAL', false);
+    openActionConfirmation(candidate, 'CHECK_IN', 'MANUAL', isLate);
   };
 
-  // Handle Manual Check-Out
+  // Handle Manual Check-Out (with Confirmation Modal & Min Duration check)
   const handleCheckOut = async (studentId: string) => {
     const candidate =
       enrolledCandidates.find((c) => c.id === studentId) ||
       ({ id: studentId, firstName: 'Student', lastName: '' } as any);
-    await executeStudentAttendanceAction(candidate, 'CHECK_OUT', 'MANUAL', false);
+    openActionConfirmation(candidate, 'CHECK_OUT', 'MANUAL', false);
   };
 
   // Execute Correction
@@ -497,13 +627,46 @@ export const AttendanceManagement: React.FC = () => {
         body: JSON.stringify({
           reason: correctionReason,
           isLate: correctionIsLate,
+          ...(correctionEventTime ? { eventTime: new Date(correctionEventTime).toISOString() } : {}),
         }),
       });
-      setFeedback({ type: 'success', message: 'Attendance correction saved successfully' });
+      setFeedback({ type: 'success', message: 'Attendance log updated successfully' });
       setCorrectionTarget(null);
       fetchSummary();
+      if (viewTab === 'reports') {
+        const q = new URLSearchParams({
+          startDate: reportStartDate,
+          endDate: reportEndDate,
+          ...(selectedBatchId ? { batchId: selectedBatchId } : {}),
+          ...(selectedSubjectId ? { subjectId: selectedSubjectId } : {}),
+        });
+        apiFetch(`/attendance/reports?${q.toString()}`)
+          .then((res) => setReportsData(res.data?.events || []))
+          .catch(() => {});
+      }
     } catch (err: any) {
       alert(`Failed to save correction: ${err.message}`);
+    }
+  };
+
+  // Delete Attendance Log (Admin only)
+  const handleDeleteAttendanceLog = async () => {
+    if (!deleteTarget?.eventId) return;
+    try {
+      setDeleteLoading(true);
+      await apiFetch(`/attendance/${deleteTarget.eventId}`, {
+        method: 'DELETE',
+      });
+      setFeedback({ type: 'success', message: 'Attendance log deleted successfully' });
+      setDeleteTarget(null);
+      fetchSummary();
+      if (viewTab === 'reports') {
+        setReportsData((prev) => prev.filter((ev: any) => ev.id !== deleteTarget.eventId));
+      }
+    } catch (err: any) {
+      alert(`Failed to delete attendance log: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -516,12 +679,32 @@ export const AttendanceManagement: React.FC = () => {
     lateCount: 0,
   };
 
+  const availableTimings = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of batches) {
+      if ((b as any).schedule) set.add((b as any).schedule);
+    }
+    for (const r of records) {
+      if (r.student?.batchSchedule) set.add(r.student.batchSchedule);
+    }
+    return Array.from(set);
+  }, [batches, records]);
+
   const filteredRecords = records.filter((item: any) => {
     const s = item.student;
-    const nameMatch = s.name.toLowerCase().includes(search.toLowerCase());
-    const rollMatch = s.rollNumber ? s.rollNumber.toLowerCase().includes(search.toLowerCase()) : false;
-    const admMatch = s.admissionNumber ? s.admissionNumber.toLowerCase().includes(search.toLowerCase()) : false;
-    return nameMatch || rollMatch || admMatch;
+    if (timingFilter === 'LIVE_NOW') {
+      if (!isScheduleLiveNow(s.batchSchedule)) return false;
+    } else if (timingFilter !== 'ALL') {
+      if ((s.batchSchedule || '') !== timingFilter) return false;
+    }
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      s.name.toLowerCase().includes(q) ||
+      s.admissionNumber.toLowerCase().includes(q) ||
+      (s.batchName || '').toLowerCase().includes(q) ||
+      (s.batchSchedule || '').toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -614,10 +797,10 @@ export const AttendanceManagement: React.FC = () => {
       )}
 
       {/* Controls Bar: Batch & Date Picker */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#4E342E]">Class Batch:</span>
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-3.5 sm:p-4 rounded-2xl bg-white border border-[#D7CCC8] shadow-sm w-full min-w-0">
+        <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-3 w-full xl:w-auto min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 w-full sm:w-auto min-w-0">
+            <span className="text-xs font-bold text-[#4E342E] shrink-0">Class Batch:</span>
             <select
               value={selectedBatchId}
               disabled={batchLoading}
@@ -627,24 +810,45 @@ export const AttendanceManagement: React.FC = () => {
                 setCandidateOptions([]);
                 resetTranscript();
               }}
-              className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-60"
+              className="w-full sm:w-auto sm:max-w-[260px] min-w-0 truncate bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-60"
             >
               {batchLoading ? (
                 <option value="">Loading batches...</option>
               ) : batches.length === 0 ? (
                 <option value="">No batches found</option>
               ) : (
-                batches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.academicYear})
-                  </option>
-                ))
+                <>
+                  <option value="ALL">All Authorized Batches</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} {(b as any).schedule ? `(${(b as any).schedule})` : `(${b.academicYear})`}
+                    </option>
+                  ))}
+                </>
               )}
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#4E342E]">Subject:</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 w-full sm:w-auto min-w-0">
+            <span className="text-xs font-bold text-[#4E342E] shrink-0">Timing Period:</span>
+            <select
+              value={timingFilter}
+              onChange={(e) => setTimingFilter(e.target.value)}
+              className="w-full sm:w-auto sm:max-w-[220px] min-w-0 truncate bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-2.5 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+              title="Filter students by class timing period"
+            >
+              <option value="ALL">All Timings</option>
+              <option value="LIVE_NOW">Live Class Window (Now)</option>
+              {availableTimings.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 w-full sm:w-auto min-w-0">
+            <span className="text-xs font-bold text-[#4E342E] shrink-0">Subject:</span>
             <select
               value={selectedSubjectId}
               disabled={batchLoading}
@@ -654,7 +858,7 @@ export const AttendanceManagement: React.FC = () => {
                 setCandidateOptions([]);
                 resetTranscript();
               }}
-              className="bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-60"
+              className="w-full sm:w-auto min-w-0 truncate bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63] disabled:opacity-60"
             >
               <option value="">All Assigned Subjects</option>
               {availableSubjects.map((bs: any) => (
@@ -665,31 +869,54 @@ export const AttendanceManagement: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#4E342E]">Attendance Date:</span>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#2D1E18]">
-              <Calendar className="w-3.5 h-3.5 text-[#8D6E63]" />
-              <span>{attendanceData?.formattedDate || new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} (Today Only)</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 w-full sm:w-auto min-w-0">
+            <span className="text-xs font-bold text-[#4E342E] shrink-0">Attendance Date:</span>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8] text-xs font-bold text-[#2D1E18] w-full sm:w-auto min-w-0">
+              <Calendar className="w-3.5 h-3.5 text-[#8D6E63] shrink-0" />
+              <span className="truncate">{attendanceData?.formattedDate || new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} (Today)</span>
             </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 w-full sm:w-auto min-w-0">
+            <span className="text-xs font-bold text-[#4E342E] shrink-0">Min Class Time:</span>
+            <select
+              value={[15, 30, 45, 60, 90].includes(minDurationMinutes) ? minDurationMinutes : 'custom'}
+              onChange={(e) => {
+                if (e.target.value !== 'custom') {
+                  setMinDurationMinutes(Number(e.target.value));
+                }
+              }}
+              className="w-full sm:w-auto min-w-0 bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-2.5 py-2 text-xs text-[#2D1E18] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+              title="Minimum class duration for valid checkout attendance (shorter exits count as Leave)"
+            >
+              <option value={15}>15 mins</option>
+              <option value={30}>30 mins (Default)</option>
+              <option value={45}>45 mins</option>
+              <option value={60}>60 mins (1 hr)</option>
+              <option value={90}>90 mins (1.5 hr)</option>
+            </select>
           </div>
         </div>
 
-        {/* Live Attendance KPIs Pill — Guaranteed single line */}
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 text-xs font-semibold shrink-0 whitespace-nowrap overflow-x-auto max-w-full py-0.5">
-          <span className="shrink-0 whitespace-nowrap text-[#4E342E] bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1">
-            <Users className="w-3.5 h-3.5 text-[#8D6E63]" />
+        {/* Live Attendance KPIs Pill — Responsive 2-col grid on mobile, inline flex on desktop */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs font-semibold w-full xl:w-auto py-0.5">
+          <span className="text-[#4E342E] bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1">
+            <Users className="w-3.5 h-3.5 text-[#8D6E63] shrink-0" />
             <span>Total: <strong>{counts.totalStudents}</strong></span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300">
-            Present (Total): <strong>{counts.presentTotal ?? (counts.checkedInCount + counts.checkedOutCount)}</strong>
+          <span className="text-emerald-900 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-300">
+            Present: <strong>{counts.presentTotal ?? (counts.checkedInCount + counts.checkedOutCount)}</strong>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-teal-900 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-300">
+          <span className="text-teal-900 bg-teal-50 px-2.5 py-1.5 rounded-lg border border-teal-300">
             In Class: <strong>{counts.checkedInCount}</strong>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-[#4E342E] bg-[#EFEBE9] px-2.5 py-1 rounded-lg border border-[#D7CCC8]">
+          <span className="text-[#4E342E] bg-[#EFEBE9] px-2.5 py-1.5 rounded-lg border border-[#D7CCC8]">
             Checked Out: <strong>{counts.checkedOutCount}</strong>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+          <span className="text-amber-900 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-300">
+            Leave (&lt;{minDurationMinutes}m): <strong>{counts.leaveCount || 0}</strong>
+          </span>
+          <span className="text-rose-800 bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-200">
             Absent: <strong>{counts.absentCount}</strong>
           </span>
           {loading && (
@@ -765,17 +992,17 @@ export const AttendanceManagement: React.FC = () => {
             )}
 
             {/* Status Indicator */}
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2 font-semibold">
-                <span className="text-[#6D4C41]">Microphone Status:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 font-semibold">
+                <span className="text-[#6D4C41] shrink-0">Microphone Status:</span>
                 {isListening ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
-                    Listening (Indian English: en-IN)
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping shrink-0" />
+                    <span>Listening (en-IN)</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#FAF7F2] text-[#6D4C41] border border-[#D7CCC8]">
-                    Microphone Idle (Press "Start Listening")
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-semibold bg-[#FAF7F2] text-[#6D4C41] border border-[#D7CCC8]">
+                    Idle (Tap &quot;Start Listening&quot;)
                   </span>
                 )}
               </div>
@@ -831,7 +1058,7 @@ export const AttendanceManagement: React.FC = () => {
                   ) : (
                     <Sparkles className="w-3.5 h-3.5 text-amber-200" />
                   )}
-                  <span>Match & Check In</span>
+                  <span>Find &amp; Suggest</span>
                 </button>
               </div>
             </form>
@@ -1094,7 +1321,7 @@ export const AttendanceManagement: React.FC = () => {
                           </span>
                         ) : isCheckedIn ? (
                           <button
-                            onClick={() => executeStudentAttendanceAction(candidate, 'CHECK_OUT', 'VOICE_CONFIRMED', false)}
+                            onClick={() => openActionConfirmation(candidate, 'CHECK_OUT', 'VOICE_CONFIRMED', false)}
                             disabled={actionLoading === candidate.id}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white text-xs font-bold shadow-sm transition disabled:opacity-50 shrink-0"
                           >
@@ -1103,7 +1330,7 @@ export const AttendanceManagement: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => executeStudentAttendanceAction(candidate, 'CHECK_IN', 'VOICE_CONFIRMED', false)}
+                            onClick={() => openActionConfirmation(candidate, 'CHECK_IN', 'VOICE_CONFIRMED', false)}
                             disabled={actionLoading === candidate.id}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition disabled:opacity-50 shrink-0"
                           >
@@ -1137,7 +1364,143 @@ export const AttendanceManagement: React.FC = () => {
               </button>
             </div>
 
-            <div className="border border-[#EFEBE9] rounded-2xl overflow-hidden">
+            {/* Mobile Card View (< md) for Roster Fallback */}
+            <div className="md:hidden border border-[#EFEBE9] rounded-2xl divide-y divide-[#EFEBE9] overflow-hidden">
+              {filteredRecords.length === 0 ? (
+                <div className="p-6 text-center text-xs text-[#6D4C41]">
+                  {loading ? 'Loading batch students...' : 'No students match the selected filter.'}
+                </div>
+              ) : (
+                filteredRecords.map((item: any) => {
+                  const student = item.student;
+                  return (
+                    <div key={`mob-${student.id}`} className="p-3.5 space-y-2.5 bg-white">
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setProfileStudentId(student.id)}
+                          className="flex items-center gap-2.5 text-left min-w-0 cursor-pointer"
+                        >
+                          <StudentAvatar studentId={student.id} photoUrl={student.photoUrl} name={student.name} size="sm" />
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-[#2D1E18] truncate">{student.name}</div>
+                            <div className="text-[10px] font-mono text-[#6D4C41]">{student.admissionNumber}</div>
+                            {student.batchSchedule && (
+                              <div className="text-[10px] text-[#6D4C41] flex items-center gap-1 mt-0.5 flex-wrap">
+                                <Clock className="w-2.5 h-2.5 text-[#8D6E63] shrink-0" />
+                                <span className="truncate">{student.batchSchedule}</span>
+                                {isScheduleLiveNow(student.batchSchedule) && (
+                                  <span className="px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px]">
+                                    LIVE
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+
+                        <div className="shrink-0">
+                          {item.status === 'CHECKED_IN' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                              In Class {typeof item.durationMinutes === 'number' ? `(${item.durationMinutes}m)` : ''}
+                            </span>
+                          ) : item.status === 'LEAVE' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300">
+                              Leave {typeof item.durationMinutes === 'number' ? `(${item.durationMinutes}m)` : ''}
+                            </span>
+                          ) : item.status === 'CHECKED_OUT' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8]">
+                              Out {typeof item.durationMinutes === 'number' ? `(${item.durationMinutes}m)` : ''}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                              Absent
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#F7F2EF]">
+                        {item.status === 'ABSENT' && (
+                          <>
+                            <button
+                              onClick={() => handleCheckIn(student.id, false)}
+                              disabled={actionLoading === student.id}
+                              className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition shadow-sm disabled:opacity-50"
+                            >
+                              Check In
+                            </button>
+                            <button
+                              onClick={() => handleCheckIn(student.id, true)}
+                              disabled={actionLoading === student.id}
+                              className="px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-amber-50 text-amber-800 border border-amber-300"
+                            >
+                              Late
+                            </button>
+                          </>
+                        )}
+                        {item.status === 'CHECKED_IN' ? (
+                          <button
+                            onClick={() => handleCheckOut(student.id)}
+                            disabled={actionLoading === student.id}
+                            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-[#6D4C41] hover:bg-[#4E342E] text-white transition shadow-sm disabled:opacity-50"
+                          >
+                            Check Out
+                          </button>
+                        ) : (item.status === 'LEAVE' || item.status === 'CHECKED_OUT') && (
+                          <button
+                            onClick={() => handleCheckIn(student.id, false)}
+                            disabled={actionLoading === student.id}
+                            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition shadow-sm disabled:opacity-50"
+                          >
+                            Re-Check In
+                          </button>
+                        )}
+                        {item.eventId && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCorrectionTarget(item);
+                                setCorrectionIsLate(item.isLate);
+                                setCorrectionEventTime(
+                                  item.checkInTime
+                                    ? new Date(new Date(item.checkInTime).getTime() - new Date().getTimezoneOffset() * 60000)
+                                        .toISOString()
+                                        .slice(0, 16)
+                                    : ''
+                                );
+                                setCorrectionReason('');
+                              }}
+                              className="p-1.5 rounded-lg border border-[#D7CCC8] text-[#6D4C41] hover:bg-[#F7F2EF]"
+                              title="Edit Attendance Log"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({
+                                  eventId: item.eventId,
+                                  studentName: student.name,
+                                  eventType: item.status === 'CHECKED_IN' ? 'CHECK_IN' : 'ATTENDANCE',
+                                })
+                              }
+                              className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                              title="Delete Attendance Log"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="hidden md:block border border-[#EFEBE9] rounded-2xl overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-[#FAF7F2] border-b border-[#EFEBE9] text-[#6D4C41]">
@@ -1214,10 +1577,30 @@ export const AttendanceManagement: React.FC = () => {
                       return (
                         <tr key={student.id} className="hover:bg-[#FDFBF7]">
                           <td className="py-2.5 px-3 font-bold text-[#2D1E18]">
-                            <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setProfileStudentId(student.id)}
+                              className="flex items-center gap-2 text-left group cursor-pointer"
+                              title="View student profile"
+                            >
                               <StudentAvatar studentId={student.id} photoUrl={student.photoUrl} name={student.name} size="xs" />
-                              <span>{student.name}</span>
-                            </div>
+                              <div>
+                                <span className="group-hover:underline group-hover:text-[#4E342E] block">
+                                  {student.name}
+                                </span>
+                                {student.batchSchedule && (
+                                  <span className="text-[10px] font-normal text-[#6D4C41] flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5 text-[#8D6E63]" />
+                                    {student.batchSchedule}
+                                    {isScheduleLiveNow(student.batchSchedule) && (
+                                      <span className="px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px]">
+                                        LIVE
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[#6D4C41]">
                             {student.admissionNumber}
@@ -1226,6 +1609,10 @@ export const AttendanceManagement: React.FC = () => {
                             {item.status === 'CHECKED_IN' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
                                 Checked In
+                              </span>
+                            ) : item.status === 'LEAVE' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300">
+                                Leave {typeof item.durationMinutes === 'number' ? `(${item.durationMinutes}m)` : ''}
                               </span>
                             ) : item.status === 'CHECKED_OUT' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8]">
@@ -1238,24 +1625,71 @@ export const AttendanceManagement: React.FC = () => {
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            {item.status === 'ABSENT' && (
-                              <button
-                                onClick={() => handleCheckIn(student.id, false)}
-                                disabled={actionLoading === student.id}
-                                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition shadow-sm disabled:opacity-50"
-                              >
-                                Check In
-                              </button>
-                            )}
-                            {item.status === 'CHECKED_IN' && (
-                              <button
-                                onClick={() => handleCheckOut(student.id)}
-                                disabled={actionLoading === student.id}
-                                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#6D4C41] hover:bg-[#4E342E] text-white transition shadow-sm disabled:opacity-50"
-                              >
-                                Check Out
-                              </button>
-                            )}
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              {item.status === 'ABSENT' && (
+                                <button
+                                  onClick={() => handleCheckIn(student.id, false)}
+                                  disabled={actionLoading === student.id}
+                                  className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
+                                >
+                                  Check In
+                                </button>
+                              )}
+                              {item.status === 'CHECKED_IN' ? (
+                                <button
+                                  onClick={() => handleCheckOut(student.id)}
+                                  disabled={actionLoading === student.id}
+                                  className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#6D4C41] hover:bg-[#4E342E] text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
+                                >
+                                  Check Out
+                                </button>
+                              ) : (item.status === 'LEAVE' || item.status === 'CHECKED_OUT') && (
+                                <button
+                                  onClick={() => handleCheckIn(student.id, false)}
+                                  disabled={actionLoading === student.id}
+                                  className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
+                                >
+                                  Re-Check In
+                                </button>
+                              )}
+                              {item.eventId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCorrectionTarget(item);
+                                    setCorrectionIsLate(item.isLate);
+                                    setCorrectionEventTime(
+                                      item.checkInTime
+                                        ? new Date(new Date(item.checkInTime).getTime() - new Date().getTimezoneOffset() * 60000)
+                                            .toISOString()
+                                            .slice(0, 16)
+                                        : ''
+                                    );
+                                    setCorrectionReason('');
+                                  }}
+                                  title="Edit / Correct Attendance Log"
+                                  className="p-1 rounded-lg text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#F7F2EF] transition cursor-pointer"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {item.eventId && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      eventId: item.eventId,
+                                      studentName: student.name,
+                                      eventType: item.status === 'CHECKED_IN' ? 'CHECK_IN' : 'ATTENDANCE',
+                                    })
+                                  }
+                                  title="Delete Attendance Log"
+                                  className="p-1 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1371,12 +1805,34 @@ export const AttendanceManagement: React.FC = () => {
                           </td>
                           <td className="py-3.5 px-4">
                             {item.status === 'CHECKED_IN' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300">
-                                Checked In
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                  Checked In
+                                </span>
+                                {typeof item.durationMinutes === 'number' && (
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                                      item.durationMinutes >= minDurationMinutes
+                                        ? 'bg-teal-50 text-teal-800 border-teal-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                    }`}
+                                    title={
+                                      item.durationMinutes >= minDurationMinutes
+                                        ? `Met ${minDurationMinutes}m minimum class time`
+                                        : `Needs ${minDurationMinutes - item.durationMinutes}m more for valid checkout`
+                                    }
+                                  >
+                                    {item.durationMinutes}m
+                                  </span>
+                                )}
+                              </div>
+                            ) : item.status === 'LEAVE' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-300">
+                                Leave {typeof item.durationMinutes === 'number' ? `(${item.durationMinutes}m)` : ''}
                               </span>
                             ) : item.status === 'CHECKED_OUT' ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#EFEBE9] text-[#4E342E] border border-[#D7CCC8]">
-                                Checked Out
+                                Checked Out {typeof item.durationMinutes === 'number' ? `(${item.durationMinutes}m)` : ''}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-800 border border-rose-200">
@@ -1405,13 +1861,21 @@ export const AttendanceManagement: React.FC = () => {
                                 </>
                               )}
 
-                              {item.status === 'CHECKED_IN' && (
+                              {item.status === 'CHECKED_IN' ? (
                                 <button
                                   onClick={() => handleCheckOut(student.id)}
                                   disabled={actionLoading === student.id}
                                   className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#6D4C41] hover:bg-[#4E342E] text-white transition shadow-sm disabled:opacity-50"
                                 >
                                   Check Out
+                                </button>
+                              ) : (item.status === 'LEAVE' || item.status === 'CHECKED_OUT') && (
+                                <button
+                                  onClick={() => handleCheckIn(student.id, false)}
+                                  disabled={actionLoading === student.id}
+                                  className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#4E342E] hover:bg-[#3E2723] text-white transition shadow-sm disabled:opacity-50"
+                                >
+                                  Re-Check In
                                 </button>
                               )}
 
@@ -1420,12 +1884,35 @@ export const AttendanceManagement: React.FC = () => {
                                   onClick={() => {
                                     setCorrectionTarget(item);
                                     setCorrectionIsLate(item.isLate);
+                                    setCorrectionEventTime(
+                                      item.checkInTime
+                                        ? new Date(new Date(item.checkInTime).getTime() - new Date().getTimezoneOffset() * 60000)
+                                            .toISOString()
+                                            .slice(0, 16)
+                                        : ''
+                                    );
                                     setCorrectionReason('');
                                   }}
-                                  title="Correct Attendance Record"
-                                  className="p-1 rounded-lg text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#F7F2EF] transition"
+                                  title="Edit / Correct Attendance Log"
+                                  className="p-1 rounded-lg text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#F7F2EF] transition cursor-pointer"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {isAdmin && item.eventId && (
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      eventId: item.eventId,
+                                      studentName: student.name,
+                                      eventType: item.status === 'CHECKED_IN' ? 'CHECK_IN' : 'ATTENDANCE',
+                                    })
+                                  }
+                                  title="Delete Attendance Log"
+                                  className="p-1 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
@@ -1474,12 +1961,13 @@ export const AttendanceManagement: React.FC = () => {
                   <th className="py-3 px-4 font-bold">Event Type</th>
                   <th className="py-3 px-4 font-bold">Method</th>
                   <th className="py-3 px-4 font-bold">Time</th>
+                  {isAdmin && <th className="py-3 px-4 font-bold text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EFEBE9]">
                 {reportsData.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-[#6D4C41]">
+                    <td colSpan={isAdmin ? 6 : 5} className="py-8 text-center text-[#6D4C41]">
                       No events found for selected date range.
                     </td>
                   </tr>
@@ -1509,6 +1997,50 @@ export const AttendanceManagement: React.FC = () => {
                       <td className="py-3 px-4 font-mono text-[#6D4C41]">
                         {new Date(ev.eventTime).toLocaleTimeString('en-IN')}
                       </td>
+                      {isAdmin && (
+                        <td className="py-3 px-4 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCorrectionTarget({
+                                  eventId: ev.id,
+                                  student: {
+                                    name: `${ev.student?.firstName || ''} ${ev.student?.lastName || ''}`.trim(),
+                                  },
+                                });
+                                setCorrectionIsLate(Boolean(ev.isLate));
+                                setCorrectionEventTime(
+                                  ev.eventTime
+                                    ? new Date(new Date(ev.eventTime).getTime() - new Date().getTimezoneOffset() * 60000)
+                                        .toISOString()
+                                        .slice(0, 16)
+                                    : ''
+                                );
+                                setCorrectionReason(ev.correctionNote || '');
+                              }}
+                              title="Edit Attendance Log"
+                              className="p-1.5 rounded-lg text-[#6D4C41] hover:text-[#2D1E18] hover:bg-[#F7F2EF] transition cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({
+                                  eventId: ev.id,
+                                  studentName: `${ev.student?.firstName || ''} ${ev.student?.lastName || ''}`.trim(),
+                                  eventType: ev.eventType,
+                                })
+                              }
+                              title="Delete Attendance Log"
+                              className="p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -1618,6 +2150,20 @@ export const AttendanceManagement: React.FC = () => {
                 </label>
               </div>
 
+              {isAdmin && (
+                <div>
+                  <label className="block font-bold text-[#4E342E] mb-1">
+                    Log Timestamp
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={correctionEventTime}
+                    onChange={(e) => setCorrectionEventTime(e.target.value)}
+                    className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs font-mono text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block font-bold text-[#4E342E] mb-1">
                   Reason for Correction *
@@ -1652,6 +2198,193 @@ export const AttendanceManagement: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {/* Check-In / Check-Out Confirmation Modal */}
+      {pendingActionConfirm &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white border border-[#D7CCC8] rounded-3xl w-full max-w-md p-6 shadow-2xl text-[#2D1E18] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#EFEBE9]">
+                <div className="flex items-center gap-3">
+                  <StudentAvatar
+                    studentId={pendingActionConfirm.candidate.id}
+                    photoUrl={pendingActionConfirm.candidate.photoUrl}
+                    name={`${pendingActionConfirm.candidate.firstName} ${pendingActionConfirm.candidate.lastName}`}
+                    size="md"
+                  />
+                  <div>
+                    <h3 className="text-base font-bold text-[#2D1E18]">
+                      {pendingActionConfirm.action === 'CHECK_OUT'
+                        ? 'Confirm Student Check-Out'
+                        : pendingActionConfirm.isLate
+                        ? 'Confirm Late Check-In'
+                        : 'Confirm Student Check-In'}
+                    </h3>
+                    <p className="text-xs text-[#6D4C41]">
+                      {pendingActionConfirm.candidate.firstName} {pendingActionConfirm.candidate.lastName}
+                      {pendingActionConfirm.candidate.admissionNumber
+                        ? ` (${pendingActionConfirm.candidate.admissionNumber})`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingActionConfirm(null)}
+                  className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {pendingActionConfirm.action === 'CHECK_OUT' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2.5 text-xs">
+                    <div className="p-3 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <span className="text-[#6D4C41] block">Class Duration</span>
+                      <span className="text-base font-extrabold text-[#2D1E18] font-mono">
+                        {pendingActionConfirm.elapsedMinutes ?? 0} mins
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-[#F7F2EF] border border-[#D7CCC8]">
+                      <span className="text-[#6D4C41] block">Minimum Required</span>
+                      <span className="text-base font-extrabold text-[#4E342E] font-mono">
+                        {minDurationMinutes} mins
+                      </span>
+                    </div>
+                  </div>
+
+                  {(pendingActionConfirm.elapsedMinutes ?? 0) < minDurationMinutes ? (
+                    <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Short Class Time — Will Mark as LEAVE</p>
+                        <p className="mt-0.5 text-amber-900 leading-relaxed">
+                          Student has only attended{' '}
+                          <strong>{pendingActionConfirm.elapsedMinutes ?? 0} mins</strong> (minimum{' '}
+                          <strong>{minDurationMinutes} mins</strong> required). Checking out now will
+                          categorize today&apos;s attendance as <strong>Leave</strong>.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span>
+                        Valid class duration met ({pendingActionConfirm.elapsedMinutes} mins &ge;{' '}
+                        {minDurationMinutes} mins). Will mark as <strong>Checked Out (Present)</strong>.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-[#4E342E] mb-1">
+                  Remarks (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={confirmRemarks}
+                  onChange={(e) => setConfirmRemarks(e.target.value)}
+                  placeholder="Optional note (e.g. parent pickup, early leave)..."
+                  className="w-full bg-[#FDFBF7] border border-[#D7CCC8] rounded-xl px-3 py-2 text-xs text-[#2D1E18] focus:outline-none focus:ring-2 focus:ring-[#8D6E63]"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2.5 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => setPendingActionConfirm(null)}
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading === pendingActionConfirm.candidate.id}
+                  onClick={async () => {
+                    const target = pendingActionConfirm;
+                    setPendingActionConfirm(null);
+                    await executeStudentAttendanceAction(
+                      target.candidate,
+                      target.action,
+                      target.method,
+                      false,
+                      Boolean(target.isLate),
+                      confirmRemarks
+                    );
+                  }}
+                  className={`px-4 py-2 text-xs font-bold text-white rounded-xl shadow-md transition cursor-pointer disabled:opacity-50 ${
+                    pendingActionConfirm.action === 'CHECK_OUT' &&
+                    (pendingActionConfirm.elapsedMinutes ?? 0) < minDurationMinutes
+                      ? 'bg-amber-700 hover:bg-amber-800'
+                      : 'bg-[#4E342E] hover:bg-[#3E2723]'
+                  }`}
+                >
+                  {pendingActionConfirm.action === 'CHECK_OUT'
+                    ? (pendingActionConfirm.elapsedMinutes ?? 0) < minDurationMinutes
+                      ? 'Confirm Check-Out (Mark Leave)'
+                      : 'Confirm Check-Out'
+                    : pendingActionConfirm.isLate
+                    ? 'Confirm Late Check-In'
+                    : 'Confirm Check-In'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Delete Attendance Log Confirmation Modal */}
+      {deleteTarget &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white border border-rose-200 rounded-3xl w-full max-w-sm p-6 shadow-2xl text-[#2D1E18] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-rose-100">
+                <h3 className="text-base font-bold text-rose-900 flex items-center gap-2">
+                  <Trash2 className="w-4 h-4 text-rose-600" /> Delete Attendance Log
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="text-[#8D6E63] hover:text-[#2D1E18] p-1 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-xs text-[#5D4037] leading-relaxed">
+                Are you sure you want to permanently delete the{' '}
+                <strong className="font-mono">{deleteTarget.eventType}</strong> log for{' '}
+                <strong>{deleteTarget.studentName}</strong>? This action will be recorded in the audit trail.
+              </p>
+              <div className="pt-2 flex justify-end gap-2.5 border-t border-[#EFEBE9]">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="px-4 py-2 text-xs font-semibold text-[#6D4C41] hover:text-[#2D1E18] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteLoading}
+                  onClick={handleDeleteAttendanceLog}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md transition cursor-pointer disabled:opacity-50"
+                >
+                  {deleteLoading ? 'Deleting...' : 'Delete Log'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      {/* Student Profile Modal (clickable from attendance roster) */}
+      {profileStudentId && (
+        <StudentDetailsModal
+          studentId={profileStudentId}
+          onClose={() => setProfileStudentId(null)}
+        />
       )}
     </div>
   );
